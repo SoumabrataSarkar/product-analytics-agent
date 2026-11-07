@@ -37,8 +37,60 @@ checks={
  'successful PPV without checkout': "WITH x AS (SELECT session_id,min(event_at) ts FROM user_events WHERE event_name='checkout_started' AND session_id IS NOT NULL GROUP BY session_id) SELECT count(*) FROM transactions t LEFT JOIN x ON x.session_id=t.session_id AND x.ts<=t.transaction_at WHERE t.type='ppv' AND t.status='succeeded' AND x.session_id IS NULL",
  'session without app open': "WITH x AS (SELECT DISTINCT session_id FROM user_events WHERE event_name='app_opened' AND session_id IS NOT NULL) SELECT count(*) FROM sessions s LEFT JOIN x ON x.session_id=s.session_id WHERE x.session_id IS NULL",
  'views without timezone': "SELECT count(*) FROM content_views WHERE event_timezone IS NULL",
+ 'subscription snapshot without matching period': "SELECT count(*) FROM users u WHERE u.subscription_status!='never_subscribed' AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.status=u.subscription_status AND h.effective_start_at<='2026-09-30T23:59:59Z' AND (h.effective_end_at IS NULL OR h.effective_end_at>'2026-09-30T23:59:59Z'))",
+ 'initial subscription missing full journey': "WITH ev AS (SELECT session_id, min(CASE WHEN event_name='paywall_viewed' THEN event_at END) wall, min(CASE WHEN event_name='checkout_started' THEN event_at END) checkout, min(CASE WHEN event_name='subscription_started' THEN event_at END) started FROM user_events GROUP BY session_id), vv AS (SELECT session_id,min(view_started_at) first_view FROM content_views WHERE view_type='sub' GROUP BY session_id) SELECT count(*) FROM transactions t LEFT JOIN ev USING(session_id) LEFT JOIN vv USING(session_id) WHERE t.transaction_subtype='subscription_initial' AND (t.session_id IS NULL OR ev.wall IS NULL OR ev.checkout IS NULL OR ev.started IS NULL OR vv.first_view IS NULL OR ev.wall>ev.checkout OR ev.checkout>t.transaction_at OR ev.started<t.transaction_at OR vv.first_view<t.transaction_at)",
+ 'delisting without prior notice': "SELECT count(*) FROM transaction_content_attribution a JOIN transactions t USING(txn_id) WHERE a.attribution_status='expired_delisting' AND NOT EXISTS(SELECT 1 FROM user_events e WHERE e.user_id=t.user_id AND e.event_name='content_delisting_notice' AND e.content_id=a.content_id AND e.episode_number=a.episode_number AND e.event_at>=a.entitlement_start_at AND e.event_at<a.delisted_at)",
 }
 failed=0
+expected={
+ 'users':'user_id signup_date signup_at country country_origin country_current acquisition_source subscription_status subscription_start subscription_end created_at updated_at',
+ 'sessions':'session_id user_id anonymous_id date duration_sec platform session_started_at session_ended_at last_activity_at device_id_hash app_version country_at_event',
+ 'anonymous_identities':'anonymous_id created_at retired_at',
+ 'identity_links':'identity_link_id anonymous_id user_id session_id linked_at link_method',
+ 'content_catalog':'content_id title genre total_episodes release_date first_release_at last_release_at total_duration_sec content_tier content_status available_from_at available_until_at created_at updated_at',
+ 'content_episodes':'content_id episode_number episode_title episode_duration_sec release_at available_from_at available_until_at episode_status access_tier ppv_list_price_usd',
+ 'content_availability_history':'availability_id content_id episode_number available_from_at available_until_at status recorded_at',
+ 'content_views':'view_id user_id anonymous_id content_id episode_number date watch_duration_sec content_duration_sec view_type session_id view_started_at view_ended_at completion_pct playback_position_start_sec playback_position_end_sec is_first_view_of_episode free_quota_consuming free_quota_sequence event_timezone country_at_event',
+ 'transactions':'txn_id user_id date type amount_usd payment_method status transaction_subtype payment_provider list_price_usd discount_usd transaction_at country_at_event session_id provider_transaction_id currency original_amount related_txn_id refund_reason subscription_id',
+ 'payment_status_history':'payment_status_event_id txn_id status effective_at recorded_at provider_event_id',
+ 'refund_content_attribution':'refund_allocation_id refund_txn_id content_id episode_number allocated_refund_usd',
+ 'marketing_spend':'date channel spend_usd impressions clicks loaded_at',
+ 'subscription_history':'subscription_period_id subscription_id user_id effective_start_at subscription_status_updated_at effective_end_at status plan_code source_txn_id cancelled_at recorded_at',
+ 'transaction_content_attribution':'txn_content_attribution_id txn_id content_id episode_number entitlement_start_at entitlement_end_at attributed_amount_usd attribution_status refunded_at delisted_at',
+ 'user_events':'event_id user_id anonymous_id country_at_event event_at event_timezone event_name session_id view_id txn_id subscription_period_id content_id episode_number event_properties_json ingested_at',
+}
+for table,cols in expected.items():
+    actual={r[1] for r in db.execute('PRAGMA table_info("'+table+'")')}
+    missing=set(cols.split())-actual
+    print(('PASS' if not missing else 'FAIL'),'model columns',table,','.join(sorted(missing)))
+    failed+=bool(missing)
+required={
+ 'users':'user_id signup_date signup_at country acquisition_source subscription_status created_at updated_at',
+ 'sessions':'session_id anonymous_id date platform session_started_at last_activity_at',
+ 'anonymous_identities':'anonymous_id created_at',
+ 'identity_links':'identity_link_id anonymous_id user_id session_id linked_at link_method',
+ 'content_catalog':'content_id title genre total_episodes release_date first_release_at total_duration_sec content_tier content_status created_at updated_at',
+ 'content_episodes':'content_id episode_number episode_duration_sec release_at episode_status access_tier',
+ 'content_availability_history':'availability_id content_id episode_number available_from_at status recorded_at',
+ 'content_views':'view_id user_id anonymous_id content_id episode_number date watch_duration_sec content_duration_sec view_type session_id view_started_at playback_position_start_sec is_first_view_of_episode free_quota_consuming',
+ 'transactions':'txn_id user_id date type amount_usd payment_method status transaction_subtype payment_provider transaction_at provider_transaction_id currency original_amount',
+ 'payment_status_history':'payment_status_event_id txn_id status effective_at recorded_at provider_event_id',
+ 'refund_content_attribution':'refund_allocation_id refund_txn_id content_id episode_number allocated_refund_usd',
+ 'marketing_spend':'date channel spend_usd impressions clicks loaded_at',
+ 'subscription_history':'subscription_period_id subscription_id user_id effective_start_at subscription_status_updated_at status plan_code recorded_at',
+ 'transaction_content_attribution':'txn_content_attribution_id txn_id content_id episode_number entitlement_start_at attributed_amount_usd attribution_status',
+ 'user_events':'event_id event_at event_name ingested_at',
+}
+for table,cols in required.items():
+    missing_columns=set(cols.split())-{r[1] for r in db.execute('PRAGMA table_info("'+table+'")')}
+    if missing_columns:
+        print('FAIL required-value check',table,'missing columns',','.join(sorted(missing_columns)))
+        failed+=1
+        continue
+    condition=' OR '.join('"'+col+'" IS NULL' for col in cols.split())
+    bad=db.execute('SELECT count(*) FROM "'+table+'" WHERE '+condition).fetchone()[0]
+    print(('PASS' if bad==0 else 'FAIL'),'required values',table,bad)
+    failed+=bool(bad)
 for name,sql in checks.items():
     n=db.execute(sql).fetchone()[0]
     print(('PASS' if n==0 else 'FAIL'),name,n)
@@ -63,7 +115,7 @@ if days!=183: failed+=1
 boundary=db.execute("SELECT COUNT(*) FROM user_events e WHERE e.event_name='playback_blocked' AND e.event_properties_json LIKE '%daily_free_quota_exhausted%' AND (SELECT COUNT(DISTINCT v.content_id||':'||v.episode_number) FROM content_views v WHERE v.user_id=e.user_id AND v.date=substr(e.event_at,1,10) AND v.view_type='free' AND v.view_started_at<e.event_at)=8").fetchone()[0]
 print('Verified quota boundary journeys:',boundary)
 if boundary<1: failed+=1
-nonbuyer=db.execute("SELECT count(*) FROM user_events e WHERE e.event_name='paywall_viewed' AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.session_id=e.session_id AND t.type='ppv' AND t.status='succeeded')").fetchone()[0]
+nonbuyer=db.execute("SELECT count(*) FROM user_events e WHERE e.event_name='paywall_viewed' AND (e.event_properties_json IS NULL OR e.event_properties_json NOT LIKE '%subscription%') AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.session_id=e.session_id AND t.type='ppv' AND t.status='succeeded')").fetchone()[0]
 print('Paywall views without a successful PPV in session:',nonbuyer)
 if nonbuyer<1: failed+=1
 print('30-day cohort comparison (complete observation windows):')
