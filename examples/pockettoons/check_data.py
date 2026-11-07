@@ -40,6 +40,9 @@ checks={
  'subscription snapshot without matching period': "SELECT count(*) FROM users u WHERE u.subscription_status!='never_subscribed' AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.status=u.subscription_status AND h.effective_start_at<='2026-09-30T23:59:59Z' AND (h.effective_end_at IS NULL OR h.effective_end_at>'2026-09-30T23:59:59Z'))",
  'initial subscription missing full journey': "WITH ev AS (SELECT session_id, min(CASE WHEN event_name='paywall_viewed' THEN event_at END) wall, min(CASE WHEN event_name='checkout_started' THEN event_at END) checkout, min(CASE WHEN event_name='subscription_started' THEN event_at END) started FROM user_events GROUP BY session_id), vv AS (SELECT session_id,min(view_started_at) first_view FROM content_views WHERE view_type='sub' GROUP BY session_id) SELECT count(*) FROM transactions t LEFT JOIN ev USING(session_id) LEFT JOIN vv USING(session_id) WHERE t.transaction_subtype='subscription_initial' AND (t.session_id IS NULL OR ev.wall IS NULL OR ev.checkout IS NULL OR ev.started IS NULL OR vv.first_view IS NULL OR ev.wall>ev.checkout OR ev.checkout>t.transaction_at OR ev.started<t.transaction_at OR vv.first_view<t.transaction_at)",
  'delisting without prior notice': "SELECT count(*) FROM transaction_content_attribution a JOIN transactions t USING(txn_id) WHERE a.attribution_status='expired_delisting' AND NOT EXISTS(SELECT 1 FROM user_events e WHERE e.user_id=t.user_id AND e.event_name='content_delisting_notice' AND e.content_id=a.content_id AND e.episode_number=a.episode_number AND e.event_at>=a.entitlement_start_at AND e.event_at<a.delisted_at)",
+ 'unlabelled paywall or checkout': "SELECT count(*) FROM user_events WHERE event_name IN ('paywall_viewed','checkout_started') AND (event_properties_json IS NULL OR json_extract(event_properties_json,'$.product') NOT IN ('subscription','ppv') OR json_extract(event_properties_json,'$.product') IS NULL)",
+ 'checkout without matching earlier paywall': "WITH p AS (SELECT session_id,json_extract(event_properties_json,'$.product') product,min(event_at) earliest FROM user_events WHERE event_name='paywall_viewed' GROUP BY 1,2) SELECT count(*) FROM user_events e LEFT JOIN p ON p.session_id=e.session_id AND p.product=json_extract(e.event_properties_json,'$.product') AND p.earliest<=e.event_at WHERE e.event_name='checkout_started' AND p.session_id IS NULL",
+ 'cancellation outside paid interval': "SELECT count(*) FROM subscription_history h JOIN transactions t ON t.txn_id=h.source_txn_id WHERE h.status='cancel_at_period_end' AND (h.cancelled_at<=t.transaction_at OR h.cancelled_at!=h.effective_start_at OR (h.effective_end_at IS NOT NULL AND h.cancelled_at>=h.effective_end_at))",
 }
 failed=0
 expected={
@@ -133,4 +136,15 @@ else:
 browse=db.execute("WITH v AS (SELECT DISTINCT session_id FROM content_views) SELECT count(*) FROM sessions s LEFT JOIN v USING(session_id) WHERE v.session_id IS NULL").fetchone()[0]
 print('Browsing-only sessions:',browse)
 if browse<1: failed+=1
+sub_paywalls=db.execute("SELECT count(*),sum(NOT EXISTS(SELECT 1 FROM transactions t WHERE t.session_id=e.session_id AND t.transaction_subtype='subscription_initial' AND t.status='succeeded')) FROM user_events e WHERE e.event_name='paywall_viewed' AND json_extract(e.event_properties_json,'$.product')='subscription'").fetchone()
+sub_abandoned=db.execute("SELECT count(*) FROM user_events e WHERE e.event_name='checkout_started' AND json_extract(e.event_properties_json,'$.product')='subscription' AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.session_id=e.session_id AND t.transaction_subtype='subscription_initial' AND t.status='succeeded')").fetchone()[0]
+print('Subscription paywalls and non-purchasers:',sub_paywalls,'abandoned checkouts:',sub_abandoned)
+if not sub_paywalls[1] or not sub_abandoned: failed+=1
+cancel_variation=db.execute("SELECT count(DISTINCT round((julianday(h.cancelled_at)-julianday(t.transaction_at))*24,1)) FROM subscription_history h JOIN transactions t ON t.txn_id=h.source_txn_id WHERE h.status='cancel_at_period_end'").fetchone()[0]
+refund_variation=db.execute("SELECT count(DISTINCT substr(transaction_at,12,8)) FROM transactions WHERE transaction_subtype='subscription_refund'").fetchone()[0]
+print('Distinct cancellation delays (hours, rounded):',cancel_variation,'refund times:',refund_variation)
+if cancel_variation<10 or refund_variation<3: failed+=1
+signup_months=db.execute("SELECT substr(signup_at,1,7),count(*) FROM users WHERE signup_at>='2026-04' AND signup_at<'2026-10' GROUP BY 1 ORDER BY 1").fetchall()
+print('Analysis-window signup cohorts:',signup_months)
+if len(signup_months)!=6: failed+=1
 raise SystemExit(1 if failed else 0)
