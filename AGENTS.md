@@ -12,5 +12,6 @@ This file is the common project entrypoint. Architecture v1.0 is a **frozen desi
 8. Preserve raw data lineage; transformations and derived metrics must have tests and reconciliation.
 9. Do not silently rewrite `docs/architecture/v1.md`: document design changes with new ADRs and a new architecture version.
 10. Do not publicly expose confidential assignment text, proprietary data or keys.
+11. Documentation must state final requirements, decisions, results and limitations directly and consistently. Do not narrate the sequence of edits, add unsolicited interview coaching, or contrast obsolete drafts with the current design. For issue logs, use a factual issue → analytical impact → resolution/limitation format. Keep established rules in the relevant model or contract so they are applied to future generation.
 
-**Current project status:** Design documentation only; SQL tooling, database, evaluation and web UI are pending.
+**Current project status:** Architecture v1 is frozen. A PocketToons fixture generator and validation checks are available; the reviewed SQLite file is local. The analytics agent, shared SQL tooling and evaluation remain pending.
