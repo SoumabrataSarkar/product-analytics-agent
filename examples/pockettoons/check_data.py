@@ -60,6 +60,8 @@ expected={
  'marketing_spend':'date channel spend_usd impressions clicks loaded_at',
  'subscription_history':'subscription_period_id subscription_id user_id effective_start_at subscription_status_updated_at effective_end_at status plan_code source_txn_id cancelled_at recorded_at',
  'transaction_content_attribution':'txn_content_attribution_id txn_id content_id episode_number entitlement_start_at entitlement_end_at attributed_amount_usd attribution_status refunded_at delisted_at',
+ 'raw_payment_source':'txn_id raw_amount raw_unit received_at',
+ 'payment_quality_review':'txn_id issue corrected_amount_usd reason',
  'user_events':'event_id user_id anonymous_id country_at_event event_at event_timezone event_name session_id view_id txn_id subscription_period_id content_id episode_number event_properties_json ingested_at',
 }
 for table,cols in expected.items():
@@ -82,6 +84,8 @@ required={
  'marketing_spend':'date channel spend_usd impressions clicks loaded_at',
  'subscription_history':'subscription_period_id subscription_id user_id effective_start_at subscription_status_updated_at status plan_code recorded_at',
  'transaction_content_attribution':'txn_content_attribution_id txn_id content_id episode_number entitlement_start_at attributed_amount_usd attribution_status',
+ 'raw_payment_source':'txn_id raw_amount raw_unit received_at',
+ 'payment_quality_review':'txn_id issue corrected_amount_usd reason',
  'user_events':'event_id event_at event_name ingested_at',
 }
 for table,cols in required.items():
