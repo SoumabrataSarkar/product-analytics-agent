@@ -3,6 +3,7 @@
 import argparse
 import calendar
 import datetime as dt
+import hashlib
 import random
 import sqlite3
 from pathlib import Path
@@ -27,12 +28,12 @@ def main():
     db = sqlite3.connect(path)
     db.executescript('''
     PRAGMA foreign_keys=ON;
-    CREATE TABLE users(user_id TEXT PRIMARY KEY, signup_date TEXT NOT NULL, signup_at TEXT NOT NULL, country TEXT NOT NULL, country_origin TEXT, country_current TEXT, acquisition_source TEXT NOT NULL, subscription_status TEXT NOT NULL, subscription_start TEXT, subscription_end TEXT);
+    CREATE TABLE users(user_id TEXT PRIMARY KEY, signup_date TEXT NOT NULL, signup_at TEXT NOT NULL, country TEXT NOT NULL, country_origin TEXT, country_current TEXT, acquisition_source TEXT NOT NULL, subscription_status TEXT NOT NULL, subscription_start TEXT, subscription_end TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE anonymous_identities(anonymous_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, retired_at TEXT);
-    CREATE TABLE sessions(session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, date TEXT NOT NULL, session_started_at TEXT NOT NULL, session_ended_at TEXT NOT NULL, last_activity_at TEXT NOT NULL, duration_sec INTEGER NOT NULL, platform TEXT NOT NULL, country_at_event TEXT);
+    CREATE TABLE sessions(session_id TEXT PRIMARY KEY, user_id TEXT REFERENCES users, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, date TEXT NOT NULL, session_started_at TEXT NOT NULL, session_ended_at TEXT, last_activity_at TEXT NOT NULL, duration_sec INTEGER, platform TEXT NOT NULL, country_at_event TEXT);
     CREATE TABLE identity_links(identity_link_id TEXT PRIMARY KEY, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, user_id TEXT NOT NULL REFERENCES users, session_id TEXT NOT NULL REFERENCES sessions, linked_at TEXT NOT NULL, link_method TEXT NOT NULL);
-    CREATE TABLE content_catalog(content_id TEXT PRIMARY KEY, title TEXT NOT NULL, genre TEXT NOT NULL, total_episodes INTEGER NOT NULL, release_date TEXT NOT NULL, first_release_at TEXT NOT NULL, total_duration_sec INTEGER NOT NULL, content_tier TEXT NOT NULL, content_status TEXT NOT NULL);
-    CREATE TABLE content_episodes(content_id TEXT NOT NULL REFERENCES content_catalog, episode_number INTEGER NOT NULL, episode_title TEXT, episode_duration_sec INTEGER NOT NULL, release_at TEXT NOT NULL, access_tier TEXT NOT NULL, episode_status TEXT NOT NULL, ppv_list_price_usd REAL, PRIMARY KEY(content_id,episode_number));
+    CREATE TABLE content_catalog(content_id TEXT PRIMARY KEY, title TEXT NOT NULL, genre TEXT NOT NULL, total_episodes INTEGER NOT NULL, release_date TEXT NOT NULL, first_release_at TEXT NOT NULL, total_duration_sec INTEGER NOT NULL, content_tier TEXT NOT NULL, content_status TEXT NOT NULL, last_release_at TEXT, available_from_at TEXT, available_until_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE content_episodes(content_id TEXT NOT NULL REFERENCES content_catalog, episode_number INTEGER NOT NULL, episode_title TEXT, episode_duration_sec INTEGER NOT NULL, release_at TEXT NOT NULL, access_tier TEXT NOT NULL, episode_status TEXT NOT NULL, ppv_list_price_usd REAL, available_from_at TEXT, available_until_at TEXT, PRIMARY KEY(content_id,episode_number));
     CREATE TABLE content_availability_history(availability_id TEXT PRIMARY KEY, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, available_from_at TEXT NOT NULL, available_until_at TEXT, status TEXT NOT NULL, recorded_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, session_id TEXT NOT NULL REFERENCES sessions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, date TEXT NOT NULL, view_started_at TEXT NOT NULL, view_ended_at TEXT NOT NULL, watch_duration_sec INTEGER NOT NULL, content_duration_sec INTEGER NOT NULL, view_type TEXT NOT NULL, completion_pct REAL, playback_position_start_sec INTEGER NOT NULL, playback_position_end_sec INTEGER, is_first_view_of_episode INTEGER NOT NULL, free_quota_consuming INTEGER NOT NULL, free_quota_sequence INTEGER, event_timezone TEXT, country_at_event TEXT, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE transactions(txn_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, date TEXT NOT NULL, type TEXT NOT NULL, transaction_subtype TEXT NOT NULL, amount_usd REAL NOT NULL, payment_method TEXT NOT NULL, status TEXT NOT NULL, transaction_at TEXT NOT NULL, session_id TEXT REFERENCES sessions, provider_transaction_id TEXT NOT NULL UNIQUE, payment_provider TEXT NOT NULL, currency TEXT NOT NULL, original_amount REAL NOT NULL, related_txn_id TEXT REFERENCES transactions, subscription_id TEXT, list_price_usd REAL, discount_usd REAL, country_at_event TEXT);
@@ -40,7 +41,7 @@ def main():
     CREATE TABLE subscription_history(subscription_period_id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users, effective_start_at TEXT NOT NULL, effective_end_at TEXT, subscription_status_updated_at TEXT NOT NULL, status TEXT NOT NULL, plan_code TEXT NOT NULL, source_txn_id TEXT REFERENCES transactions, cancelled_at TEXT, recorded_at TEXT NOT NULL);
     CREATE TABLE transaction_content_attribution(txn_content_attribution_id TEXT PRIMARY KEY, txn_id TEXT NOT NULL REFERENCES transactions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, entitlement_start_at TEXT NOT NULL, entitlement_end_at TEXT, attributed_amount_usd REAL NOT NULL, attribution_status TEXT NOT NULL, refunded_at TEXT, delisted_at TEXT, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE refund_content_attribution(refund_allocation_id TEXT PRIMARY KEY, refund_txn_id TEXT NOT NULL REFERENCES transactions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, allocated_refund_usd REAL NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
-    CREATE TABLE user_events(event_id TEXT PRIMARY KEY, user_id TEXT REFERENCES users, anonymous_id TEXT REFERENCES anonymous_identities, event_at TEXT NOT NULL, event_name TEXT NOT NULL, session_id TEXT REFERENCES sessions, view_id TEXT REFERENCES content_views, txn_id TEXT REFERENCES transactions, subscription_period_id TEXT REFERENCES subscription_history, content_id TEXT, episode_number INTEGER, event_properties_json TEXT, event_timezone TEXT, country_at_event TEXT, ingested_at TEXT NOT NULL);
+    CREATE TABLE user_events(event_id TEXT PRIMARY KEY, user_id TEXT REFERENCES users, anonymous_id TEXT REFERENCES anonymous_identities, event_at TEXT NOT NULL, event_name TEXT NOT NULL, session_id TEXT REFERENCES sessions, view_id TEXT REFERENCES content_views, txn_id TEXT REFERENCES transactions, subscription_period_id TEXT REFERENCES subscription_history, content_id TEXT REFERENCES content_catalog, episode_number INTEGER, event_properties_json TEXT, event_timezone TEXT, country_at_event TEXT, ingested_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE marketing_spend(date TEXT NOT NULL, channel TEXT NOT NULL, spend_usd REAL NOT NULL, impressions INTEGER NOT NULL, clicks INTEGER NOT NULL, loaded_at TEXT NOT NULL, PRIMARY KEY(date,channel));
     CREATE TABLE raw_payment_source(txn_id TEXT PRIMARY KEY REFERENCES transactions, raw_amount NOT NULL, raw_unit TEXT NOT NULL, received_at TEXT NOT NULL);
     CREATE TABLE payment_quality_review(txn_id TEXT PRIMARY KEY REFERENCES transactions, issue TEXT NOT NULL, corrected_amount_usd REAL NOT NULL, reason TEXT NOT NULL);
@@ -65,9 +66,9 @@ def main():
         country=rng.choice(countries)
         source=rng.choices(['organic','paid_search','paid_social'],weights=([50,27,23] if cohort<3 else [18,17,65]))[0]
         visible='unknown' if i%101==0 else source
-        users.append((f'u{i:05}',t[:10],t,country,country,country,visible,'never_subscribed',None,None))
+        users.append((f'u{i:05}',t[:10],t,country,country,country,visible,'never_subscribed',None,None,t,t))
         truth.append((f'u{i:05}',source))
-    db.executemany('INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?,?)',users)
+    db.executemany('INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',users)
     # Private answer key: no account/source truth is published in the analytics database.
     db.executemany('INSERT INTO anonymous_identities VALUES (?,?,?)',[(f'a{i:05}',u[2],None) for i,u in enumerate(users)])
     start='2026-03-01T00:00:00Z'
@@ -75,12 +76,12 @@ def main():
     episode_counts=[24,32,21,37,28,34,22,39,26,31,23,20]
     for k in range(1,13):
         count=episode_counts[k-1]
-        cid=f'c{k:02}'; catalogs.append((cid,'Skybound' if k==1 else f'Series {k}', ['action','drama','fantasy'][k%3],count,start[:10],start,count*900,'mixed','live'))
+        cid=f'c{k:02}'; catalogs.append((cid,'Skybound' if k==1 else f'Series {k}', ['action','drama','fantasy'][k%3],count,start[:10],start,count*900,'mixed','live',start,start,None,start,start))
         for ep in range(1,count+1):
-            episodes.append((cid,ep,f'Episode {ep}',900,start,'free' if ep<=12 else 'premium','live',None if ep<=12 else 1.99))
+            episodes.append((cid,ep,f'Episode {ep}',900,start,'free' if ep<=12 else 'premium','live',None if ep<=12 else 1.99,start,None))
             availability.append((f'av{k:02}_{ep:02}',cid,ep,start,None,'live',start))
-    db.executemany('INSERT INTO content_catalog VALUES (?,?,?,?,?,?,?,?,?)',catalogs)
-    db.executemany('INSERT INTO content_episodes VALUES (?,?,?,?,?,?,?,?)',episodes)
+    db.executemany('INSERT INTO content_catalog VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',catalogs)
+    db.executemany('INSERT INTO content_episodes VALUES (?,?,?,?,?,?,?,?,?,?)',episodes)
     db.executemany('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',availability)
     # Non-rounded targets retain approximately 20% quarter-average MAU growth.
     # A balanced sample of users signed up before each month yields real cohorts.
@@ -124,7 +125,7 @@ def main():
             db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',(period+'_cancel',subid,uid,request,ended,request,'cancel_at_period_end','monthly_9_99',txnid,request,request))
     for i in first_start:
         status='active' if i in current else 'expired'
-        db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=? WHERE user_id=?',(status,last_start[i],None if i in current else cancelled.get(i),f'u{i:05}'))
+        db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],None if i in current else cancelled.get(i),last_start[i] if i in current else cancelled.get(i),f'u{i:05}'))
     seen=set(); sessions=[]; views=[]; view_pairs=[]; events=[]; links=[]; spend=[]
     zones={'US':'America/New_York','BR':'America/Sao_Paulo','MX':'America/Mexico_City','PH':'Asia/Manila','ID':'Asia/Jakarta','TH':'Asia/Bangkok'}
     for mi,(_,month) in enumerate(MONTHS):
@@ -160,6 +161,23 @@ def main():
     db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',views)
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',events)
     db.executemany('INSERT INTO marketing_spend VALUES (?,?,?,?,?,?)',spend)
+    # Initial subscriptions are started in an app session: paywall, checkout,
+    # successful payment, then a premium view. Renewal payments remain off-session.
+    for row in txns:
+        if row[4]!='subscription_initial': continue
+        tid,uid,paid_at=row[0],row[1],row[8]
+        aid='a'+uid[1:]; country=row[18]; start_session=offset(paid_at,-120); end=offset(paid_at,1080)
+        sid='s_'+tid; vid='v_'+tid; period=f'h_{int(paid_at[5:7])}_{uid}'
+        db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,start_session[:10],start_session,end,end,1200,'android',country))
+        db.execute('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',('l_'+sid,aid,uid,sid,start_session,'login'))
+        db.execute('UPDATE transactions SET session_id=? WHERE txn_id=?',(sid,tid))
+        for name,when in [('app_opened',start_session),('paywall_viewed',offset(paid_at,-90)),('checkout_started',offset(paid_at,-30)),('subscription_started',paid_at)]:
+            db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',
+                (f'{name}_{tid}',uid,aid,when,name,sid,None,tid if name=='subscription_started' else None,
+                 period if name=='subscription_started' else None,None,None,'{"product":"subscription"}',zones[country],country,when))
+        vt=offset(paid_at,120); ve=offset(vt,480)
+        db.execute('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',
+            (vid,uid,aid,sid,'c03',13,vt[:10],vt,ve,480,900,'sub',round(480/900,4),0,480,1,0,None,zones[country],country))
     # One fifth of users return in a later session on the same UTC day and resume
     # the same episode without using a second free-quota slot.
     repeat_sessions=[]; repeat_views=[]; repeat_links=[]; repeat_events=[]
@@ -254,6 +272,9 @@ def main():
     db.execute('UPDATE content_availability_history SET available_until_at=? WHERE content_id=? AND episode_number=?',(removed,'c12',20))
     db.execute('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',('av_c12_20_gap','c12',20,removed,returned,'delisted',removed))
     db.execute('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',('av_c12_20_return','c12',20,returned,None,'live',returned))
+    db.execute('UPDATE content_episodes SET available_from_at=?,available_until_at=NULL WHERE content_id=? AND episode_number=?',(returned,'c12',20))
+    notice=timestamp(9,3,12)
+    db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',('event_delisting_notice',uid,None,notice,'content_delisting_notice',None,None,'ppv_4_39',None,'c12',20,'{"scheduled_delisting_at":"2026-09-10T00:00:00Z"}',None,users[i][3],notice))
     db.execute("UPDATE transaction_content_attribution SET entitlement_end_at=?,delisted_at=?,attribution_status='expired_delisting' WHERE txn_id='ppv_4_39'",(removed,removed))
     start_session=offset(purchase,-120)
     db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,purchase[:10],start_session,end,end,1320,'web',users[i][3]))
@@ -343,12 +364,23 @@ def main():
                    (f'p_{tid}',tid,'succeeded',approved,approved,f'provider_{tid}'))
         db.execute('UPDATE subscription_history SET effective_end_at=? WHERE subscription_period_id=?',(approved,period))
         db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                   (f'h_refund_{month}',subid,uid,approved,old_end,approved,'refunded',
+                   (f'h_refund_{month}',subid,uid,approved,None,approved,'refunded',
                     'monthly_9_99',tid,cancelled_at,approved))
-        db.execute('UPDATE users SET subscription_status=?,subscription_end=? WHERE user_id=?',('refunded',approved,uid))
+        db.execute('UPDATE users SET subscription_status=?,subscription_end=?,updated_at=? WHERE user_id=?',('refunded',approved,approved,uid))
         db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',
                    (f'event_request_{tid}',uid,None,requested,'refund_requested',None,None,charge,None,None,None,None,None,country,requested))
         sub_refunds.append(refund)
+    refunded_users={row[1] for row in sub_refunds}
+    for i,expired_at in cancelled.items():
+        uid=f'u{i:05}'
+        if uid in refunded_users: continue
+        db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                   (f'h_expired_{uid}',f'sub_{uid}',uid,expired_at,None,expired_at,'expired','monthly_9_99',None,None,expired_at))
+    # Optional session metadata exists in the model even when a value is unknown.
+    db.execute('ALTER TABLE sessions ADD COLUMN device_id_hash TEXT')
+    db.execute('ALTER TABLE sessions ADD COLUMN app_version TEXT')
+    db.create_function('demo_device_hash',1,lambda value: hashlib.sha256(('synthetic-device:'+value).encode()).hexdigest())
+    db.execute("UPDATE sessions SET device_id_hash=demo_device_hash(anonymous_id), app_version=CASE WHEN date<'2026-07-01' THEN '1.1.0' ELSE '1.2.0' END")
     db.execute('ALTER TABLE transactions ADD COLUMN refund_reason TEXT')
     reasons=['did_not_like_content','accidental_purchase','poor_playback_quality']
     refund_ids=[r[0] for r in ppv+sub_refunds if r[3]=='refund']
