@@ -24,7 +24,7 @@ erDiagram
     ANONYMOUS_IDENTITIES ||--o{ SESSIONS : starts
     ANONYMOUS_IDENTITIES ||--o{ IDENTITY_LINKS : links
     USERS ||--o{ IDENTITY_LINKS : identifies
-    USERS o|--o{ CONTENT_VIEWS : watches
+    USERS ||--o{ CONTENT_VIEWS : watches
     SESSIONS ||--o{ CONTENT_VIEWS : contains
     CONTENT_CATALOG ||--o{ CONTENT_EPISODES : contains
     CONTENT_EPISODES ||--o{ CONTENT_VIEWS : viewed
@@ -187,14 +187,14 @@ erDiagram
 
 ### Entitlement precedence at a view start
 
-First verify the episode is live, then apply the first matching rule:
+Playback requires an authenticated account. If a visitor is not logged in, record a login-required event and create no content view. After login, verify the episode is live, then apply the first matching rule:
 
 1. An active subscription unlocks all episodes (`view_type = 'sub'`).
 2. Otherwise, a valid PPV purchase unlocks that premium episode (`'ppv'`).
-3. Otherwise, a free-tier episode is `'free'` if it already consumed a slot for this identity today, or fewer than eight distinct free-tier episodes have consumed slots today. A retry or resume of a counted episode is allowed even when all slots are used.
+3. Otherwise, a free-tier episode is `'free'` if it already consumed a slot for this user today, or fewer than eight distinct free-tier episodes have consumed slots today across all devices. A retry or resume of a counted episode is allowed even when all slots are used.
 4. Premium playback without subscription or PPV is blocked, regardless of free slots. A new free-tier episode is blocked after eight slots. Record blocked attempts as `playback_blocked` events.
 
-Quota identity is the signed-in user when known and otherwise the anonymous ID. At login, same-session anonymous quota usage is linked to the account and counts toward its UTC-day quota, without counting the same episode twice. If combined prior usage already exceeds eight, preserve past views and block additional new episodes until reset; never transfer usage between different signed-in users.
+The quota is keyed to `user_id` across all devices and sessions, resetting at 00:00 UTC. Anonymous browsing consumes no quota because anonymous playback is not allowed. Retries of the same free-tier episode on the same UTC day consume no additional slot. Separate accounts have separate quotas; account sharing or creation of multiple accounts is outside this rule.
 
 Active subscribers pay no PPV charge for viewing. A PPV purchase remains valid if the user later subscribes; no automatic credit is assumed. Delisting ends the entitlement permanently at the delisting time; after relisting the user must buy it again. A prior delisting warning is a separate event. A refund request is an event; a succeeded refund creates a linked negative transaction and ends the relevant access at its effective time. A denied refund leaves access unchanged. Views already recorded are retained.
 
@@ -246,7 +246,7 @@ A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL 
 
 `anonymous_identities`: one pseudonymous installation/browser identity, with `anonymous_id` (TEXT PK), `created_at` (UTC, required), and `retired_at` (UTC, nullable). An ID is not necessarily a person.
 
-`identity_links`: one observed login/signup link, with `identity_link_id` (PK), `anonymous_id`, `user_id`, `session_id` (all required FKs), `linked_at` (required UTC timestamp), and `link_method` (`login` or `signup`). A link resolves only unassigned pre-login activity in that same session; retain the original anonymous ID and raw NULL user ID. A derived layer resolves the user and retains link time. Different accounts on a shared device remain distinct; ambiguous activity stays unresolved. Links do not automatically claim other sessions.
+`identity_links`: one observed login/signup link, with `identity_link_id` (PK), `anonymous_id`, `user_id`, `session_id` (all required FKs), `linked_at` (required UTC timestamp), and `link_method` (`login` or `signup`). A link resolves only unassigned pre-login browsing and login-related activity in that same session; anonymous playback is prohibited; retain the original anonymous ID and raw NULL user ID. A derived layer resolves the user and retains link time. Different accounts on a shared device remain distinct; ambiguous activity stays unresolved. Links do not automatically claim other sessions.
 
 ### 4.3 `content_catalog` — assignment-mandated
 
@@ -302,12 +302,12 @@ A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL 
 
 ### 4.4 `content_views` — assignment-mandated, session-linked
 
-**Grain:** one playback attempt that passes entitlement and reaches a measurable start; a resume in a later session is another row. **Primary key:** `view_id`. **Foreign keys:** optional `user_id → users`, required `anonymous_id → anonymous_identities`, `session_id → sessions`, and (`content_id`, `episode_number`) → `content_episodes`.
+**Grain:** one playback attempt that passes entitlement and reaches a measurable start; a resume in a later session is another row. **Primary key:** `view_id`. **Foreign keys:** required `user_id → users`, required `anonymous_id → anonymous_identities`, `session_id → sessions`, and (`content_id`, `episode_number`) → `content_episodes`.
 
 | Column | Type | Null? | Definition / rule |
 |---|---|---:|---|
 | `view_id` | TEXT | no | Immutable primary key. |
-| `user_id` | TEXT | yes | Authenticated viewer at event time; NULL before login. Resolve through the session link later. |
+| `user_id` | TEXT | no | Authenticated viewer at playback start; anonymous playback creates no view. |
 | `anonymous_id` | TEXT | no | Pseudonymous session identity. |
 | `content_id` | TEXT | no | Series/title viewed. |
 | `episode_number` | INTEGER | no | 1..`content_catalog.total_episodes`. |
@@ -321,9 +321,9 @@ A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL 
 | `completion_pct` | NUMERIC | yes | Unique content consumed divided by episode length, 0..1, if player coverage is known. |
 | `playback_position_start_sec` | INTEGER | no | Resume position, >= 0. |
 | `playback_position_end_sec` | INTEGER | yes | Final position when known; can be less than start after rewinding. |
-| `is_first_view_of_episode` | BOOLEAN | no | First known view for resolved identity; recompute after identity links or late arrivals. |
-| `free_quota_consuming` | BOOLEAN | no | Derived after identity resolution; true only for the first free-tier view of this episode by the identity that UTC day. |
-| `free_quota_sequence` | INTEGER | yes | Slot 1–8 when known; NULL otherwise, including pre-link usage exceeding eight after identity merge. |
+| `is_first_view_of_episode` | BOOLEAN | no | First known valid view by the user for this episode; recompute after late arrivals. |
+| `free_quota_consuming` | BOOLEAN | no | True only for the user's first free-tier view of this episode that UTC day, across all devices and sessions. |
+| `free_quota_sequence` | INTEGER | yes | Slot 1–8 for a quota-consuming free view; NULL otherwise. |
 | `event_timezone` | TEXT | yes | IANA timezone reported at event time, when known; context only. |
 | `country_at_event` | TEXT | yes | Country observed at playback, if known. |
 
@@ -439,7 +439,7 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `users` | `sessions` | 1 : 0..N | child optional | NULL before login; session-scoped link resolves prior anonymous activity. |
 | `anonymous_identities`, `users`, `sessions` | `identity_links` | 1 : 0..N each | child yes | One login links only the same session's prior anonymous actions. |
 | `sessions` | `content_views` | 1 : 0..N | child yes | Every valid view is within exactly one session. |
-| `users` | `content_views` | 1 : 0..N | child optional | NULL before login; resolve through session link. |
+| `users` | `content_views` | 1 : 0..N | child yes | Every view belongs to the authenticated account at playback start. |
 | `content_catalog` | `content_episodes` | 1 : 0..N | child yes | Episodes belong to one title. |
 | `content_episodes` | `content_views` | 1 : 0..N | child yes | Composite key identifies the exact episode. |
 | `content_episodes` | `transaction_content_attribution` | 1 : 0..N | child yes | Composite key identifies the purchased episode. |
@@ -523,7 +523,7 @@ These tests are requirements for the future generator/loader, not implementation
 |---|---|
 | Primary-key uniqueness | Every declared PK has zero duplicates and zero nulls. |
 | FK coverage | All non-null foreign keys resolve to exactly one parent. |
-| Identity resolution | Each session has an anonymous ID; pre-login activity resolves only via the same-session link. Shared-device users must never cross-link. |
+| Identity resolution | Pre-login browsing resolves only through its same-session link; each view has an authenticated user. Shared-device accounts never cross-link. |
 | Session chronology | Open sessions have NULL end/duration; closed sessions end at last activity. A gap of 30 minutes starts a new session; playback heartbeats count as activity. |
 | View chronology | View start/end lies within or touches session bounds by an allowed client-clock tolerance. |
 | Episode validity | Every view/attribution composite episode key resolves to `content_episodes`. |
@@ -540,7 +540,8 @@ These tests are requirements for the future generator/loader, not implementation
 | Delist/relist | Delisting ends PPV entitlement; relisting requires a new purchase. |
 | Timeline ownership | Each business moment appears once even if linked in multiple sources. |
 | Entitlement correctness | Every `view_type='sub'` has an access-granting subscription as of view start; every `'ppv'` has an active successful PPV entitlement; every `'free'` obeys the first-eight UTC-day rule. |
-| Free-cap test | No identity starts a ninth new free-tier episode in a UTC day; already-counted episodes may be resumed. Test identity merges and premium blocking. |
+| Free-cap test | No user starts a ninth new free-tier episode in a UTC day across all devices; already-counted episodes may be resumed. Test concurrent devices and premium blocking. |
+| Authentication | No anonymous playback produces a content view; login-required attempts are recorded as events. Every view's user matches the account authenticated at playback time. |
 | Transaction/session consistency | If `transactions.session_id` is present, it belongs to the same `user_id`; null is permitted only for documented off-session flows. |
 | Event reference consistency | Each populated reference exists and agrees with its known or session-resolved identity. |
 | Marketing plausibility | `spend_usd >= 0`, `impressions >= 0`, and `0 <= clicks <= impressions`; daily channel key is unique. |
