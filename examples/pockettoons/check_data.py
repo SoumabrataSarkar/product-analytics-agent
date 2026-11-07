@@ -30,6 +30,13 @@ checks={
  'failed payments with entitlements': "SELECT count(*) FROM transactions t JOIN transaction_content_attribution a USING(txn_id) WHERE t.status!='succeeded'",
  'blocked active subscribers': "SELECT count(*) FROM user_events e JOIN subscription_history h ON h.user_id=e.user_id AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<=e.event_at AND (h.effective_end_at IS NULL OR h.effective_end_at>e.event_at) WHERE e.event_name='playback_blocked'",
  'blocked valid PPV entitlements': "SELECT count(*) FROM user_events e JOIN transactions t ON t.user_id=e.user_id AND t.type='ppv' AND t.status='succeeded' JOIN transaction_content_attribution a ON a.txn_id=t.txn_id AND a.content_id=e.content_id AND a.episode_number=e.episode_number AND a.entitlement_start_at<=e.event_at AND (a.entitlement_end_at IS NULL OR a.entitlement_end_at>e.event_at) WHERE e.event_name='playback_blocked'",
+ 'subscriber charged PPV': "SELECT count(*) FROM transactions t JOIN subscription_history h ON h.user_id=t.user_id AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<=t.transaction_at AND (h.effective_end_at IS NULL OR h.effective_end_at>t.transaction_at) WHERE t.type='ppv' AND t.status='succeeded'",
+ 'user events outside session': "SELECT count(*) FROM user_events e JOIN sessions s USING(session_id) WHERE e.event_at<s.session_started_at OR e.event_at>s.session_ended_at OR (e.user_id IS NOT NULL AND e.user_id!=s.user_id)",
+ 'refund request points to future transaction': "SELECT count(*) FROM user_events e JOIN transactions t USING(txn_id) WHERE e.event_name='refund_requested' AND e.event_at<t.transaction_at",
+ 'refund without prior linked request': "SELECT count(*) FROM transactions r WHERE r.type='refund' AND NOT EXISTS(SELECT 1 FROM user_events e WHERE e.event_name='refund_requested' AND e.txn_id=r.related_txn_id AND e.event_at<=r.transaction_at AND e.event_at>=(SELECT transaction_at FROM transactions t WHERE t.txn_id=r.related_txn_id))",
+ 'successful PPV without checkout': "WITH x AS (SELECT session_id,min(event_at) ts FROM user_events WHERE event_name='checkout_started' AND session_id IS NOT NULL GROUP BY session_id) SELECT count(*) FROM transactions t LEFT JOIN x ON x.session_id=t.session_id AND x.ts<=t.transaction_at WHERE t.type='ppv' AND t.status='succeeded' AND x.session_id IS NULL",
+ 'session without app open': "WITH x AS (SELECT DISTINCT session_id FROM user_events WHERE event_name='app_opened' AND session_id IS NOT NULL) SELECT count(*) FROM sessions s LEFT JOIN x ON x.session_id=s.session_id WHERE x.session_id IS NULL",
+ 'views without timezone': "SELECT count(*) FROM content_views WHERE event_timezone IS NULL",
 }
 failed=0
 for name,sql in checks.items():
@@ -59,12 +66,19 @@ if boundary<1: failed+=1
 nonbuyer=db.execute("SELECT count(*) FROM user_events e WHERE e.event_name='paywall_viewed' AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.session_id=e.session_id AND t.type='ppv' AND t.status='succeeded')").fetchone()[0]
 print('Paywall views without a successful PPV in session:',nonbuyer)
 if nonbuyer<1: failed+=1
-print('30-day cohort comparison:')
-cohorts=db.execute("""SELECT CASE WHEN substr(u.signup_at,1,7)='2026-03' THEN 'March' ELSE 'July-August' END cohort,
+print('30-day cohort comparison (complete observation windows):')
+cohorts=db.execute("""SELECT CASE WHEN substr(u.signup_at,1,7) IN ('2026-05','2026-06') THEN 'May-June' ELSE 'July-August' END cohort,
 count(*) users,sum(EXISTS (SELECT 1 FROM transactions t WHERE t.user_id=u.user_id
 AND t.transaction_subtype='subscription_initial' AND t.status='succeeded'
 AND julianday(t.transaction_at)>=julianday(u.signup_at) AND julianday(t.transaction_at)<julianday(u.signup_at)+30)) payers
-FROM users u WHERE substr(u.signup_at,1,7) IN ('2026-03','2026-07','2026-08') GROUP BY 1""").fetchall()
+FROM users u WHERE substr(u.signup_at,1,7) IN ('2026-05','2026-06','2026-07','2026-08')
+AND julianday(u.signup_at)+30<=julianday('2026-10-01') GROUP BY 1""").fetchall()
 for name,users,payers in cohorts: print(name,users,payers,round(payers/users*100,2),'%')
 if len(cohorts)!=2: failed+=1
+else:
+    rates={name:payers/users for name,users,payers in cohorts}
+    if rates['May-June']<=rates['July-August']+0.003: failed+=1
+browse=db.execute("WITH v AS (SELECT DISTINCT session_id FROM content_views) SELECT count(*) FROM sessions s LEFT JOIN v USING(session_id) WHERE v.session_id IS NULL").fetchone()[0]
+print('Browsing-only sessions:',browse)
+if browse<1: failed+=1
 raise SystemExit(1 if failed else 0)
