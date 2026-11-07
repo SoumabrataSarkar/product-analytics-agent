@@ -16,6 +16,8 @@ The six assignment tables and their required fields are retained exactly, with a
 
 ### Entity relationship diagram
 
+The diagram shows the UTC timestamps used as the source of truth. Assignment-required date columns are derived from these timestamps and are listed in the column-level schema; they need not be separately captured in the raw layer. Daily marketing spend is an exception: its source is already a daily aggregate, so its reporting date describes the whole period and cannot provide a true event time.
+
 ```mermaid
 erDiagram
     USERS ||--o{ SESSIONS : starts
@@ -41,7 +43,7 @@ erDiagram
 
     USERS {
       text user_id PK
-      date signup_date
+      timestamp signup_at
       text country
       text acquisition_source
       text subscription_status
@@ -51,7 +53,8 @@ erDiagram
     SESSIONS {
       text session_id PK
       text user_id FK
-      date date
+      timestamp session_started_at
+      timestamp session_ended_at
       integer duration_sec
       text platform
     }
@@ -95,7 +98,8 @@ erDiagram
       text session_id FK
       text content_id FK
       integer episode_number
-      date date
+      timestamp view_started_at
+      timestamp view_ended_at
       integer watch_duration_sec
       integer content_duration_sec
       text view_type
@@ -103,7 +107,7 @@ erDiagram
     TRANSACTIONS {
       text txn_id PK
       text user_id FK
-      date date
+      timestamp transaction_at
       text type
       numeric amount_usd
       text payment_method
@@ -114,7 +118,10 @@ erDiagram
       text title
       text genre
       integer total_episodes
-      date release_date
+      timestamp first_release_at
+      timestamp last_release_at
+      timestamp available_from_at
+      timestamp available_until_at
       text content_tier
     }
     MARKETING_SPEND {
@@ -132,10 +139,20 @@ erDiagram
 
 ### IDs and timestamps
 
+| Business occurrence | Authoritative UTC timestamp | Assignment-required derived date |
+|---|---|---|
+| User signup | `users.signup_at` | `users.signup_date` |
+| Session | `sessions.session_started_at` and `session_ended_at` | `sessions.date` from start |
+| Content view | `content_views.view_started_at` and `view_ended_at` | `content_views.date` from start |
+| Transaction | `transactions.transaction_at` | `transactions.date` |
+| Series release | `content_catalog.first_release_at` | `content_catalog.release_date` |
+| Episode release | `content_episodes.release_at` | No separate date required |
+
+
 - IDs are immutable opaque strings (for example, UUIDs); do not infer a timestamp, country, or source from an ID.
 - Store all event timestamps in UTC as ISO-8601 timestamps. Assignment-mandated `date` fields are UTC calendar dates derived from the canonical timestamp, retained for simple daily analysis.
 - The v1 free quota resets at 00:00 UTC for everyone. This is a chosen product rule for the synthetic case; it means the reset occurs at different local clock times. Event timezone is retained as context for later local-time analysis, not used to calculate this quota.
-- Assignment-required date fields are derived compatibility fields; raw event timestamps remain the source of truth. A daily marketing report retains its source reporting date and must be explicitly normalized to UTC only if its source supports it.
+- Assignment-required date fields are derived compatibility fields (for example, exposed in a view); they are not separately captured in the raw layer. Raw event timestamps remain the source of truth. A daily marketing report retains its source reporting date and must be explicitly normalized to UTC only if its source supports it.
 - `users` is one row per user. Facts are append-only except for documented correction fields; no facts are overwritten to represent a new business event.
 
 ### Entitlement precedence at a view start
