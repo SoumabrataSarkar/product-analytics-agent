@@ -2,7 +2,7 @@
 
 An LLM-agnostic product analytics agent using shared analytical skills, metric definitions, and evidence-backed multi-step reasoning to investigate business questions, query data, identify root causes, and recommend actions.
 
-> **Project status:** Architecture v1.0 frozen on 2026-11-07; the analytics agent, synthetic database and query tooling are **not implemented yet**. This is initially a **private** repository.
+> **Project status:** Architecture v1.0 is frozen. The PocketToons synthetic-data generator and validation checks are available; the reviewed SQLite file is local. The analytics agent, shared query tooling and evaluation are pending. This is a private repository.
 
 ## Start here
 
@@ -11,6 +11,9 @@ An LLM-agnostic product analytics agent using shared analytical skills, metric d
 - [Architecture Decision Records](docs/architecture/decisions/)
 - [Architecture evaluation template](docs/evaluations/architecture-review-template.md)
 - [Coding-agent guidance](AGENTS.md) · [Claude entrypoint](CLAUDE.md)
+- [PocketToons data-model contract](docs/examples/pockettoons-reference-data-model-v1.md)
+- [PocketToons dataset and validation](examples/pockettoons/README.md)
+- [Data-generation issue log](docs/examples/pockettoons-data-generation-issue-log.md)
 - [Architecture Explorer (HTML)](web/index.html) · [Web scope](web/README.md)
 
 ## System concept
@@ -38,7 +41,7 @@ The committed [`web/index.html`](web/index.html) is a **static documentation pro
 ## Planned work
 
 1. Data Catalog and canonical Metric Registry.
-2. Reproducible synthetic data and Bronze/Silver/Gold SQLite transformations.
+2. PocketToons synthetic-data generation, validation and Bronze/Silver/Gold SQLite transformations.
 3. Shared bounded SQL and evidence tools.
 4. Runnable analytical skill and independent evaluation (15+ questions).
 5. Board-ready investigation output and secure optional web integration.
