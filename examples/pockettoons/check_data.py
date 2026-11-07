@@ -25,6 +25,11 @@ checks={
  'views before login': 'SELECT count(*) FROM content_views v WHERE NOT EXISTS(SELECT 1 FROM identity_links l WHERE l.session_id=v.session_id AND l.user_id=v.user_id AND l.linked_at<=v.view_started_at)',
  'transactions before signup': 'SELECT count(*) FROM transactions t JOIN users u USING(user_id) WHERE t.transaction_at<u.signup_at',
  'subscription history overlap': "SELECT count(*) FROM subscription_history a JOIN subscription_history b ON a.user_id=b.user_id AND a.subscription_period_id<b.subscription_period_id AND a.effective_start_at<coalesce(b.effective_end_at,'9999') AND b.effective_start_at<coalesce(a.effective_end_at,'9999')",
+ 'overlapping or too-close sessions': "SELECT count(*) FROM (SELECT user_id,session_started_at,LAG(session_ended_at) OVER (PARTITION BY user_id ORDER BY session_started_at) prev_end FROM sessions) WHERE (julianday(session_started_at)-julianday(prev_end))*86400 < 1799",
+ 'unreconciled raw data issues': "SELECT count(*) FROM payment_quality_review q JOIN transactions t USING(txn_id) WHERE abs(q.corrected_amount_usd-t.amount_usd)>0.001",
+ 'failed payments with entitlements': "SELECT count(*) FROM transactions t JOIN transaction_content_attribution a USING(txn_id) WHERE t.status!='succeeded'",
+ 'blocked active subscribers': "SELECT count(*) FROM user_events e JOIN subscription_history h ON h.user_id=e.user_id AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<=e.event_at AND (h.effective_end_at IS NULL OR h.effective_end_at>e.event_at) WHERE e.event_name='playback_blocked'",
+ 'blocked valid PPV entitlements': "SELECT count(*) FROM user_events e JOIN transactions t ON t.user_id=e.user_id AND t.type='ppv' AND t.status='succeeded' JOIN transaction_content_attribution a ON a.txn_id=t.txn_id AND a.content_id=e.content_id AND a.episode_number=e.episode_number AND a.entitlement_start_at<=e.event_at AND (a.entitlement_end_at IS NULL OR a.entitlement_end_at>e.event_at) WHERE e.event_name='playback_blocked'",
 }
 failed=0
 for name,sql in checks.items():
@@ -45,4 +50,21 @@ print('Monthly paid-social active users and unknown-source users:',monthly)
 lower_q2=sum(x[1] for x in monthly[3:]); upper_q1=sum(x[1]+x[2] for x in monthly[:3])
 print('Worst-case paid-social growth:', 'PASS' if lower_q2>upper_q1 else 'FAIL')
 if lower_q2<=upper_q1: failed+=1
+days=db.execute('SELECT count(DISTINCT date) FROM sessions').fetchone()[0]
+print('Days with sessions:',days,'of 183')
+if days!=183: failed+=1
+boundary=db.execute("SELECT COUNT(*) FROM user_events e WHERE e.event_name='playback_blocked' AND e.event_properties_json LIKE '%daily_free_quota_exhausted%' AND (SELECT COUNT(DISTINCT v.content_id||':'||v.episode_number) FROM content_views v WHERE v.user_id=e.user_id AND v.date=substr(e.event_at,1,10) AND v.view_type='free' AND v.view_started_at<e.event_at)=8").fetchone()[0]
+print('Verified quota boundary journeys:',boundary)
+if boundary<1: failed+=1
+nonbuyer=db.execute("SELECT count(*) FROM user_events e WHERE e.event_name='paywall_viewed' AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.session_id=e.session_id AND t.type='ppv' AND t.status='succeeded')").fetchone()[0]
+print('Paywall views without a successful PPV in session:',nonbuyer)
+if nonbuyer<1: failed+=1
+print('30-day cohort comparison:')
+cohorts=db.execute("""SELECT CASE WHEN substr(u.signup_at,1,7)='2026-03' THEN 'March' ELSE 'July-August' END cohort,
+count(*) users,sum(EXISTS (SELECT 1 FROM transactions t WHERE t.user_id=u.user_id
+AND t.transaction_subtype='subscription_initial' AND t.status='succeeded'
+AND julianday(t.transaction_at)>=julianday(u.signup_at) AND julianday(t.transaction_at)<julianday(u.signup_at)+30)) payers
+FROM users u WHERE substr(u.signup_at,1,7) IN ('2026-03','2026-07','2026-08') GROUP BY 1""").fetchall()
+for name,users,payers in cohorts: print(name,users,payers,round(payers/users*100,2),'%')
+if len(cohorts)!=2: failed+=1
 raise SystemExit(1 if failed else 0)
