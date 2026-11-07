@@ -196,7 +196,7 @@ Playback requires an authenticated account. If a visitor is not logged in, recor
 
 The quota is keyed to `user_id` across all devices and sessions, resetting at 00:00 UTC. Anonymous browsing consumes no quota because anonymous playback is not allowed. Retries of the same free-tier episode on the same UTC day consume no additional slot. Separate accounts have separate quotas; account sharing or creation of multiple accounts is outside this rule.
 
-Active subscribers pay no PPV charge for viewing. A PPV purchase remains valid if the user later subscribes; no automatic credit is assumed. Delisting ends the entitlement permanently at the delisting time; after relisting the user must buy it again. A prior delisting warning is a separate event. A refund request is an event; a succeeded refund creates a linked negative transaction and ends the relevant access at its effective time. A denied refund leaves access unchanged. Views already recorded are retained.
+Active subscribers pay no PPV charge for viewing. A PPV purchase remains valid if the user later subscribes; no automatic credit is assumed. Delisting ends the entitlement permanently at the delisting time; after relisting the user must buy it again. A prior delisting warning is a separate event. A refund request is an event; a succeeded refund creates a linked positive-amount refund transaction and ends the relevant access at its effective time. A denied refund leaves access unchanged. Views already recorded are retained.
 
 The stored `content_views.view_type` records the decision at view start and is never retroactively relabelled by a later cancellation/refund. Recalculated “as-of” access must use the history tables below.
 
@@ -337,9 +337,9 @@ A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL 
 | `user_id` | TEXT | no | Purchaser/refund recipient. |
 | `date` | DATE | no | UTC date of `transaction_at` (assignment field). |
 | `type` | TEXT | no | `subscription`, `ppv`, `refund`. |
-| `amount_usd` | NUMERIC(12,2) | no | Signed ledger amount: charge > 0; refund < 0. |
+| `amount_usd` | NUMERIC(12,2) | no | Positive amount for both charges and refunds. Net revenue subtracts successful refunds from successful charges. |
 | `payment_method` | TEXT | no | `apple_app_store`, `google_play`, `credit_debit_card`, `paypal`, `wallet`, `other`. |
-| `status` | TEXT | no | Current state: `pending`, `succeeded`, `failed`, `voided`; history is in `payment_status_history`. A refund is its own negative row. |
+| `status` | TEXT | no | Current state: `pending`, `succeeded`, `failed`, `voided`; history is in `payment_status_history`. A refund is its own positive-amount row. |
 | `transaction_subtype` | TEXT | no | `subscription_initial`, `subscription_renewal`, `ppv_episode_purchase`, `subscription_refund`, `ppv_refund`. |
 | `payment_provider` | TEXT | no | Provider processing the payment. |
 | `list_price_usd` | NUMERIC(12,2) | yes | Listed price at purchase, before discount. |
@@ -351,6 +351,7 @@ A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL 
 | `currency` | TEXT | no | Original ISO currency; v1 synthetic data uses `USD`. |
 | `original_amount` | NUMERIC(12,2) | no | Amount in original currency before USD normalization. |
 | `related_txn_id` | TEXT | yes | Original charge for a refund; self-FK to `transactions.txn_id`. |
+| `refund_reason` | TEXT | yes | For refunds: `did_not_like_content`, `accidental_purchase`, or `poor_playback_quality`; NULL for purchases. Reasons are reported by the customer, not independently verified causes. |
 | `subscription_id` | TEXT | yes | Logical subscription identifier for subscription charges or related refunds. |
 
 ### 4.5a `payment_status_history`
@@ -359,7 +360,7 @@ One row per status transition: `payment_status_event_id` (TEXT PK), `txn_id` (re
 
 ### 4.5b `refund_content_attribution`
 
-One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn_id` (required FK → transactions), `content_id` and `episode_number` (required composite FK → content_episodes), `allocated_refund_usd` (required negative amount). The refund's `related_txn_id` points to the original PPV purchase; the episode must match its attribution. Allocate a single-episode refund fully to that episode. Partial refunds are allowed, with total succeeded refunds capped at the original charge; a successful partial or full PPV refund ends that episode's entitlement at its effective time. Subscription refunds have no episode allocation. Bundle allocation is deferred.
+One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn_id` (required FK → transactions), `content_id` and `episode_number` (required composite FK → content_episodes), `allocated_refund_usd` (required positive amount). The refund's `related_txn_id` points to the original PPV purchase; the episode must match its attribution. Allocate a single-episode refund fully to that episode. Partial refunds are allowed, with total succeeded refunds capped at the original charge; a successful partial or full PPV refund ends that episode's entitlement at its effective time. Subscription refunds have no episode allocation. Bundle allocation is deferred.
 
 ### 4.6 `marketing_spend` — assignment-mandated
 
@@ -469,8 +470,8 @@ Facts have different grains. Never join several one-to-many children and aggrega
 
 | Question / metric | Safe driving grain | Safe pattern | Avoid |
 |---|---|---|---|
-| Revenue by user/day | `transactions` | Count each succeeded charge/refund once at success effective time; refunds are signed reversals. | Joining transactions directly to views/events. |
-| PPV revenue by episode | attribution | UNION ALL purchase allocations and negative refund allocations, then aggregate by episode. | Repeating `transactions.amount_usd` once per attribution row. |
+| Revenue by user/day | `transactions` | Count each succeeded charge/refund once at success effective time; subtract positive refund amounts in the calculation. | Joining transactions directly to views/events. |
+| PPV revenue by episode | attribution | Aggregate positive purchase allocations and positive refund allocations separately, then subtract refunds by episode. | Repeating `transactions.amount_usd` once per attribution row. |
 | Watch time by session | `content_views` | Aggregate views to `session_id`, then join session attributes. | Joining session to transaction/event detail then summing watch time. |
 | Conversion after view | eligible view cohort | Create one row per qualifying `view_id`, then attach the first subsequent transaction with a window/ranked subquery. | Joining every view to every later transaction. |
 | User journey | ordered event spine | UNION ALL distinct semantic actions using one owning source per action; enrich linked records without duplication. | Joining all child tables side-by-side. |
@@ -535,7 +536,7 @@ These tests are requirements for the future generator/loader, not implementation
 | Snapshot reconciliation | `users.subscription_*` matches the latest relevant subscription-history state. |
 | PPV uniqueness | A granted PPV entitlement maps to one specific title/episode; no duplicate active entitlement for the same user/episode unless explicitly modeled as a replacement. |
 | PPV financial reconciliation | For each succeeded PPV transaction, attribution allocations sum to its amount once (or an explicit allocation policy documents a residual). |
-| Refund linkage | Each refund references a prior succeeded charge of the same user and is negative; cumulative succeeded refunds cannot exceed the charge. PPV refunds reconcile to episode allocations. |
+| Refund linkage | Each refund references a prior succeeded charge of the same user and has a positive amount; cumulative succeeded refunds cannot exceed the charge. PPV refunds reconcile to episode allocations. |
 | Payment transitions | Unique provider event IDs; current status matches latest transition; count each successful payment once. |
 | Delist/relist | Delisting ends PPV entitlement; relisting requires a new purchase. |
 | Timeline ownership | Each business moment appears once even if linked in multiple sources. |
