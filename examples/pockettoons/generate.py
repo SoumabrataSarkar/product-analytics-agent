@@ -53,9 +53,12 @@ def main():
     ''')
     # Existing users signed up before the window; five newer cohorts join during it.
     users=[]; truth=[]
+    cohort_sizes=[12000,2201,2653,2477,2949,1720]
+    cohort_ends=[]
+    for size in cohort_sizes: cohort_ends.append((cohort_ends[-1] if cohort_ends else 0)+size)
     countries=['US','US','US','BR','MX','PH','ID','TH']
     for i in range(24000):
-        cohort=0 if i<12000 else 1+(i-12000)//2400
+        cohort=next(k for k,end in enumerate(cohort_ends) if i<end)
         month=3 if cohort==0 else cohort+4
         day=1+(i%27)
         t=f'2026-{month:02d}-{day:02d}T00:00:00Z'
@@ -90,9 +93,15 @@ def main():
         if mindex:
             dropped=set(sorted(current)[:100]); current-=dropped
             for i in dropped: cancelled[i]=timestamp(month,1+(i*7)%25,1)
-            pool=[i for i in range(12000+2400*(mindex-1)) if i not in current and i not in cancelled]
-            # Favor recent cohorts without making their overall conversion rate high.
-            current.update(sorted(pool, reverse=True)[:payer_targets[mindex]-len(current)])
+            pool=[i for i in range(cohort_ends[mindex-1]) if i not in current and i not in cancelled]
+            # Later cohorts convert less, with replacements also drawn from older users.
+            need=payer_targets[mindex]-len(current)
+            if mindex>=4:
+                recent=sorted(pool,reverse=True)[:max(1,int(need*0.30))]
+                old=[i for i in pool if i<cohort_ends[0] and i not in recent]
+                current.update(recent+old[:need-len(recent)])
+            else:
+                current.update(sorted(pool, reverse=True)[:need])
         payers.append(set(current))
         for i in sorted(current):
             uid=f'u{i:05}'; bill_day=1+(i*7)%25; start_t=timestamp(month,bill_day,1); end_month=month+1
@@ -116,9 +125,10 @@ def main():
     for i in first_start:
         status='active' if i in current else 'expired'
         db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=? WHERE user_id=?',(status,last_start[i],None if i in current else cancelled.get(i),f'u{i:05}'))
-    seen=set(); sessions=[]; views=[]; events=[]; links=[]; spend=[]
+    seen=set(); sessions=[]; views=[]; view_pairs=[]; events=[]; links=[]; spend=[]
+    zones={'US':'America/New_York','BR':'America/Sao_Paulo','MX':'America/Mexico_City','PH':'Asia/Manila','ID':'Asia/Jakarta','TH':'Asia/Bangkok'}
     for mi,(_,month) in enumerate(MONTHS):
-        eligible=list(range(12000+2400*mi))
+        eligible=list(range(cohort_ends[mi]))
         # Monthly snapshots begin after signup; all payers are guaranteed active.
         chosen=set(payers[mi]); chosen.update(rng.sample([i for i in eligible if i not in chosen],targets[mi]-len(chosen)))
         for i in sorted(chosen):
@@ -130,12 +140,17 @@ def main():
             sessions.append((sid,uid,aid,st[:10],st,end,end,duration,platform,country))
             links.append((f'l{month}_{i:05}',aid,uid,sid,st,'login'))
             events.append((f'e{month}_{i:05}',uid,aid,st,'app_opened',sid,None,None,None,None,None,None,None,country,st))
+            # A real app visit can stop at browsing, without any playback.
+            if rng.random()<0.09:
+                browse_at=offset(st,40)
+                events.append((f'browse_only_{sid}',uid,aid,browse_at,'episode_detail_viewed',sid,None,None,None,'c01',1,None,zones[country],country,browse_at))
+                continue
             cid='c01' if mi>=3 and i%2==0 else f'c{1+i%12:02}'; ep=1+(i+mi)%12
             vt=offset(st,60); watched=rng.randint(240,600); ve=offset(vt,watched); vid=f'v{month}_{i:05}'
             first=int((uid,cid,ep) not in seen); seen.add((uid,cid,ep))
             sub=bool(db.execute("SELECT 1 FROM subscription_history WHERE user_id=? AND status IN ('active','cancel_at_period_end') AND effective_start_at<=? AND effective_end_at>? LIMIT 1",(uid,vt,vt)).fetchone())
-            zones={'US':'America/New_York','BR':'America/Sao_Paulo','MX':'America/Mexico_City','PH':'Asia/Manila','ID':'Asia/Jakarta','TH':'Asia/Bangkok'}
-            views.append((vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,watched,900,'sub' if sub else 'free',round(watched/900,4),0,watched,first,0 if sub else 1,None if sub else 1,zones[country],country))
+            view=(vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,watched,900,'sub' if sub else 'free',round(watched/900,4),0,watched,first,0 if sub else 1,None if sub else 1,zones[country],country)
+            views.append(view); view_pairs.append((sessions[-1],view))
         for day in range(1,calendar.monthrange(2026,month)[1]+1):
             for channel in ('paid_social','paid_search'):
                 amount=(350 if month>=7 and channel=='paid_social' else 150)
@@ -148,7 +163,7 @@ def main():
     # One fifth of users return in a later session on the same UTC day and resume
     # the same episode without using a second free-quota slot.
     repeat_sessions=[]; repeat_views=[]; repeat_links=[]; repeat_events=[]
-    for session, view in zip(sessions, views):
+    for session, view in view_pairs:
         if int(session[1][1:]) % 5: continue
         s=list(session); v=list(view); s[0]+='_return'; s[4]=offset(s[4],7200); s[5]=offset(s[5],7200); s[6]=offset(s[6],7200)
         v[0]+='_return'; v[3]=s[0]; v[7]=offset(v[7],7200); v[13]=v[14]; v[9]=min(900-v[13],rng.randint(120,300)); v[14]=v[13]+v[9]; v[8]=offset(v[7],v[9]); v[12]=round(v[9]/900,4); v[15]=0; v[16]=0; v[17]=None
@@ -162,7 +177,7 @@ def main():
     # Half of sessions continue into another free-tier episode in the same visit.
     # The original view list stays aligned with sessions for the repeat logic.
     extra_views=[]
-    for s,v in zip(sessions,views):
+    for s,v in view_pairs:
         if int(s[1][1:])%2: continue
         w=list(v); w[0]+='_next'; w[5]=(v[5]%12)+1
         w[7]=offset(v[8],60); w[9]=rng.randint(180,480); w[8]=offset(w[7],w[9])
@@ -174,7 +189,7 @@ def main():
     # Purchase and refund volumes vary each month, preserving near-flat quarterly net revenue.
     purchase_targets=[43,46,37,43,38,43]
     refund_targets=[6,9,8,7,8,6]
-    ppv=[]; ppv_status=[]; attrs=[]; refund_attrs=[]; ppv_sessions=[]; ppv_views=[]; ppv_links=[]; ppv_events=[]
+    ppv=[]; ppv_status=[]; attrs=[]; refund_attrs=[]; ppv_sessions=[]; ppv_views=[]; ppv_links=[]; ppv_events=[]; ppv_refund_events=[]
     for month_index,(_,month) in enumerate(MONTHS):
         candidates=db.execute("""SELECT DISTINCT s.user_id FROM sessions s JOIN users u USING(user_id)
           WHERE substr(s.session_started_at,6,2)=? AND u.signup_at<? AND NOT EXISTS
@@ -189,7 +204,9 @@ def main():
               (SELECT 1 FROM sessions later WHERE later.user_id=s.user_id AND substr(later.session_started_at,6,2)='09')
               AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=s.user_id
               AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<? AND h.effective_end_at>?)
-              ORDER BY s.user_id LIMIT 1""",(timestamp(5,1,0),timestamp(4,1,0))).fetchone()
+              AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=s.user_id
+              AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<=? AND h.effective_end_at>?)
+              ORDER BY s.user_id LIMIT 1""",(timestamp(5,1,0),timestamp(4,1,0),timestamp(9,25,10),timestamp(9,25,10))).fetchone()
             assert both
             candidates=[x for x in candidates if x!=both]
             candidates.insert(39,both)
@@ -197,21 +214,26 @@ def main():
         for j in range(purchase_targets[month_index]):
             uid=candidates[j][0]; i=int(uid[1:]); aid=f'a{i:05}'; t=timestamp(month,rng.randint(2,24),rng.randint(8,20),rng.randint(0,35)); tid=f'ppv_{month}_{j}'; rid=f'refund_{month}_{j}'; rt=offset(t,rng.randint(1,4)*86400); cid=f'c{1+j%12:02}'; ep=13+(j+month-4)%8
             while db.execute('SELECT 1 FROM sessions WHERE user_id=? AND session_started_at<? AND session_ended_at>? LIMIT 1',
-                             (uid,offset(t,1200+1800),offset(t,-1800))).fetchone():
+                             (uid,offset(t,1200+1800),offset(t,-1920))).fetchone():
                 t=timestamp(month,rng.randint(2,24),rng.randint(8,20),rng.randint(0,35))
                 rt=offset(t,rng.randint(1,4)*86400)
             if month==4 and j==39: cid,ep='c12',20
-            sid=f's_ppv_{month}_{j}'; end=offset(t,1200); vt=offset(t,120); ve=offset(vt,600); vid=f'v_ppv_{month}_{j}'
-            ppv_sessions.append((sid,uid,aid,t[:10],t,end,end,1200,['ios','android','web'][i%3],users[i][3]))
-            ppv_links.append((f'l_{sid}',aid,uid,sid,t,'login'))
-            ppv_views.append((vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,600,900,'ppv',round(600/900,4),0,600,1,0,None,None,users[i][3]))
-            ppv_events.append((f'paywall_{sid}',uid,aid,t,'paywall_viewed',sid,None,None,None,cid,ep,None,None,users[i][3],t))
+            sid=f's_ppv_{month}_{j}'; start_session=offset(t,-120); end=offset(t,1200); vt=offset(t,120); ve=offset(vt,600); vid=f'v_ppv_{month}_{j}'
+            country=users[i][3]; wall=offset(t,-90); checkout=offset(t,-30)
+            ppv_sessions.append((sid,uid,aid,t[:10],start_session,end,end,1320,['ios','android','web'][i%3],country))
+            ppv_links.append((f'l_{sid}',aid,uid,sid,start_session,'login'))
+            ppv_views.append((vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,600,900,'ppv',round(600/900,4),0,600,1,0,None,zones[country],country))
+            ppv_events.append((f'open_{sid}',uid,aid,start_session,'app_opened',sid,None,None,None,None,None,None,zones[country],country,start_session))
+            ppv_events.append((f'paywall_{sid}',uid,aid,wall,'paywall_viewed',sid,None,None,None,cid,ep,None,zones[country],country,wall))
+            ppv_events.append((f'checkout_{sid}',uid,aid,checkout,'checkout_started',sid,None,None,None,cid,ep,None,zones[country],country,checkout))
             ppv.append((tid,uid,t[:10],'ppv','ppv_episode_purchase',1.99,'credit_debit_card','succeeded',t,sid,tid,'demo','USD',1.99,None,None,1.99,0,users[i][3]))
             ppv_status.append((f'p_{tid}',tid,'succeeded',t,t,f'provider_{tid}'))
             refunded=j<refund_targets[month_index]
             if refunded:
                 ppv.append((rid,uid,rt[:10],'refund','ppv_refund',1.99,'credit_debit_card','succeeded',rt,None,rid,'demo','USD',1.99,tid,None,None,None,users[i][3]))
                 ppv_status.append((f'p_{rid}',rid,'succeeded',rt,rt,f'provider_{rid}'))
+                request_at=offset(rt,-3600)
+                ppv_refund_events.append((f'request_{rid}',uid,None,request_at,'refund_requested',None,None,tid,None,cid,ep,None,None,country,request_at))
                 refund_attrs.append((f'ra_{month}_{j}',rid,cid,ep,1.99))
             attrs.append((f'attr_{month}_{j}',tid,cid,ep,t,rt if refunded else None,1.99,'refunded' if refunded else 'granted',rt if refunded else None,None))
     db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',ppv_sessions)
@@ -220,6 +242,7 @@ def main():
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',ppv_events)
     db.executemany('INSERT INTO transactions VALUES ('+','.join('?'*19)+')',ppv)
     db.executemany('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',ppv_status)
+    db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',ppv_refund_events)
     db.executemany('INSERT INTO transaction_content_attribution VALUES (?,?,?,?,?,?,?,?,?,?)',attrs)
     db.executemany('INSERT INTO refund_content_attribution VALUES (?,?,?,?,?)',refund_attrs)
     # One episode is removed and later returns. Delisting closes the old PPV;
@@ -232,13 +255,16 @@ def main():
     db.execute('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',('av_c12_20_gap','c12',20,removed,returned,'delisted',removed))
     db.execute('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',('av_c12_20_return','c12',20,returned,None,'live',returned))
     db.execute("UPDATE transaction_content_attribution SET entitlement_end_at=?,delisted_at=?,attribution_status='expired_delisting' WHERE txn_id='ppv_4_39'",(removed,removed))
-    db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,purchase[:10],purchase,end,end,1200,'web',users[i][3]))
-    db.execute('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',('l_relist',aid,uid,sid,purchase,'login'))
+    start_session=offset(purchase,-120)
+    db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,purchase[:10],start_session,end,end,1320,'web',users[i][3]))
+    db.execute('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',('l_relist',aid,uid,sid,start_session,'login'))
+    for name,when in [('app_opened',start_session),('paywall_viewed',offset(purchase,-90)),('checkout_started',offset(purchase,-30))]:
+        db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',('relist_'+name,uid,aid,when,name,sid,None,None,None,'c12',20,None,zones[users[i][3]],users[i][3],when))
     repurchase=(tid,uid,purchase[:10],'ppv','ppv_episode_purchase',1.99,'credit_debit_card','succeeded',purchase,sid,tid,'demo','USD',1.99,None,None,1.99,0,users[i][3])
     db.execute('INSERT INTO transactions VALUES ('+','.join('?'*19)+')',repurchase)
     db.execute('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',('p_relist',tid,'succeeded',purchase,purchase,'provider_relist'))
     db.execute('INSERT INTO transaction_content_attribution VALUES (?,?,?,?,?,?,?,?,?,?)',('attr_relist',tid,'c12',20,purchase,None,1.99,'granted',None,None))
-    db.execute('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',('v_relist',uid,aid,sid,'c12',20,purchase[:10],timestamp(9,25,10,2),timestamp(9,25,10,12),600,900,'ppv',round(600/900,4),0,600,0,0,None,None,users[i][3]))
+    db.execute('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',('v_relist',uid,aid,sid,'c12',20,purchase[:10],timestamp(9,25,10,2),timestamp(9,25,10,12),600,900,'ppv',round(600/900,4),0,600,0,0,None,zones[users[i][3]],users[i][3]))
     ppv.append(repurchase)
     # Anonymous browsing happens before login; no anonymous content view is made.
     browsing=[]
@@ -255,7 +281,7 @@ def main():
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',cancel_events)
     # Record genuine non-purchaser funnel observations in existing free sessions.
     funnel=[]
-    for s,v in zip(sessions,views):
+    for s,v in view_pairs:
         if len(funnel)>=1600: break
         if v[11]!='free' or int(s[1][1:])%17: continue
         observed=offset(s[4],30); cid='c01'; episode=13
@@ -278,11 +304,12 @@ def main():
     existing=set(db.execute("SELECT content_id,episode_number FROM content_views WHERE user_id=? AND date=? AND view_type='free'",(uid,day)).fetchall())
     db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,day,st,end,end,2100,'android',country))
     db.execute('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',('l_quota',aid,uid,sid,st,'login'))
+    db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',('open_quota',uid,aid,st,'app_opened',sid,None,None,None,None,None,None,zones[country],country,st))
     choices=[('c02',ep) for ep in range(1,13) if ('c02',ep) not in existing]
     for n,(cid,ep) in enumerate(choices[:7],start=2):
         vt=offset(st,(n-1)*120); ve=offset(vt,60)
         db.execute('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',
-          (f'v_quota_{n}',uid,aid,sid,cid,ep,day,vt,ve,60,900,'free',round(60/900,4),0,60,0,1,n,None,country))
+          (f'v_quota_{n}',uid,aid,sid,cid,ep,day,vt,ve,60,900,'free',round(60/900,4),0,60,0,1,n,zones[country],country))
     blocked=offset(st,1800); blocked_content,blocked_ep=choices[7]
     db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',
       ('event_quota_block',uid,aid,blocked,'playback_blocked',sid,None,None,None,blocked_content,blocked_ep,'{"reason":"daily_free_quota_exhausted"}',None,country,blocked))
@@ -320,7 +347,7 @@ def main():
                     'monthly_9_99',tid,cancelled_at,approved))
         db.execute('UPDATE users SET subscription_status=?,subscription_end=? WHERE user_id=?',('refunded',approved,uid))
         db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',
-                   (f'event_request_{tid}',uid,None,requested,'refund_requested',None,None,tid,None,None,None,None,None,country,requested))
+                   (f'event_request_{tid}',uid,None,requested,'refund_requested',None,None,charge,None,None,None,None,None,country,requested))
         sub_refunds.append(refund)
     db.execute('ALTER TABLE transactions ADD COLUMN refund_reason TEXT')
     reasons=['did_not_like_content','accidental_purchase','poor_playback_quality']
