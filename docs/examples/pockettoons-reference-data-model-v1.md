@@ -4,9 +4,9 @@
 
 PocketToons is the fictional anime-streaming product in the interview assignment. It uses a freemium model: every user can start up to eight distinct free-tier episodes per UTC calendar day; premium episodes require a subscription or PPV; a $9.99 monthly subscription unlocks all content; and users can also buy individual premium episodes through pay-per-view (PPV). The assignment asks for six months of synthetic data and an analytics agent that can investigate questions such as: **MAU is up 20% quarter-over-quarter, but revenue is flat—why?**
 
-This document is the data blueprint for that PocketToons case. It keeps the six tables and fields required by the assignment, then adds only the relationships needed to tell a complete customer story: sessions, episodes watched, paywall behavior, PPV purchases, subscriptions, cancellations, refunds, and the timing between each action.
+This document defines the PocketToons dataset contract: the six assignment tables and fields, supporting relationships, user journeys, synthetic-data requirements, and validation rules.
 
-PocketToons is a concrete reference module inside a broader, generalized product-analytics-agent repository. The reusable agent architecture and shared analytics conventions will live in their own documentation later; this model gives those components one realistic product dataset to work against.
+PocketToons is an assignment-specific reference dataset within the generalized product-analytics-agent repository. Shared agent architecture and analytics conventions are documented separately.
 
 ## 2. Design decisions
 
@@ -34,6 +34,8 @@ erDiagram
     SESSIONS o|--o{ TRANSACTIONS : initiates
     TRANSACTIONS ||--o{ TRANSACTION_CONTENT_ATTRIBUTION : entitles
     TRANSACTIONS ||--o{ PAYMENT_STATUS_HISTORY : changes
+    TRANSACTIONS ||--o| RAW_PAYMENT_SOURCE : source
+    TRANSACTIONS ||--o| PAYMENT_QUALITY_REVIEW : reviewed
     TRANSACTIONS ||--o{ REFUND_CONTENT_ATTRIBUTION : allocates
     CONTENT_EPISODES ||--o{ REFUND_CONTENT_ATTRIBUTION : refunded
     CONTENT_CATALOG ||--o{ TRANSACTION_CONTENT_ATTRIBUTION : attributed_to
@@ -214,14 +216,14 @@ The stored `content_views.view_type` records the decision at view start and is n
 | `country` | TEXT | no | Required assignment field: current country, or `unknown` when unavailable. |
 | `country_origin` | TEXT | yes | ISO country at signup if known, not nationality. |
 | `country_current` | TEXT | yes | Current profile country if known; agrees with `country` or NULL when unknown. |
-| `acquisition_source` | TEXT | no | First-touch channel (`organic`, `paid_search`, `paid_social`, `creator`, `referral`, `other`). |
+| `acquisition_source` | TEXT | no | First-touch channel (`organic`, `paid_search`, `paid_social`, `creator`, `referral`, `other`, `unknown`). `unknown` represents missing attribution, not an acquisition channel. |
 | `subscription_status` | TEXT | no | Current snapshot: `never_subscribed`, `active`, `cancel_at_period_end`, `expired`, `refunded`, `paused`. Not for historical entitlement. |
 | `subscription_start` | TIMESTAMP | yes | Start of the current/latest subscription period; NULL if never subscribed. |
 | `subscription_end` | TIMESTAMP | yes | End of current/latest subscription period; NULL if unknown or never subscribed. |
 | `created_at` | TIMESTAMP | no | Record creation timestamp. |
 | `updated_at` | TIMESTAMP | no | Snapshot update timestamp, not a subscription-specific change time. |
 
-A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL subscription start/end. NULL means no value, not an empty string. The subscription-status change timestamp belongs to `subscription_history`.
+A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL subscription start/end. NULL means no value, not an empty string. The subscription-status change timestamp belongs to `subscription_history`. A snapshot describes one specified as-of instant, and its status and period boundaries reconcile to the effective history at that instant.
 
 ### 4.2 `sessions` — assignment-mandated
 
@@ -387,7 +389,7 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `effective_start_at` | TIMESTAMP | no | UTC inclusive start of the access/status interval. |
 | `subscription_status_updated_at` | TIMESTAMP | no | UTC time the status change took effect; equals `effective_start_at` for status changes. |
 | `effective_end_at` | TIMESTAMP | yes | Exclusive end; null only while open. |
-| `status` | TEXT | no | `active`, `cancel_at_period_end`, `cancelled`, `expired`, `paused`, `refunded`. |
+| `status` | TEXT | no | `active`, `cancel_at_period_end`, `cancelled`, `expired`, `paused`, `refunded`. Expired and refunded states have explicit effective periods; NULL end denotes an open state. |
 | `plan_code` | TEXT | no | `monthly_9_99` in v1; extensible. |
 | `source_txn_id` | TEXT | yes | Charge/refund that created this state. |
 | `cancelled_at` | TIMESTAMP | yes | Cancellation request time, distinct from end of access. |
@@ -410,6 +412,28 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `refunded_at` | TIMESTAMP | yes | UTC refund revocation time. |
 | `delisted_at` | TIMESTAMP | yes | UTC delisting time that ends this entitlement; relisting does not restore it. |
 
+### 4.8a `raw_payment_source` — source payment values
+
+**Grain:** one provider payment or refund source record per `txn_id`. **Primary/foreign key:** `txn_id → transactions`. Source values are retained for audit and do not constitute additional financial events.
+
+| Column | Type | Null? | Definition / rule |
+|---|---|---:|---|
+| `txn_id` | TEXT | no | Matched payment or refund. |
+| `raw_amount` | NUMERIC OR TEXT | no | Original source value; may be numeric, numeric text, non-numeric text, or contain an intentional unit error. Validate before arithmetic. |
+| `raw_unit` | TEXT | no | Unit as reported by the source; may itself be incorrect. |
+| `received_at` | TIMESTAMP | no | UTC source arrival timestamp. |
+
+### 4.8b `payment_quality_review` — documented source corrections
+
+**Grain:** one reviewed correction per `txn_id`. **Primary/foreign key:** `txn_id → transactions`. The reviewed amount reconciles to the curated transaction; the source is retained unchanged.
+
+| Column | Type | Null? | Definition / rule |
+|---|---|---:|---|
+| `txn_id` | TEXT | no | Reviewed payment or refund. |
+| `issue` | TEXT | no | Identified data-quality issue. |
+| `corrected_amount_usd` | NUMERIC | no | Evidence-backed positive amount in USD. |
+| `reason` | TEXT | no | Correction evidence and rationale. |
+
 ### 4.9 `user_events` — supporting interaction timeline
 
 **Grain:** one client/server business event, append-only. Anonymous events are linked to a user using the session-scoped login mapping. **Primary key:** `event_id`. This is the complete timeline for behavior that is not itself a view or financial fact; it does *not* replace the fact tables.
@@ -429,8 +453,10 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `subscription_period_id` | TEXT | yes | Subscription state described, if applicable. |
 | `content_id` | TEXT | yes | Relevant title. |
 | `episode_number` | INTEGER | yes | Relevant episode. |
-| `event_properties_json` | TEXT | yes | Versioned, non-metric context; no PII or fields needed for core reporting. |
+| `event_properties_json` | TEXT | yes | Versioned context without PII. Paywall and checkout events include `product` (`subscription` or `ppv`); blocked playback includes its reason. |
 | `ingested_at` | TIMESTAMP | no | Warehouse arrival time. |
+
+For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matching `checkout_started`, and the successful payment in the same session; record `subscription_started` for an initial subscription. Non-purchaser paywalls and abandoned checkouts use the same product labels. `refund_requested.txn_id` refers to the original purchase; the subsequent refund transaction references that original via `related_txn_id`. A delisting notice identifies the affected user and episode before the effective delisting time.
 
 ## 5. Relationship cardinality and referential rules
 
@@ -452,6 +478,8 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `transactions` | `subscription_history` | 1 : 0..N | child optional | State may come from support/system action. |
 | `users` | `user_events` | 1 : 0..N | child optional | Pre-login activity can be linked through session. |
 | `transactions` | `payment_status_history` | 1 : 1..N | child yes | Status transitions. |
+| `transactions` | `raw_payment_source` | 1 : 0..1 | child yes | Original provider value for reconciliation. |
+| `transactions` | `payment_quality_review` | 1 : 0..1 | child yes | Evidence and corrected amount for reviewed records. |
 | `transactions` | `refund_content_attribution` | 1 : 0..N | PPV refunds | Allocates a refund to an episode. |
 
 ## 6. Temporal / as-of logic
@@ -462,7 +490,7 @@ Use half-open intervals: `effective_start_at <= as_of_ts AND (effective_end_at >
 
 **PPV as of a view:** choose a `transaction_content_attribution` row matching `content_id`, `episode_number`, and the view start interval, with a grant effective at view time; join to a succeeded purchase. Use `entitlement_end_at` or `refunded_at` as an exclusive cutoff: a later refund must not erase entitlement before its effective time. PPV has no time-based expiry, but refund or delisting ends it. Relisting requires a new purchase.
 
-**Current snapshot:** derive `users.subscription_*` from the state effective at the snapshot time using records known at the reporting cutoff, rather than using it to answer a past question. V1 reports use the latest corrected history; recorded timestamps support auditing but do not by themselves preserve every earlier warehouse version.
+**Subscription status:** after the initial subscription, record continuous non-overlapping status periods, including explicit `expired` and `refunded` periods, until the next status change. For a time before the first subscription, the status is `never_subscribed`; a user with no subscription history is `never_subscribed`. Preserve `cancel_at_period_end` access until the paid period ends; a successful refund ends access at its effective timestamp. Derive `users.subscription_*` at a declared snapshot instant. Reports use the latest corrected history; recorded timestamps support auditing but do not by themselves preserve every earlier warehouse version.
 
 ## 7. Fanout-safe joins and metric rules
 
@@ -484,8 +512,8 @@ All reporting joins must state their intended grain and validate `COUNT(DISTINCT
 
 1. User `U1` watches free-tier episode 9 in session `S1` at 09:00. `content_views(V1)` links to `S1`, `U1`, title A, episode 9, and has `view_type='free'`.
 2. At 20:00, `U1` returns in `S2`, watches episodes 10 and 11 (`V2`, `V3`).
-3. In `S2`, `U1` views a paywall, starts checkout, and purchases episode 12. `user_events` records those UI moments; `transactions(T1)` is a successful PPV charge with `session_id='S2'`; `transaction_content_attribution(A1)` entitles title A/episode 12.
-4. `U1` watches episode 12 in `S2`; `V4.view_type='ppv'` is validated as-of `V4.view_started_at` using `A1` and `T1`.
+3. In `S2`, `U1` views a paywall, starts checkout, and purchases premium episode 13. `user_events` records those UI moments; `transactions(T1)` is a successful PPV charge with `session_id='S2'`; `transaction_content_attribution(A1)` entitles title A/episode 13.
+4. `U1` watches episode 13 in `S2`; `V4.view_type='ppv'` is validated as-of `V4.view_started_at` using `A1` and `T1`.
 5. Later, `U1` starts a subscription (`T2`), creating `subscription_history(P1)`. A later cancellation request emits `user_events` and creates a successor subscription period/status; access stays valid through the paid period end.
 
 Use one source per semantic action: user events own UI moments, views own playback starts, payment status history owns payment/refund success, and subscription history owns effective status changes. Exclude duplicate mirror events or deduplicate them using their linked fact ID. Resolve pre-login activity with the session-scoped identity link. A journey query should normalize sources to: `(user_id, occurred_at, source, source_id, session_id, content_id, episode_number, txn_id, subscription_period_id)`, then `UNION ALL` and order. This preserves sequence without multiplying V2/V3/V4 by T1/T2.
@@ -518,7 +546,7 @@ If a user watches free episode 8 at 08:00 in `S1`, exits, and subscribes at 21:0
 
 ## 9. Data integrity and acceptance tests
 
-These tests are requirements for the future generator/loader, not implementation in this step.
+These assertions are acceptance requirements for any dataset implementing this contract. Checks must cover schema, relationships, business rules, event ordering and analytical results.
 
 | Test | Assertion |
 |---|---|
@@ -530,14 +558,19 @@ These tests are requirements for the future generator/loader, not implementation
 | Episode validity | Every view/attribution composite episode key resolves to `content_episodes`. |
 | Content availability | Every view begins within a live availability interval; history intervals for an episode do not overlap. |
 | UTC consistency | Event timestamps have UTC offsets; required dates equal their source timestamp's UTC date. |
-| Status history | Subscription status change timestamps are in `subscription_history`; current snapshot reconciles to the status effective now. |
+| Status history | Status changes have non-overlapping effective periods, including expired/refunded states; current snapshot reconciles to the status effective at its declared snapshot instant. |
 | Playback bounds | Watch time is non-negative and may exceed duration; positions lie within the episode and known completion is in [0,1]. |
 | Subscription non-overlap | No overlapping effective intervals for the same `subscription_id`; at most one access-granting period per user at an instant. |
 | Snapshot reconciliation | `users.subscription_*` matches the latest relevant subscription-history state. |
 | PPV uniqueness | A granted PPV entitlement maps to one specific title/episode; no duplicate active entitlement for the same user/episode unless explicitly modeled as a replacement. |
 | PPV financial reconciliation | For each succeeded PPV transaction, attribution allocations sum to its amount once (or an explicit allocation policy documents a residual). |
 | Refund linkage | Each refund references a prior succeeded charge of the same user and has a positive amount; cumulative succeeded refunds cannot exceed the charge. PPV refunds reconcile to episode allocations. |
-| Payment transitions | Unique provider event IDs; current status matches latest transition; count each successful payment once. |
+| Payment transitions | Unique provider event IDs; current status matches latest transition; count each successful payment once and exclude failed payments. |
+| Event and funnel order | Each checkout has an earlier matching-product paywall; in-app subscription and PPV purchases link to their session and follow checkout. Include labelled non-purchaser paywalls and abandoned checkouts. |
+| Refund timeline | Refund requests link to the original charge and precede a linked refund; reasons are populated; approved refunds terminate applicable access. |
+| Delisting notice | A notice for an affected PPV holder precedes delisting; a successful repurchase after relisting occurs without a concurrent active subscription. |
+| Browsing and resumes | Include browsing-only sessions, multiple views per session, cross-session viewing and real resume positions; unauthenticated actions cannot create views. |
+| Data quality | Source issues, evidence and curated values reconcile by transaction; invalid text is not silently coerced, failed payments are excluded, and unknown sources are disclosed. |
 | Delist/relist | Delisting ends PPV entitlement; relisting requires a new purchase. |
 | Timeline ownership | Each business moment appears once even if linked in multiple sources. |
 | Entitlement correctness | Every `view_type='sub'` has an access-granting subscription as of view start; every `'ppv'` has an active successful PPV entitlement; every `'free'` obeys the first-eight UTC-day rule. |
@@ -548,6 +581,34 @@ These tests are requirements for the future generator/loader, not implementation
 | Marketing plausibility | `spend_usd >= 0`, `impressions >= 0`, and `0 <= clicks <= impressions`; daily channel key is unique. |
 | Join fanout regression | Joining a transaction to its attribution bridge must not change total transaction revenue when aggregating distinct transaction IDs; session-view joins must retain one row per `view_id`. |
 
-## 10. Implementation boundary for later stages
+## 10. Synthetic dataset contract
 
-This document intentionally stops before implementation. The next stage will translate this contract into SQLite DDL, deterministic synthetic-data generation, and test queries. It will plant the assignment’s coherent business story and at least one visible data-quality issue **without changing this model’s stated grain, keys, or mandatory fields**.
+The PocketToons fixture uses a fixed seed, produces a reproducible SQLite database, preserves source values and documents transformations. It contains six complete analysis months, at least 10,000 users and proportionate activity. The six assignment tables and named fields are mandatory; supporting tables preserve the relationships above.
+
+### Business story and measurement
+
+- **MAU:** count distinct authenticated users with a session in each UTC calendar month. Quarter MAU is the average of its three monthly MAUs, not the sum of monthly users. The second-quarter average is approximately 20% higher than the first.
+- **Net revenue:** sum successful subscription and PPV charges and subtract successful refunds at their successful-payment effective times. Amounts in both types of transaction are stored as positive values. Quarter-on-quarter net revenue is within ±2%.
+- **Drivers:** the fixture includes a larger paid-social audience in the later quarter, lower observed 30-day subscription conversion for the newer signup cohorts, and departures among existing subscribers alongside replacement payments. Quantify the revenue bridge and distinguish association from causation. Use only cohorts with a complete 30-day observation window; March signups are not eligible when activity begins in April.
+- **Coverage:** every analysis month contains signup cohorts and every UTC day contains activity. Vary cohort sizes, title episode counts, sessions, views, payment volumes and cancellation/refund timing without introducing implausible deterministic cross-dimension relationships. Include non-paying users, browsing-only sessions and non-purchaser funnel paths.
+- **Attribution:** `unknown` acquisition is reported separately. Validate whether the direction of channel activity growth survives plausible worst-case allocation of unknowns; do not claim that this check establishes attribution or causality.
+
+### Source quality and review evidence
+
+The source fixture contains missing acquisition values, numeric and text payment amounts including non-numeric values, and a small number of 100× unit errors. Preserve raw source values and recorded source units, record evidence-backed corrections separately, and reconcile each correction to curated transaction amounts. An unusual amount alone is insufficient evidence for automatic correction. Exclude unpublished answer keys and expected results from the agent's investigation context when measuring independent discovery.
+
+### Required scenario checks
+
+| Scenario | Required outcome |
+|---|---|
+| Subscription, PPV and free access | Subscription unlocks premium content; a non-subscriber needs PPV for premium, and free-tier usage obeys the UTC daily quota. |
+| Multi-session journey | Session, view, payment, event and user keys preserve chronological activity across sessions without multiplying metrics. |
+| Subscription journey | Initial in-app subscription includes labelled paywall and checkout events, successful payment, effective entitlement and a subsequent view. The fixture also includes non-purchaser subscription exposures and abandoned checkouts; off-session renewals are permitted. |
+| PPV and refund | Purchases, views, refund requests, positive refund transactions, reason and episode allocations reconcile to the correct user, purchase and effective entitlement. |
+| Expiry and refund as-of | The historical status remains queryable after an access period ends and agrees with the user snapshot at the snapshot instant. |
+| Quota boundary | A user can start eight distinct free-tier episodes, resume an already-counted episode that day, and is blocked from a ninth new one. |
+| Delist and relist | A prior notice is recorded; delisting ends the purchase entitlement; subsequent access requires a valid new entitlement. |
+| Cohorts and time | Use complete, equal observation windows; verify date and timestamp consistency, signup-before-activity and activity across the stated analysis period. |
+| Reconciliation | Schema and required values match this model; PKs/FKs resolve, status and availability intervals do not overlap, corrected source amounts reconcile, and metrics remain stable under safe joins. |
+
+The SQLite fixture is an implementation of this reference dataset contract. The generalized analytics agent and its evaluation use their own documented contracts.
