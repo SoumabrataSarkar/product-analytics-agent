@@ -84,7 +84,7 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** Missing documented columns, including creation and update timestamps, prevent the SQLite database from implementing the agreed model.
 
-**Resolution:** All documented columns for the 15 model tables are present. Validation checks table/column presence, required values, foreign keys and selected business invariants. Column coverage alone does not prove every possible behavior.
+**Resolution:** All documented columns for the 17 model and source-quality tables are present. Validation checks table/column presence, required values, foreign keys and selected business invariants. Column coverage alone does not prove every possible behavior.
 
 ## Deliberate data-quality issues
 
