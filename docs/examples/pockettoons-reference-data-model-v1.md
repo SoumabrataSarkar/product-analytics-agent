@@ -1,13 +1,16 @@
 # PocketToons Reference Data Model v1 — Step 2A
 
-**Status:** proposed data-model contract (before synthetic-data generation)  
-**Repository role:** an assignment-specific reference module. Reusable agent architecture, analytics conventions, and provider integrations belong in separate generalized documentation.  
-**Scope:** the six assignment-required tables plus the minimum supporting tables needed to reconstruct product, viewing, subscription, and purchase journeys.  
-**Out of scope:** Architecture v1 changes, data generation, SQLite DDL, synthetic rows, agent code, and the parked HTML frontend.
+## 1. PocketToons context
 
-## 1. Design decisions
+PocketToons is the fictional anime-streaming product in the interview assignment. It uses a freemium model: every user can start eight free episodes per local day; a $9.99 monthly subscription unlocks all content; and users can also buy individual premium episodes through pay-per-view (PPV). The assignment asks for six months of synthetic data and an analytics agent that can investigate questions such as: **MAU is up 20% quarter-over-quarter, but revenue is flat—why?**
 
-PocketToons is a freemium episodic streaming product: every user gets eight free episodes per local day, a subscription unlocks the catalog, and an individual premium episode can be bought through PPV. The model must therefore preserve both the *business state* (current subscription) and the *history that created it* (events, subscription periods, transactions, and watched episodes).
+This document is the data blueprint for that PocketToons case. It keeps the six tables and fields required by the assignment, then adds only the relationships needed to tell a complete customer story: sessions, episodes watched, paywall behavior, PPV purchases, subscriptions, cancellations, refunds, and the timing between each action.
+
+PocketToons is a concrete reference module inside a broader, generalized product-analytics-agent repository. The reusable agent architecture and shared analytics conventions will live in their own documentation later; this model gives those components one realistic product dataset to work against.
+
+## 2. Design decisions
+
+The model must preserve both the *business state* (current subscription) and the *history that created it* (events, subscription periods, transactions, and watched episodes).
 
 The six assignment tables and their required fields are retained exactly, with additive fields where necessary. `users.subscription_status`, `subscription_start`, and `subscription_end` are a convenient current-state snapshot; `subscription_history` is authoritative for historical/as-of entitlement. Likewise, `content_views` is a view fact rather than a session summary, and `session_id` makes every in-app view joinable to the session in which it occurred.
 
