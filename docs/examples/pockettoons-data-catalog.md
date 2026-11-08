@@ -336,7 +336,11 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 **Columns:** subscription_period_id — period ID; subscription_id — logical subscription; user_id — owner; effective_start_at/effective_end_at? — boundaries; subscription_status_updated_at — change time; status — period status; plan_code — plan; source_txn_id? — related payment if applicable; cancelled_at? — cancellation request; recorded_at — recording time.
 
-**Joins:** User FK, optional source transaction FK, and period can be referenced by events. **Use:** subscription status at playback. **Limitations/checks:** Cancellation may retain access until end. Checker tests overlap and selected cancellation/refund cases; propose complete continuity and snapshot reconciliation. recorded_at does not preserve every historical warehouse version.
+**Joins:** User FK, optional source transaction FK, and period can be referenced by events. **Use:** subscription status at playback. **Limitations/checks:** Cancellation may retain access until end. Checker tests overlap, selected cancellation/refund cases, selected snapshot reconciliation and initial payment timing; these checks do not establish complete continuity or every subscription lifecycle transition. recorded_at does not preserve every historical warehouse version.
+
+**Initial paid subscription:** The first active interval starts at the succeeded payment-status event's effective_at, not at transaction creation or recording time. A pending or failed initial payment does not itself grant subscription access. The first monthly period ends one calendar month after success at the same UTC time; days 26–31 remain outside the fixture's defined renewal-date policy. The checker tests initial grant timing, monthly end, selected user-snapshot reconciliation and selected journey timing. Renewals and refunds have separate rules; the existing checker still uses transaction_at in selected renewal and subscription-refund checks, so delayed cases for them are not established by this initial-payment rule.
+
+**Fixture coverage:** All initial subscription payments in the main fixture succeed at creation time. A delayed initial success and pending/failed attempts are covered by isolated tests rather than the main dataset.
 
 ## 12. transaction_content_attribution
 
