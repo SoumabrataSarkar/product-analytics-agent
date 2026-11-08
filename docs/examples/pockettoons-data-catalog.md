@@ -202,7 +202,35 @@ The example requires non-overlapping tier periods and matches only views with kn
 
 **Columns:** availability_id — interval ID; content_id/episode_number — episode; available_from_at — start; available_until_at? — end, NULL for open interval; status — status during interval; recorded_at — recording time.
 
-**Joins:** Composite episode foreign key. Match episode and event time. **Use:** whether an episode was live when viewed. **Limitations/checks:** Without a time condition multiple intervals can duplicate a view. Existing checker tests views against live availability; propose explicit interval-overlap checks.
+**Joins:** Composite episode foreign key. Match episode and event time. **Use:** whether an episode was live when viewed. **Limitations/checks:** Without a time condition multiple intervals can duplicate a view. From the first tracked instant periods are contiguous, non-overlapping and half-open; before tracking or with missing source history the answer is unknown, not an inferred status. The checker validates period fields, gaps/overlaps, episode status at content_catalog_snapshot_at, current live-period boundaries, views, PPV purchases while live, delisting entitlement cutoffs and prior holder notices. For non-live snapshots it validates status but does not infer what the optional current/latest availability boundary fields must contain. recorded_at is not complete bitemporal version history.
+
+### Availability columns
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| availability_id | TEXT primary key | Required by checker | Availability period ID. |
+| content_id | TEXT | No | Parent title ID. |
+| episode_number | INTEGER | No | Episode within title; composite FK with content_id. |
+| status | TEXT | No | scheduled, live, delisted or archived during this interval. |
+| available_from_at | TEXT | No | Inclusive effective start, including for a non-live status. |
+| available_until_at | TEXT | Yes | Exclusive effective end; NULL while the period is open. |
+| recorded_at | TEXT | No | UTC recording time; not necessarily the effective time. |
+
+For the fixture's c12 episode 20, the live period ends exactly as delisted begins on 10 September 2026 UTC; live resumes exactly on 20 September. Every succeeded PPV entitlement active immediately before delisting ends at that boundary. Prior refunds or other already-ended entitlements remain ended; relisting does not restore them. Each affected holder has a prior synthetic notice. An entitlement after relisting requires a new succeeded purchase while live.
+
+### As-of join
+
+```sql
+SELECT v.view_id, v.view_started_at, h.status AS availability_at_view
+FROM content_views v
+LEFT JOIN content_availability_history h
+  ON h.content_id = v.content_id
+ AND h.episode_number = v.episode_number
+ AND h.available_from_at <= v.view_started_at
+ AND (h.available_until_at IS NULL OR v.view_started_at < h.available_until_at);
+```
+
+The LEFT JOIN keeps a view with missing history visible as an unknown rather than silently dropping it. Validate uniqueness and coverage before relying on one row per view. A live status alone does not establish subscription or PPV entitlement. Tier history and the relevant access period are separate as-of joins; the physical layer and query grain depend on the use case.
 
 ## 6. content_views
 

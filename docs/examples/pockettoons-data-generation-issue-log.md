@@ -92,6 +92,12 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Resolution:** Effective-dated tier history records each episode's tier over time. As-of checks validate free views and PPV purchases against the appropriate interval, and a premium-to-free example includes views on both sides. The current tier snapshot is checked at the declared catalog snapshot time. Historical list-price changes remain outside this fixture.
 
+### Delisting entitlement coverage
+
+**Issue and impact:** Ending only a selected PPV entitlement at an episode's delisting leaves other affected purchases incorrectly active, allowing an analysis to treat their old access as valid after relisting. A check restricted to records already marked as delisted cannot discover missed entitlements.
+
+**Resolution:** All succeeded entitlements active immediately before a delisting end at its boundary, and affected holders receive recorded prior notices. Already-refunded or ended entitlements are not changed. The checker independently compares all purchases with delisting intervals and validates notice coverage, continuity, snapshot status, live purchase timing and historical playback. Relisting does not revive earlier purchases.
+
 ### Identical episode durations
 
 **Issue and impact:** A single episode length across the entire catalog is unrealistic and can obscure incorrect assumptions about durations and completion.

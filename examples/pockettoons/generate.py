@@ -299,8 +299,20 @@ def main():
     db.execute('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',('av_c12_20_return','c12',20,returned,None,'live',returned))
     db.execute('UPDATE content_episodes SET available_from_at=?,available_until_at=NULL WHERE content_id=? AND episode_number=?',(returned,'c12',20))
     notice=timestamp(9,3,12)
-    db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',('event_delisting_notice',uid,None,notice,'content_delisting_notice',None,None,'ppv_4_39',None,'c12',20,'{"scheduled_delisting_at":"2026-09-10T00:00:00Z"}',None,users[i][3],notice))
-    db.execute("UPDATE transaction_content_attribution SET entitlement_end_at=?,delisted_at=?,attribution_status='expired_delisting' WHERE txn_id='ppv_4_39'",(removed,removed))
+    affected=db.execute('''SELECT a.txn_content_attribution_id,a.txn_id,t.user_id,a.entitlement_start_at,t.country_at_event
+        FROM transaction_content_attribution a JOIN transactions t ON t.txn_id=a.txn_id
+        WHERE a.content_id='c12' AND a.episode_number=20 AND t.type='ppv'
+          AND (SELECT p.status FROM payment_status_history p WHERE p.txn_id=t.txn_id AND p.effective_at<?
+               ORDER BY p.effective_at DESC,p.recorded_at DESC,p.payment_status_event_id DESC LIMIT 1)='succeeded'
+          AND a.entitlement_start_at<? AND (a.entitlement_end_at IS NULL OR a.entitlement_end_at>?)
+          AND (a.refunded_at IS NULL OR a.refunded_at>?)''',(removed,removed,removed,removed)).fetchall()
+    for attribution_id, original_id, holder, granted_at, country in affected:
+        # A notice cannot precede the user's purchase; omit no affected holder.
+        notice_at=max(notice,granted_at)
+        if notice_at>=removed: raise RuntimeError('no valid prior delisting notice window')
+        db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',
+            ('event_delisting_notice_'+attribution_id,holder,None,notice_at,'content_delisting_notice',None,None,original_id,None,'c12',20,'{"scheduled_delisting_at":"2026-09-10T00:00:00Z"}',None,country,notice_at))
+        db.execute("UPDATE transaction_content_attribution SET entitlement_end_at=?,delisted_at=?,attribution_status='expired_delisting' WHERE txn_content_attribution_id=?",(removed,removed,attribution_id))
     start_session=offset(purchase,-120)
     db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,purchase[:10],start_session,end,end,1320,'web',users[i][3]))
     db.execute('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',('l_relist',aid,uid,sid,start_session,'login'))

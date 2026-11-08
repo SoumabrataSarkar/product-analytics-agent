@@ -301,6 +301,10 @@ Current list price is a snapshot; actual charges remain on transactions. The fix
 
 **Grain:** one effective availability/status interval for an episode. **Primary key:** `availability_id`; composite FK (`content_id`, `episode_number`) → `content_episodes`. A title removal closes the relevant episode intervals. Re-listing creates new intervals; no historical views are deleted.
 
+From the first recorded tracking instant, periods for an episode are contiguous, non-overlapping half-open intervals, including explicit non-live statuses. Before that first instant, or when source history is missing, availability is unknown and must not be inferred. The current episode status is checked against the interval at `content_catalog_snapshot_at`; when live, the current availability boundaries also match that interval. `recorded_at` may be earlier or later than the effective time and does not preserve every previously believed version.
+
+On delisting, every succeeded PPV entitlement active immediately before the boundary ends at that instant and records the delisting reason; a purchase already refunded or ended earlier is not modified. Each affected holder receives a recorded notice before the boundary and no earlier than the entitlement start. A relisting does not revive an old entitlement; a new PPV grant requires a new succeeded purchase while the episode is live. These rules apply to every affected entitlement, not only to rows already marked as delisted.
+
 | Column | Type | Null? | Definition / rule |
 |---|---|---:|---|
 | `availability_id` | TEXT | no | Immutable identifier. |
@@ -572,6 +576,8 @@ These assertions are acceptance requirements for any dataset implementing this c
 | Episode validity | Every view/attribution composite episode key resolves to `content_episodes`. |
 | Episode tier history | Each episode has contiguous non-overlapping tier intervals from release; exactly one period matches the content snapshot and its tier equals the episode snapshot. Free views and PPV purchases match the applicable historical tier at their event time. |
 | Content availability | Every view begins within a live availability interval; history intervals for an episode do not overlap. |
+| Availability continuity and snapshot | From first tracking, episode status periods have no gaps or overlaps. A snapshot matches the unique status at the declared catalog snapshot time; unknown prior history is not assumed. |
+| Delisting coverage | Every succeeded PPV entitlement active immediately before an episode is delisted ends at that boundary and has a prior holder notice. Entitlements already ended or refunded remain unchanged; relisting does not restore them. |
 | UTC consistency | Event timestamps have UTC offsets; required dates equal their source timestamp's UTC date. |
 | Status history | Status changes have non-overlapping effective periods, including expired/refunded states; current snapshot reconciles to the status effective at its declared snapshot instant. |
 | Playback bounds | Watch time is non-negative and may exceed duration; positions lie within the episode and known completion is in [0,1]. |
