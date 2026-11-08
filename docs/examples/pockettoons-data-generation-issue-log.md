@@ -122,6 +122,14 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Resolution:** The fixture checker validates USD values with Decimal and aggregates exact integer cents for its revenue check, refund caps and allocation reconciliation. Values with excess precision are rejected for review. Refund checks inspect the latest effective payment status at the refund attempt; isolated tests cover pending-to-success, failed, voided, refund and off-session scenarios. SQLite still stores the compatibility fields as REAL; the checker-only conversion function is not a persistent database function. FX and multi-currency minor-unit policies remain outside this fixture.
 
+## Uniform marketing delivery
+
+**Issue:** Daily search spend and delivery were constant, while social delivery had only two fixed levels. Impressions and clicks were exact multiples of spend.
+
+**Analytical impact:** Unrealistically uniform delivery concealed day-to-day changes and made marketing efficiency appear fixed.
+
+**Resolution:** A separately seeded marketing stream generates varied daily spend, impressions and clicks, with higher social spend from July. Marketing remains correlated synthetic data and does not establish causal attribution. The independent stream keeps unrelated generated journeys stable.
+
 ## Deliberate data-quality issues
 
 | Issue | Analytical impact | Representation and handling |
