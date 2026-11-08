@@ -24,7 +24,7 @@ class InitialSubscriptionTests(unittest.TestCase):
           CREATE TABLE subscription_history(user_id TEXT,subscription_id TEXT,source_txn_id TEXT,status TEXT,effective_start_at TEXT,effective_end_at TEXT);
           CREATE TABLE users(user_id TEXT,subscription_status TEXT,subscription_start TEXT,subscription_end TEXT);
           CREATE TABLE user_events(session_id TEXT,event_name TEXT,event_at TEXT);
-          CREATE TABLE content_views(session_id TEXT,view_type TEXT,view_started_at TEXT);
+          CREATE TABLE content_views(session_id TEXT,view_type TEXT,view_started_at TEXT,user_id TEXT);
           INSERT INTO transactions VALUES('t','u','subscription','subscription_initial','pending','s','2026-10-01T10:00:00Z',NULL,'session');
           INSERT INTO payment_status_history VALUES('t','pending','2026-10-01T10:00:00Z');
         ''')
@@ -64,19 +64,24 @@ class InitialSubscriptionTests(unittest.TestCase):
         self.assertEqual(self.count('initial subscription entitlement does not start at success'),1)
 
     def test_initial_journey_is_not_required_for_pending_and_uses_success_time(self):
-        self.assertEqual(self.count('initial subscription missing full journey'),0)
+        self.assertEqual(self.count('initial subscription checkout or start invalid'),0)
         self.succeed()
         self.db.executescript('''
           INSERT INTO user_events VALUES('session','paywall_viewed','2026-10-01T09:59:00Z'),
             ('session','checkout_started','2026-10-01T10:00:00Z'),
             ('session','subscription_started','2026-10-01T10:05:00Z');
-          INSERT INTO content_views VALUES('session','sub','2026-10-01T10:05:00Z');
         ''')
-        self.assertEqual(self.count('initial subscription missing full journey'),0)
+        self.grant()
+        self.assertEqual(self.count('initial subscription checkout or start invalid'),0)
+        self.assertEqual(self.count('subscription views without entitlement'),0)
         self.db.execute("DELETE FROM user_events WHERE event_name='paywall_viewed'")
-        self.assertEqual(self.count('initial subscription missing full journey'),0)
+        self.assertEqual(self.count('initial subscription checkout or start invalid'),0)
+        self.db.execute("INSERT INTO content_views VALUES('later_session','sub','2026-10-02T10:00:00Z','u')")
+        self.assertEqual(self.count('subscription views without entitlement'),0)
         self.db.execute("UPDATE content_views SET view_started_at='2026-10-01T10:04:00Z'")
-        self.assertEqual(self.count('initial subscription missing full journey'),1)
+        self.assertEqual(self.count('subscription views without entitlement'),1)
+        self.db.execute("UPDATE content_views SET view_started_at='2026-11-01T10:05:00Z'")
+        self.assertEqual(self.count('subscription views without entitlement'),1)
 
 if __name__ == '__main__':
     unittest.main()
