@@ -258,6 +258,16 @@ checks={
  'delisting without prior notice': "SELECT count(*) FROM transaction_content_attribution a JOIN transactions t USING(txn_id) WHERE a.attribution_status='expired_delisting' AND NOT EXISTS(SELECT 1 FROM user_events e WHERE e.user_id=t.user_id AND e.event_name='content_delisting_notice' AND e.content_id=a.content_id AND e.episode_number=a.episode_number AND e.event_at>=a.entitlement_start_at AND e.event_at<a.delisted_at)",
  'unlabelled paywall or checkout': "SELECT count(*) FROM user_events WHERE event_name IN ('paywall_viewed','checkout_started') AND (event_properties_json IS NULL OR json_extract(event_properties_json,'$.product') NOT IN ('subscription','ppv') OR json_extract(event_properties_json,'$.product') IS NULL)",
  'PPV paywall or checkout missing episode key': "SELECT count(*) FROM user_events WHERE event_name IN ('paywall_viewed','checkout_started') AND (CASE WHEN json_valid(event_properties_json) THEN json_extract(event_properties_json,'$.product') ELSE NULL END)='ppv' AND (content_id IS NULL OR trim(content_id)='' OR episode_number IS NULL OR typeof(episode_number)!='integer' OR episode_number<=0)",
+ 'transaction checkout link invalid': """SELECT count(*) FROM transactions t LEFT JOIN user_events e ON e.event_id=t.checkout_event_id
+ WHERE t.checkout_event_id IS NOT NULL AND (
+   e.event_id IS NULL OR e.event_name!='checkout_started' OR t.type NOT IN ('subscription','ppv')
+   OR t.session_id IS NULL OR e.session_id IS NULL OR t.session_id IS NOT e.session_id
+   OR e.user_id IS NULL OR e.user_id IS NOT t.user_id
+   OR valid_utc(t.transaction_at)=0 OR valid_utc(e.event_at)=0 OR e.event_at>t.transaction_at
+   OR (CASE WHEN json_valid(e.event_properties_json) THEN json_extract(e.event_properties_json,'$.product') ELSE NULL END) IS NOT t.type
+   OR (t.type='ppv' AND EXISTS(SELECT 1 FROM transaction_content_attribution a WHERE a.txn_id=t.txn_id)
+     AND NOT EXISTS(SELECT 1 FROM transaction_content_attribution a WHERE a.txn_id=t.txn_id AND a.content_id=e.content_id AND a.episode_number=e.episode_number))
+ )""",
  'checkout paywall link invalid': """SELECT count(*) FROM user_events c
    LEFT JOIN user_events p ON p.event_id=c.triggering_paywall_event_id
    WHERE c.triggering_paywall_event_id IS NOT NULL AND (
@@ -285,7 +295,7 @@ expected={
  'content_availability_history':'availability_id content_id episode_number available_from_at available_until_at status recorded_at',
  'content_views':'view_id user_id anonymous_id content_id episode_number date watch_duration_sec content_duration_sec view_type session_id view_started_at view_ended_at completion_pct playback_position_start_sec playback_position_end_sec is_first_view_of_episode free_quota_consuming free_quota_sequence event_timezone country_at_event',
  'playback_segments':'segment_id view_id segment_index segment_started_at segment_ended_at position_start_sec position_end_sec watch_duration_sec',
- 'transactions':'txn_id user_id date type amount_usd payment_method status transaction_subtype payment_provider list_price_usd discount_usd transaction_at country_at_event session_id provider_transaction_id currency original_amount related_txn_id refund_reason subscription_id',
+ 'transactions':'txn_id user_id date type amount_usd payment_method status transaction_subtype payment_provider list_price_usd discount_usd transaction_at country_at_event session_id provider_transaction_id currency original_amount related_txn_id refund_reason subscription_id checkout_event_id',
  'payment_status_history':'payment_status_event_id txn_id status effective_at recorded_at provider_event_id',
  'refund_content_attribution':'refund_allocation_id refund_txn_id content_id episode_number allocated_refund_usd created_at updated_at',
  'marketing_spend':'date channel spend_usd impressions clicks loaded_at',
