@@ -356,11 +356,24 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 ## 14. payment_status_history
 
-**Purpose:** Payment-provider status transitions. **Grain/key:** One transition per payment_status_event_id; provider_event_id unique. **Time:** effective_at is status-effective time; recorded_at is recording time.
+**Purpose:** Record payment-provider status events, including changes over time. **Grain:** One event for one transaction. **Primary key:** payment_status_event_id. **Relationship:** One transaction has one or more history events; each event belongs to one transaction.
 
-**Columns:** payment_status_event_id — event ID; txn_id — payment; status — transition status; effective_at — effective time; recorded_at — recorded time; provider_event_id — provider event ID.
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| payment_status_event_id | TEXT primary key | Required by checker | Unique identifier for this history event. |
+| txn_id | TEXT | No | Foreign key to transactions.txn_id. |
+| status | TEXT | No | pending, succeeded, failed or voided. |
+| effective_at | TEXT | No | UTC time when the status became effective. |
+| recorded_at | TEXT | No | UTC time when the event was recorded. |
+| provider_event_id | TEXT | No; unique | Provider event identifier, used as an idempotency key. |
 
-**Joins:** txn_id → transactions; one transaction can have many transitions. **Use:** status at a chosen time. **Limitations/checks:** Summing transaction amounts after joining all transitions can duplicate revenue. Checker uses status history in selected checks; propose transition-order and latest-status reconciliation.
+**Interpretation:** A pending transaction may later succeed, fail or be voided. A void is a cancellation before success. An event effective after a success cannot be voided; money returned after success is a separate positive-amount refund transaction linked to the original charge. This rule applies to status records for charges and refunds. The checker enforces the no-post-success-void rule, not a complete provider-specific transition state machine.
+
+**Time and joins:** For status at an event instant, select the latest effective event at or before that instant, then join the resulting one row per transaction to the parent. For a historical knowledge-time question, also restrict recorded_at to the chosen knowledge cutoff; this is not a complete audit/versioning contract and late corrections or source deletions may require additional history. Before the first known status, the status is unknown. No separate transaction snapshot timestamp is stored; the current transaction status is checked against the latest stored effective event. A direct join to all history events repeats transaction amounts; never sum them without first reducing the history to the required transaction grain. Monthly payment-event amounts are counted once at success effective time, with refunds subtracted separately, subject to the monetary and metric limitations in the transactions entry.
+
+**Checks:** The checker validates required identifiers, allowed status values, UTC timestamp formats, status effective time not before transaction creation, unique provider event IDs, no duplicate effective timestamps or multiple successes per transaction, current-status agreement with the latest event, and no void effective after success. Existing foreign-key checks cover transaction references. These checks do not validate every permissible transition, establish a universal provider policy, or prove all late events were captured. They do not require recorded_at to follow effective_at.
+
+**Fixture coverage:** The current fixture has one status row per transaction, with succeeded and failed statuses; delayed success and pre-success void are exercised in isolated tests, not represented as multi-step histories in the fixture.
 
 ## 15. user_events
 
