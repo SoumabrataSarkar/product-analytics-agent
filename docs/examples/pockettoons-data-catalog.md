@@ -311,11 +311,11 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 ## 8. marketing_spend
 
-**Purpose:** Daily channel-level spend and delivery. **Grain/key:** (date, channel). **Time:** source reporting date and loaded_at.
+**Purpose:** Daily channel-level spend and delivery. **Grain/key:** (date, channel). **Time:** date is the UTC reporting day, from 00:00:00 UTC inclusive to the next day's 00:00:00 UTC exclusive; loaded_at is the UTC ingestion timestamp. The checker validates the calendar date and the fixture timestamp format, but cannot establish a source's actual reporting timezone.
 
 **Columns:** date — source reporting date; channel — marketing channel; spend_usd — spend; impressions — delivered impressions; clicks — delivered clicks; loaded_at — ingestion time.
 
-**Joins:** Channel/time matching to acquisition is logical, not an individual-user FK. **Use:** spend by channel and day. **Limitations/checks:** No campaign/country breakdown; source timezone must be established. Joining one spend row to many users repeats spend. Required fields are checked; propose non-negative values and clicks ≤ impressions checks.
+**Joins:** Channel/time matching to acquisition is logical, not an individual-user FK. **Use:** spend by channel and day. **Limitations/checks:** No campaign/country breakdown; real sources require their actual reporting timezone to be established. Joining one spend row to many users repeats spend. Required fields, valid UTC calendar date and UTC load timestamp are checked; propose non-negative values and clicks ≤ impressions checks.
 
 ## 9. anonymous_identities
 
