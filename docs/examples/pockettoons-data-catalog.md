@@ -315,7 +315,7 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 **Columns:** date — source reporting date; channel — marketing channel; spend_usd — spend; impressions — delivered impressions; clicks — delivered clicks; loaded_at — ingestion time.
 
-**Joins:** Channel/time matching to acquisition is logical, not an individual-user FK. **Use:** spend by channel and day. **Limitations/checks:** No campaign/country breakdown; real sources require their actual reporting timezone to be established. Joining one spend row to many users repeats spend. Required fields, valid UTC calendar date and UTC load timestamp are checked; propose non-negative values and clicks ≤ impressions checks.
+**Joins:** Channel/time matching to acquisition is logical, not an individual-user FK. **Use:** spend by channel and day. **Limitations/checks:** No campaign/country breakdown; real sources require their actual reporting timezone to be established. Joining one spend row to many users repeats spend. The checker validates required fields, UTC calendar date and load timestamp, finite non-negative numeric spend, and non-negative integer impression and click counts. Clicks may exceed impressions; their relationship depends on the source definitions.
 
 ## 9. anonymous_identities
 
