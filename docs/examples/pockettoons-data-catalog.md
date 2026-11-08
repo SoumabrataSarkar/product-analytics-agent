@@ -515,11 +515,11 @@ A checkout's optional triggering_paywall_event_id references the specific trigge
 
 ## 17. payment_quality_review
 
-**Purpose:** Evidence and corrections for reviewed payment records. **Grain/key:** One reviewed transaction per txn_id. **Time:** No review timestamp exists.
+**Purpose:** Evidence and corrections for reviewed payment records. **Grain/key:** One reviewed transaction per txn_id. **Time:** reviewed_at is the UTC review completion time when known.
 
-**Columns:** txn_id — reviewed transaction; issue — issue type; corrected_amount_usd — reviewed corrected amount; reason — correction rationale.
+**Columns:** txn_id — reviewed transaction; issue — issue type; corrected_amount_usd — reviewed corrected amount; reason — correction rationale; reviewed_at — nullable review completion timestamp, in fixture format YYYY-MM-DDTHH:MM:SSZ when known.
 
-**Joins:** txn_id FK → transactions; logical same-key match to raw_payment_source. **Use:** reconcile source and corrected values. **Limitations/checks:** Not another payment and not proof that an agent independently detected the issue. Checker tests reviewed amounts against curated transaction values. Proposed: review timestamp and evidence/coverage checks.
+**Joins:** txn_id FK → transactions; logical same-key match to raw_payment_source. **Use:** reconcile source and corrected values. **Limitations/checks:** Not another payment and not proof that an agent independently detected the issue. A NULL reviewed_at means the review time is unknown, not that the review did not occur; its availability at a past point cannot be established from this table. The checker validates populated review timestamps, review issue and reason, and reconciliation to curated transaction values. The generated fixture leaves reviewed_at NULL because review completion times are not known. Review records do not retain earlier versions, so even a populated timestamp alone does not provide full review history.
 
 ## Open implementation work
 
