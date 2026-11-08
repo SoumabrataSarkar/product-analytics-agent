@@ -218,12 +218,14 @@ The stored `content_views.view_type` records the decision at view start and is n
 | `country_current` | TEXT | yes | Current profile country if known; agrees with `country` or NULL when unknown. |
 | `acquisition_source` | TEXT | no | First-touch channel (`organic`, `paid_search`, `paid_social`, `creator`, `referral`, `other`, `unknown`). `unknown` represents missing attribution, not an acquisition channel. |
 | `subscription_status` | TEXT | no | Current snapshot: `never_subscribed`, `active`, `cancel_at_period_end`, `expired`, `refunded`, `paused`. Not for historical entitlement. |
-| `subscription_start` | TIMESTAMP | yes | Start of the current/latest subscription period; NULL if never subscribed. |
-| `subscription_end` | TIMESTAMP | yes | End of current/latest subscription period; NULL if unknown or never subscribed. |
-| `created_at` | TIMESTAMP | no | Record creation timestamp. |
-| `updated_at` | TIMESTAMP | no | Snapshot update timestamp, not a subscription-specific change time. |
+| `subscription_start` | TIMESTAMP | yes | Start of the current/latest paid subscription period; NULL if never subscribed. |
+| `subscription_end` | TIMESTAMP | yes | Scheduled exclusive end of the current/latest paid period, including for active subscriptions; a successful refund ends access at its effective time. NULL if unknown or never subscribed. |
+| `created_at` | TIMESTAMP | no | Source user-profile creation timestamp. |
+| `updated_at` | TIMESTAMP | no | Latest source user-profile update timestamp, not an ingestion or subscription-specific change time. |
 
 A never-subscribed user has `subscription_status = 'never_subscribed'` and NULL subscription start/end. NULL means no value, not an empty string. The subscription-status change timestamp belongs to `subscription_history`. A snapshot describes one specified as-of instant, and its status and period boundaries reconcile to the effective history at that instant.
+
+The dataset-level `dataset_metadata` table stores `users_snapshot_at` as a UTC timestamp. It is the shared as-of instant for user snapshots. Monthly plans follow calendar-month renewal dates, not a fixed number of days: for example, 1 October to 1 November. The fixture uses billing days 1–25; treatment of billing days absent from a future month requires a separate decision. A successful refund can end access before the scheduled renewal. The status interval start can differ from the paid period start after cancellation, expiry or refund.
 
 ### 4.2 `sessions` — assignment-mandated
 
@@ -612,3 +614,4 @@ The source fixture contains missing acquisition values, numeric and text payment
 | Reconciliation | Schema and required values match this model; PKs/FKs resolve, status and availability intervals do not overlap, corrected source amounts reconcile, and metrics remain stable under safe joins. |
 
 The SQLite fixture is an implementation of this reference dataset contract. The generalized analytics agent and its evaluation use their own documented contracts.
+

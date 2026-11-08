@@ -9,6 +9,7 @@ import sqlite3
 from pathlib import Path
 
 SEED = 8126
+SNAPSHOT_AT = '2026-09-30T23:59:59Z'
 MONTHS = [(2026, m) for m in range(4, 10)]
 
 def timestamp(month, day, hour=12, minute=0):
@@ -28,6 +29,7 @@ def main():
     db = sqlite3.connect(path)
     db.executescript('''
     PRAGMA foreign_keys=ON;
+    CREATE TABLE dataset_metadata(metadata_key TEXT PRIMARY KEY NOT NULL, metadata_value TEXT NOT NULL);
     CREATE TABLE users(user_id TEXT PRIMARY KEY, signup_date TEXT NOT NULL, signup_at TEXT NOT NULL, country TEXT NOT NULL, country_origin TEXT, country_current TEXT, acquisition_source TEXT NOT NULL, subscription_status TEXT NOT NULL, subscription_start TEXT, subscription_end TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE anonymous_identities(anonymous_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, retired_at TEXT);
     CREATE TABLE sessions(session_id TEXT PRIMARY KEY, user_id TEXT REFERENCES users, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, date TEXT NOT NULL, session_started_at TEXT NOT NULL, session_ended_at TEXT, last_activity_at TEXT NOT NULL, duration_sec INTEGER, platform TEXT NOT NULL, country_at_event TEXT);
@@ -52,6 +54,7 @@ def main():
     CREATE INDEX ix_payment_history ON payment_status_history(txn_id,effective_at);
     CREATE INDEX ix_identity_session ON identity_links(session_id,user_id,linked_at);
     ''')
+    db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('users_snapshot_at', SNAPSHOT_AT))
     # Existing users signed up before the window; new cohorts join in every analysis month.
     users=[]; truth=[]
     cohort_sizes=[10400,1600,2201,2653,2477,2949,1720]
@@ -131,7 +134,8 @@ def main():
             db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',(period+'_cancel',subid,uid,request,ended,request,'cancel_at_period_end','monthly_9_99',txnid,request,request))
     for i in first_start:
         status='active' if i in current else 'expired'
-        db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],None if i in current else cancelled.get(i),last_start[i] if i in current else cancelled.get(i),f'u{i:05}'))
+        end_at = timestamp(10, 1+(i*7)%25, 1) if i in current else cancelled.get(i)
+        db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],end_at,last_start[i] if i in current else cancelled.get(i),f'u{i:05}'))
     seen=set(); sessions=[]; views=[]; view_pairs=[]; events=[]; links=[]; spend=[]
     zones={'US':'America/New_York','BR':'America/Sao_Paulo','MX':'America/Mexico_City','PH':'Asia/Manila','ID':'Asia/Jakarta','TH':'Asia/Bangkok'}
     for mi,(_,month) in enumerate(MONTHS):

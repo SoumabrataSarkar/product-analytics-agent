@@ -1,10 +1,10 @@
 # Data Catalog: PocketToons reference fixture
 
-**Status:** Draft for review. This catalog describes the current 17-table synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
+**Status:** Draft for review. This catalog describes the synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 17 modeled and source-quality tables plus dataset_metadata. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
 
 **Reading the column lists:** Each line identifies a column and its meaning. All columns have SQLite TEXT type except amounts and completion percentages (REAL), counts, durations, positions, episode numbers and boolean flags (INTEGER), and raw_amount (no declared type). Timestamps are UTC ISO-8601 values stored as TEXT. Dates are TEXT. A question mark after a column means nullable in the current schema; other non-key columns are declared NOT NULL. SQLite text primary keys are not always explicitly declared NOT NULL, but the model and existing checker require non-null identifiers. Composite key columns are declared NOT NULL.
 
-All tables below exist in the fixture. Logical Bronze/Silver/Gold assignments, transformations and reconciliation are planned, not implemented. Dataset-level snapshot metadata is approved as a design direction but does not yet exist. Examples are illustrative; not real customer records. Existing checker coverage is selective: a model requirement is not automatically a database constraint or a passing test.
+All tables below exist in newly generated fixtures. Logical Bronze/Silver/Gold assignments, transformations and reconciliation are planned, not implemented. Dataset-level metadata stores the user snapshot timestamp. Examples are illustrative; not real customer records. Existing checker coverage is selective: a model requirement is not automatically a database constraint or a passing test.
 
 ## Shared safe-use rules
 
@@ -25,7 +25,26 @@ All tables below exist in the fixture. Logical Bronze/Silver/Gold assignments, t
 
 **Joins:** user_id is referenced by sessions, content_views, transactions, subscription_history, identity_links and user_events; one user can have many children. A logical marketing-channel match is not a foreign key. **Use:** signups by acquisition source; report unknown.
 
-**Limitations/checks:** Use subscription_history for historical status and event country for historical location. Existing checks test required fields, views/transactions after signup and matching non-never-subscribed snapshot status at 2026-09-30T23:59:59Z; they do not alone prove full snapshot-boundary reconciliation. Proposed checks: date derivation, value domains, country agreement and full snapshot reconciliation. Verify generator audit timestamps match the approved source-profile meaning. Dataset-level snapshot metadata is not implemented.
+**Limitations/checks:** Use subscription_history for historical status and event country for historical location. The checker reads users_snapshot_at from dataset_metadata and checks required values, date/UTC format, value domains, country agreement, never-subscribed state, status and period boundaries, chronology, monthly renewal dates, and selected source-profile update timing. Audit validation checks known generated subscription-status changes, not every possible profile change. For active subscriptions, subscription_end is the scheduled exclusive paid-period end; refund ends access at approval. Monthly billing follows calendar months; treatment of days 26–31 in shorter months is not defined by this fixture.
+
+### User columns: physical schema and interpretation
+
+| Column | SQLite type | Nullable? | Meaning / example |
+|---|---|---|---|
+| user_id | TEXT primary key | Required by checker | Opaque ID; e.g. u00001. |
+| signup_date | TEXT | No | UTC date derived from signup_at; e.g. 2026-04-12. |
+| signup_at | TEXT | No | UTC account creation time, e.g. 2026-04-12T10:30:00Z. |
+| country | TEXT | No | Current country, or unknown if unavailable. |
+| country_origin | TEXT | Yes | Signup country; NULL if unavailable, not nationality. |
+| country_current | TEXT | Yes | Current profile country; NULL if unavailable. |
+| acquisition_source | TEXT | No | First touch; unknown means missing attribution. |
+| subscription_status | TEXT | No | Status at users_snapshot_at; never_subscribed is explicit. |
+| subscription_start | TEXT | Yes | Start of current/latest paid period; NULL if never subscribed or unavailable. |
+| subscription_end | TEXT | Yes | Scheduled exclusive end for an active paid period, or actual earlier refund termination; NULL if never subscribed or unknown. |
+| created_at | TEXT | No | Source-profile creation timestamp. |
+| updated_at | TEXT | No | Source-profile latest update timestamp, not ingestion timestamp. |
+
+An active period beginning 1 October ends at 1 November at the same UTC time; this is a calendar month, not necessarily 30 days. A cancellation-at-period-end remains entitled through its scheduled exclusive end. For expired or refunded users, the status-period start differs from the paid-period start: the status begins when access ended. A never-subscribed user has NULL period boundaries. Event examples and identifiers are illustrative.
 
 ## 2. sessions
 
@@ -157,4 +176,8 @@ All tables below exist in the fixture. Logical Bronze/Silver/Gold assignments, t
 
 ## Open implementation work
 
-The dataset-level snapshot metadata is approved but not implemented. Audit timestamps must be checked against their source-profile definition. The full data layers, metric registry, catalog machine-readable format and agent integration remain future work. Each proposed quality check must be implemented and verified before it is described as an existing check.
+The user-profile update check covers generated status changes but not all possible source profile changes. The full data layers, metric registry, catalog machine-readable format and agent integration remain future work. Each proposed quality check must be implemented and verified before it is described as an existing check.
+
+## 18. dataset_metadata
+
+**Purpose:** Dataset-wide metadata. **Grain/key:** One value per metadata_key. **Columns:** metadata_key TEXT primary key NOT NULL; metadata_value TEXT NOT NULL. The users_snapshot_at value is the UTC as-of instant for all user snapshots. It is not a per-user update time. The checker requires one valid value; it does not validate unrelated metadata keys. **Use:** determine when the users snapshot applies. **Limitations:** Later datasets with independent user refresh times may need a different representation.

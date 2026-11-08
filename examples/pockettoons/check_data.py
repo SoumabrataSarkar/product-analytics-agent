@@ -2,11 +2,36 @@
 """Check essential invariants in the PocketToons prototype SQLite database."""
 import argparse
 import sqlite3
+import datetime as dt
+import calendar
 
 p=argparse.ArgumentParser()
 p.add_argument('database')
 args=p.parse_args()
 db=sqlite3.connect(f'file:{args.database}?mode=ro', uri=True)
+def valid_utc(value):
+    try:
+        return int(dt.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%dT%H:%M:%SZ') == value)
+    except (TypeError, ValueError):
+        return 0
+db.create_function('valid_utc', 1, valid_utc)
+def next_calendar_month(value):
+    try:
+        current = dt.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+        # The fixture only specifies billing days 1–25; month-end behavior is undecided.
+        if current.day > 25:
+            return None
+        year = current.year + (current.month == 12)
+        month = current.month % 12 + 1
+        return current.replace(year=year, month=month, day=min(current.day, calendar.monthrange(year, month)[1])).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except (TypeError, ValueError):
+        return None
+db.create_function('next_calendar_month', 1, next_calendar_month)
+snapshot_rows = db.execute("SELECT metadata_value FROM dataset_metadata WHERE metadata_key='users_snapshot_at'").fetchall()
+if len(snapshot_rows) != 1 or not valid_utc(snapshot_rows[0][0]):
+    raise SystemExit('FAIL: dataset must declare one valid UTC users_snapshot_at')
+snapshot_at = snapshot_rows[0][0]
+db.create_function('users_snapshot_at', 0, lambda: snapshot_at)
 checks={
  'foreign keys': 'SELECT count(*) FROM pragma_foreign_key_check',
  'views before signup': 'SELECT count(*) FROM content_views v JOIN users u USING(user_id) WHERE v.view_started_at<u.signup_at',
@@ -37,7 +62,15 @@ checks={
  'successful PPV without checkout': "WITH x AS (SELECT session_id,min(event_at) ts FROM user_events WHERE event_name='checkout_started' AND session_id IS NOT NULL GROUP BY session_id) SELECT count(*) FROM transactions t LEFT JOIN x ON x.session_id=t.session_id AND x.ts<=t.transaction_at WHERE t.type='ppv' AND t.status='succeeded' AND x.session_id IS NULL",
  'session without app open': "WITH x AS (SELECT DISTINCT session_id FROM user_events WHERE event_name='app_opened' AND session_id IS NOT NULL) SELECT count(*) FROM sessions s LEFT JOIN x ON x.session_id=s.session_id WHERE x.session_id IS NULL",
  'views without timezone': "SELECT count(*) FROM content_views WHERE event_timezone IS NULL",
- 'subscription snapshot without matching period': "SELECT count(*) FROM users u WHERE u.subscription_status!='never_subscribed' AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.status=u.subscription_status AND h.effective_start_at<='2026-09-30T23:59:59Z' AND (h.effective_end_at IS NULL OR h.effective_end_at>'2026-09-30T23:59:59Z'))",
+ 'subscription snapshot without matching period': "SELECT count(*) FROM users u WHERE u.subscription_status!='never_subscribed' AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.status=u.subscription_status AND h.effective_start_at<=users_snapshot_at() AND (h.effective_end_at IS NULL OR h.effective_end_at>users_snapshot_at()))",
+ 'user signup date or timestamps invalid': "SELECT count(*) FROM users WHERE valid_utc(signup_at)=0 OR signup_date!=substr(signup_at,1,10) OR valid_utc(created_at)=0 OR valid_utc(updated_at)=0 OR updated_at<created_at OR (subscription_start IS NOT NULL AND valid_utc(subscription_start)=0) OR (subscription_end IS NOT NULL AND valid_utc(subscription_end)=0)",
+ 'user value domains invalid': "SELECT count(*) FROM users WHERE acquisition_source NOT IN ('organic','paid_search','paid_social','creator','referral','other','unknown') OR subscription_status NOT IN ('never_subscribed','active','cancel_at_period_end','expired','refunded','paused')",
+ 'user country fields inconsistent': "SELECT count(*) FROM users WHERE (country_current IS NOT NULL AND country!=country_current) OR (country_current IS NULL AND country!='unknown')",
+ 'never subscribed snapshot inconsistent': "SELECT count(*) FROM users u WHERE u.subscription_status='never_subscribed' AND (u.subscription_start IS NOT NULL OR u.subscription_end IS NOT NULL OR EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.effective_start_at<=users_snapshot_at()))",
+ 'subscription history before signup': "SELECT count(*) FROM subscription_history h JOIN users u ON u.user_id=h.user_id WHERE h.effective_start_at<u.signup_at",
+ 'user profile update before status change': "SELECT count(*) FROM users u WHERE EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.subscription_status_updated_at<=users_snapshot_at() AND h.subscription_status_updated_at>u.updated_at)",
+ 'monthly subscription period invalid': "SELECT count(*) FROM transactions t WHERE t.type='subscription' AND t.status='succeeded' AND NOT EXISTS(SELECT 1 FROM transactions r WHERE r.related_txn_id=t.txn_id AND r.type='refund' AND r.status='succeeded') AND (next_calendar_month(t.transaction_at) IS NULL OR COALESCE((SELECT max(h.effective_end_at) FROM subscription_history h WHERE h.source_txn_id=t.txn_id AND h.status IN ('active','cancel_at_period_end')),'')!=next_calendar_month(t.transaction_at))",
+ 'subscription snapshot boundaries inconsistent': "SELECT count(*) FROM users u WHERE u.subscription_status!='never_subscribed' AND (u.subscription_start IS NULL OR u.subscription_end IS NULL OR u.subscription_start!=(SELECT max(t.transaction_at) FROM transactions t WHERE t.user_id=u.user_id AND t.type='subscription' AND t.status='succeeded' AND t.transaction_at<=users_snapshot_at()) OR (u.subscription_status IN ('active','cancel_at_period_end') AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.status=u.subscription_status AND h.effective_start_at<=users_snapshot_at() AND (h.effective_end_at IS NULL OR h.effective_end_at>users_snapshot_at()) AND h.effective_end_at=u.subscription_end)) OR (u.subscription_status IN ('expired','refunded') AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=u.user_id AND h.status=u.subscription_status AND h.effective_start_at=u.subscription_end AND h.effective_start_at<=users_snapshot_at() AND (h.effective_end_at IS NULL OR h.effective_end_at>users_snapshot_at()))))",
  'initial subscription missing full journey': "WITH ev AS (SELECT session_id, min(CASE WHEN event_name='paywall_viewed' THEN event_at END) wall, min(CASE WHEN event_name='checkout_started' THEN event_at END) checkout, min(CASE WHEN event_name='subscription_started' THEN event_at END) started FROM user_events GROUP BY session_id), vv AS (SELECT session_id,min(view_started_at) first_view FROM content_views WHERE view_type='sub' GROUP BY session_id) SELECT count(*) FROM transactions t LEFT JOIN ev USING(session_id) LEFT JOIN vv USING(session_id) WHERE t.transaction_subtype='subscription_initial' AND (t.session_id IS NULL OR ev.wall IS NULL OR ev.checkout IS NULL OR ev.started IS NULL OR vv.first_view IS NULL OR ev.wall>ev.checkout OR ev.checkout>t.transaction_at OR ev.started<t.transaction_at OR vv.first_view<t.transaction_at)",
  'delisting without prior notice': "SELECT count(*) FROM transaction_content_attribution a JOIN transactions t USING(txn_id) WHERE a.attribution_status='expired_delisting' AND NOT EXISTS(SELECT 1 FROM user_events e WHERE e.user_id=t.user_id AND e.event_name='content_delisting_notice' AND e.content_id=a.content_id AND e.episode_number=a.episode_number AND e.event_at>=a.entitlement_start_at AND e.event_at<a.delisted_at)",
  'unlabelled paywall or checkout': "SELECT count(*) FROM user_events WHERE event_name IN ('paywall_viewed','checkout_started') AND (event_properties_json IS NULL OR json_extract(event_properties_json,'$.product') NOT IN ('subscription','ppv') OR json_extract(event_properties_json,'$.product') IS NULL)",
