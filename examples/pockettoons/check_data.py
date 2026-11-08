@@ -376,6 +376,16 @@ else:
     q1,q2=quarters
     print('Quarter-average MAU change:',round((q2/q1-1)*100,2),'%')
     if abs(q2/q1-1.2)>0.0005: failed+=1
+family=db.execute(load_sql('mau_from_family'),coverage).fetchall()
+family_ok=family==[(m,v) for m,v,_ in rows]
+print(('PASS' if family_ok else 'FAIL'),'activity family month block matches registry MAU')
+failed+=not family_ok
+mau_by_month={m:v for m,v,_ in rows}; prev_month=dict(zip(list(mau_by_month)[1:],list(mau_by_month)))
+growth=db.execute(load_sql('growth_accounting_monthly'),coverage).fetchall()
+growth_bad=[g[0] for g in growth if g[1]+g[2]+g[3]!=mau_by_month[g[0]] or mau_by_month[g[0]]-mau_by_month[prev_month[g[0]]]!=g[1]+g[3]-g[4]]
+growth_ok=len(growth)==len(rows)-1 and not growth_bad
+print(('PASS' if growth_ok else 'FAIL'),'growth accounting reconciles to registry MAU',growth_bad)
+failed+=not growth_ok
 bad_money=db.execute('SELECT count(*) FROM transactions WHERE usd_cents(amount_usd) IS NULL').fetchone()[0]
 duplicate_success=db.execute("SELECT count(*) FROM (SELECT txn_id FROM payment_status_history WHERE status='succeeded' GROUP BY txn_id HAVING count(*)>1)").fetchone()[0]
 if bad_money or duplicate_success:
