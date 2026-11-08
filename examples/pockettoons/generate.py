@@ -16,7 +16,9 @@ def timestamp(month, day, hour=12, minute=0):
     return f"2026-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00Z"
 
 def offset(ts, seconds):
-    return (dt.datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ') + dt.timedelta(seconds=seconds)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    # Direct field parsing of the fixed fixture format; equivalent to strptime/strftime but faster.
+    t = dt.datetime(int(ts[0:4]), int(ts[5:7]), int(ts[8:10]), int(ts[11:13]), int(ts[14:16]), int(ts[17:19])) + dt.timedelta(seconds=seconds)
+    return f'{t.year:04d}-{t.month:02d}-{t.day:02d}T{t.hour:02d}:{t.minute:02d}:{t.second:02d}Z'
 
 def marketing_metrics(rng, month, channel):
     """Generate correlated daily marketing values from an independent RNG."""
@@ -36,6 +38,10 @@ def main():
     rng = random.Random(SEED)
     marketing_rng = random.Random(SEED + 2718)
     db = sqlite3.connect(path)
+    # Build-time performance settings only; they do not change the stored data.
+    db.execute('PRAGMA cache_size=-262144')
+    db.execute('PRAGMA temp_store=MEMORY')
+    db.execute('PRAGMA synchronous=OFF')
     db.executescript('''
     PRAGMA foreign_keys=ON;
     CREATE TABLE dataset_metadata(metadata_key TEXT PRIMARY KEY NOT NULL, metadata_value TEXT NOT NULL);
@@ -94,6 +100,10 @@ def main():
     db.executemany('INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',users)
     # Private answer key: no account/source truth is published in the analytics database.
     db.executemany('INSERT INTO anonymous_identities VALUES (?,?,?)',[(f'a{i:05}',u[2],None) for i,u in enumerate(users)])
+    # Some users also use a second installation on another platform.
+    device_rng=random.Random(SEED+3301)
+    second_device={i for i in range(len(users)) if device_rng.random()<0.45}
+    db.executemany('INSERT INTO anonymous_identities VALUES (?,?,?)',[(f'b{i:05}',users[i][2],None) for i in sorted(second_device)])
     start='2026-03-01T00:00:00Z'
     catalogs=[]; episodes=[]; availability=[]; tier_history=[]
     duration_rng=random.Random(SEED+240)
@@ -166,38 +176,92 @@ def main():
         end_at = timestamp(10, 1+(i*7)%25, 1) if i in current else cancelled.get(i)
         db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],end_at,last_start[i] if i in current else cancelled.get(i),f'u{i:05}'))
     seen=set(); sessions=[]; views=[]; view_pairs=[]; events=[]; links=[]; spend=[]
+    extra_sessions=[]; extra_views=[]; extra_view_pairs=[]; extra_session_ids=set()
     zones={'US':'America/New_York','BR':'America/Sao_Paulo','MX':'America/Mexico_City','PH':'Asia/Manila','ID':'Asia/Jakarta','TH':'Asia/Bangkok'}
+    # Activity realism uses its own deterministic stream so the original draws, and the
+    # payment, refund and conversion journeys derived from them, keep their sequence.
+    activity_rng=random.Random(SEED+4409)
+    utc_offset_hours={'US':-4,'BR':-3,'MX':-6,'PH':8,'ID':7,'TH':7}
+    # Relative local-hour weights: light overnight use, a midday rise and an evening peak.
+    local_hour_weights=[2,1,0.5,0.3,0.3,0.5,1,2,2.5,2.5,2.5,3,4,3.5,3,3,3.5,4.5,6,8,10,10,8,5]
+    intensity=[activity_rng.lognormvariate(0,0.9) for _ in users]
+    initial_paid_at={row[1]:row[8] for row in txns if row[4]=='subscription_initial'}
+    def poisson(lam):
+        limit=pow(2.718281828459045,-lam); k=0; prod=activity_rng.random()
+        while prod>limit: k+=1; prod*=activity_rng.random()
+        return k
+    def pick_start(country,month,day,span,blocked):
+        # Draw a local hour, convert it to UTC on the chosen UTC day, and keep the visit
+        # (and any same-day return) inside that UTC day and clear of reserved journeys.
+        for _ in range(60):
+            hour=activity_rng.choices(range(24),weights=local_hour_weights)[0]
+            minute=(hour-utc_offset_hours[country])*60%1440+activity_rng.randint(0,59)
+            if minute*60+span>86340: continue
+            st=timestamp(month,day,minute//60,minute%60)
+            if any(st<b and offset(st,span)>a for a,b in blocked): continue
+            return st
+        raise RuntimeError(f'no valid session start for {country} {month}-{day}')
     for mi,(_,month) in enumerate(MONTHS):
         eligible=list(range(cohort_ends[mi+1]))
         # Monthly snapshots begin after signup; all payers are guaranteed active.
         chosen=set(payers[mi]); chosen.update(rng.sample([i for i in eligible if i not in chosen],targets[mi]-len(chosen)))
+        month_days=calendar.monthrange(2026,month)[1]
         for i in sorted(chosen):
-            uid=f'u{i:05}'; aid=f'a{i:05}'
+            uid=f'u{i:05}'
             first_day=int(users[i][2][8:10]) if users[i][2][5:7]==f'{month:02}' else 1
-            day=rng.randint(first_day,calendar.monthrange(2026,month)[1])
-            sid=f's{month}_{i:05}'; st=timestamp(month,day,rng.randint(8,18),rng.randint(0,59)); duration=rng.randint(1200,2280); end=offset(st,duration)
-            country=users[i][3]; platform=['ios','android','web'][i%3]
-            sessions.append((sid,uid,aid,st[:10],st,end,end,duration,platform,country))
-            links.append((f'l{month}_{i:05}',aid,uid,sid,st,'login'))
-            events.append((f'e{month}_{i:05}',uid,aid,st,'app_opened',sid,None,None,None,None,None,None,None,country,st))
-            # A real app visit can stop at browsing, without any playback.
-            if rng.random()<0.09:
-                browse_at=offset(st,40)
-                events.append((f'browse_only_{sid}',uid,aid,browse_at,'episode_detail_viewed',sid,None,None,None,'c01',1,None,zones[country],country,browse_at))
-                continue
-            cid='c01' if mi>=3 and i%2==0 else f'c{1+i%12:02}'; ep=1+(i+mi)%12
-            vt=offset(st,60); watched=rng.randint(240,600); ve=offset(vt,watched); vid=f'v{month}_{i:05}'
-            first=int((uid,cid,ep) not in seen); seen.add((uid,cid,ep))
-            sub=bool(db.execute("SELECT 1 FROM subscription_history WHERE user_id=? AND status IN ('active','cancel_at_period_end') AND effective_start_at<=? AND effective_end_at>? LIMIT 1",(uid,vt,vt)).fetchone())
-            view=(vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,watched,900,'sub' if sub else 'free',round(watched/900,4),0,watched,first,0 if sub else 1,None if sub else 1,zones[country],country)
-            views.append(view); view_pairs.append((sessions[-1],view))
+            # Original draws are consumed in their original order for the user's first visit.
+            day=rng.randint(first_day,month_days)
+            rng.randint(8,18); rng.randint(0,59); duration=rng.randint(1200,2280)
+            first_browse=rng.random()<0.09
+            first_watched=None if first_browse else rng.randint(240,600)
+            # Active days per month vary by a stable personal intensity; subscribers are more active.
+            lam=1.7*intensity[i]*(1.6 if i in payers[mi] else 1.0)
+            k=min(1+poisson(lam),month_days-first_day+1)
+            days=[day]+sorted(activity_rng.sample([d for d in range(first_day,month_days+1) if d!=day],k-1))
+            country=users[i][3]
+            for n,d in enumerate(days):
+                if n==0:
+                    browse,watched=first_browse,first_watched
+                else:
+                    browse=activity_rng.random()<0.12
+                    duration=activity_rng.randint(90,900) if browse else activity_rng.randint(1200,3000)
+                    watched=None if browse else activity_rng.randint(240,600)
+                # Some playback is abandoned within the first minute.
+                if not browse and activity_rng.random()<0.2: watched=activity_rng.randint(10,55)
+                second=i in second_device and n>0 and activity_rng.random()<0.55
+                aid=f'b{i:05}' if second else f'a{i:05}'
+                platform=['ios','android','web'][(i+1)%3 if second else i%3]
+                span=duration+(7200 if i%5==0 and not browse else 0)
+                blocked=[]
+                if uid in initial_paid_at and initial_paid_at[uid][:10]==timestamp(month,d)[:10]:
+                    paid=initial_paid_at[uid]; blocked.append((offset(paid,-1920),offset(paid,2880)))
+                st=pick_start(country,month,d,span,blocked); end=offset(st,duration)
+                suffix='' if n==0 else f'_{n}'
+                sid=f's{month}_{i:05}{suffix}'
+                session=(sid,uid,aid,st[:10],st,end,end,duration,platform,country)
+                (sessions if n==0 else extra_sessions).append(session)
+                if n: extra_session_ids.add(sid)
+                links.append((f'l{month}_{i:05}{suffix}',aid,uid,sid,st,'login'))
+                events.append((f'e{month}_{i:05}{suffix}',uid,aid,st,'app_opened',sid,None,None,None,None,None,None,None,country,st))
+                # A real app visit can stop at browsing, without any playback.
+                if browse:
+                    browse_at=offset(st,40)
+                    events.append((f'browse_only_{sid}',uid,aid,browse_at,'episode_detail_viewed',sid,None,None,None,'c01',1,None,zones[country],country,browse_at))
+                    continue
+                cid='c01' if mi>=3 and i%2==0 else f'c{1+i%12:02}'; ep=1+(i+mi+n)%12
+                vt=offset(st,60); ve=offset(vt,watched); vid=f'v{month}_{i:05}{suffix}'
+                first=int((uid,cid,ep) not in seen); seen.add((uid,cid,ep))
+                sub=bool(db.execute("SELECT 1 FROM subscription_history WHERE user_id=? AND status IN ('active','cancel_at_period_end') AND effective_start_at<=? AND effective_end_at>? LIMIT 1",(uid,vt,vt)).fetchone())
+                view=(vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,watched,900,'sub' if sub else 'free',round(watched/900,4),0,watched,first,0 if sub else 1,None if sub else 1,zones[country],country)
+                if n==0: views.append(view); view_pairs.append((session,view))
+                else: extra_views.append(view); extra_view_pairs.append((session,view))
         for day in range(1,calendar.monthrange(2026,month)[1]+1):
             for channel in ('paid_social','paid_search'):
                 amount, impressions, clicks = marketing_metrics(marketing_rng, month, channel)
                 spend.append((f'2026-{month:02}-{day:02}',channel,amount,impressions,clicks,timestamp(month,day,23)))
-    db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',sessions)
+    db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',sessions+extra_sessions)
     db.executemany('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',links)
-    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',views)
+    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',views+extra_views)
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',events)
     db.executemany('INSERT INTO marketing_spend VALUES (?,?,?,?,?,?)',spend)
     checkout_paywall_links=[]; checkout_transaction_links=[]
@@ -223,10 +287,15 @@ def main():
     # One fifth of users return in a later session on the same UTC day and resume
     # the same episode without using a second free-quota slot.
     repeat_sessions=[]; repeat_views=[]; repeat_links=[]; repeat_events=[]
-    for session, view in view_pairs:
+    def still_subscribed(uid,at):
+        return bool(db.execute("SELECT 1 FROM subscription_history WHERE user_id=? AND status IN ('active','cancel_at_period_end') AND effective_start_at<=? AND effective_end_at>? LIMIT 1",(uid,at,at)).fetchone())
+    for session, view in view_pairs+extra_view_pairs:
         if int(session[1][1:]) % 5: continue
+        draw=activity_rng if session[0] in extra_session_ids else rng
         s=list(session); v=list(view); s[0]+='_return'; s[4]=offset(s[4],7200); s[5]=offset(s[5],7200); s[6]=offset(s[6],7200)
-        v[0]+='_return'; v[3]=s[0]; v[7]=offset(v[7],7200); v[13]=v[14]; v[9]=min(900-v[13],rng.randint(120,300)); v[14]=v[13]+v[9]; v[8]=offset(v[7],v[9]); v[12]=round(v[9]/900,4); v[15]=0; v[16]=0; v[17]=None
+        v[0]+='_return'; v[3]=s[0]; v[7]=offset(v[7],7200); v[13]=v[14]; v[9]=min(900-v[13],draw.randint(120,300)); v[14]=v[13]+v[9]; v[8]=offset(v[7],v[9]); v[12]=round(v[9]/900,4); v[15]=0; v[16]=0; v[17]=None
+        # A subscriber resume is generated only while the subscription still grants access.
+        if v[11]=='sub' and not still_subscribed(v[1],v[7]): continue
         repeat_sessions.append(tuple(s)); repeat_views.append(tuple(v))
         repeat_links.append(('l_'+s[0],s[2],s[1],s[0],s[4],'login'))
         repeat_events.append(('e_'+s[0],s[1],s[2],s[4],'app_opened',s[0],None,None,None,None,None,None,None,s[9],s[4]))
@@ -236,16 +305,18 @@ def main():
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',repeat_events)
     # Half of sessions continue into another free-tier episode in the same visit.
     # The original view list stays aligned with sessions for the repeat logic.
-    extra_views=[]
-    for s,v in view_pairs:
+    next_views=[]
+    for s,v in view_pairs+extra_view_pairs:
         if int(s[1][1:])%2: continue
+        draw=activity_rng if s[0] in extra_session_ids else rng
         w=list(v); w[0]+='_next'; w[5]=(v[5]%12)+1
-        w[7]=offset(v[8],60); w[9]=rng.randint(180,480); w[8]=offset(w[7],w[9])
+        w[7]=offset(v[8],60); w[9]=draw.randint(180,480); w[8]=offset(w[7],w[9])
         w[12]=round(w[9]/900,4); w[14]=w[9]
+        if w[11]=='sub' and not still_subscribed(w[1],w[7]): continue
         w[15]=int((w[1],w[4],w[5]) not in seen); seen.add((w[1],w[4],w[5]))
         w[16]=0 if w[11]=='sub' else 1; w[17]=None if w[11]=='sub' else 2
-        extra_views.append(tuple(w))
-    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',extra_views)
+        next_views.append(tuple(w))
+    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',next_views)
     # Purchase and refund volumes vary each month, preserving near-flat quarterly net revenue.
     purchase_targets=[43,46,37,43,38,43]
     refund_targets=[6,9,8,7,8,6]
@@ -392,6 +463,8 @@ def main():
       FROM content_views v WHERE v.view_type='free' AND substr(v.date,1,7)='2026-06'
       AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=v.user_id
         AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<=v.date||'T22:00:00Z' AND h.effective_end_at>v.date||'T22:00:00Z')
+        AND NOT EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=v.user_id
+          AND s.session_started_at<v.date||'T23:05:00Z' AND s.session_ended_at>v.date||'T21:30:00Z')
       GROUP BY v.user_id,v.date HAVING count(DISTINCT v.content_id||':'||v.episode_number)=1
       ORDER BY v.user_id LIMIT 1""").fetchone()
     assert quota
@@ -545,17 +618,27 @@ def main():
     db.executemany('INSERT INTO playback_segments VALUES (?,?,?,?,?,?,?,?)',segment_rows)
     # Explicit synthetic engagement evidence, including each session's final
     # activity. These are simulated observations, not inferred real telemetry.
+    # Playback heartbeats (every five minutes during a view) already evidence activity,
+    # so engagement pings are added only to keep every gap under 30 minutes.
+    playback_ticks={}
+    for sid,start,end in db.execute('SELECT session_id,view_started_at,view_ended_at FROM content_views WHERE view_ended_at IS NOT NULL'):
+        ticks=playback_ticks.setdefault(sid,[]); tick=offset(start,300)
+        while tick<end: ticks.append(tick); tick=offset(tick,300)
+        ticks.append(end)
     activity_rows=[]
     for sid,uid,aid,start,end,country,login in db.execute('''SELECT s.session_id,s.user_id,s.anonymous_id,
         s.session_started_at,s.session_ended_at,s.country_at_event,min(l.linked_at)
         FROM sessions s LEFT JOIN identity_links l ON l.session_id=s.session_id AND l.user_id=s.user_id
         GROUP BY s.session_id'''):
         if end is None: continue
-        tick=offset(start,600); sequence=0
-        while tick<end:
-            actor=uid if login is not None and tick>=login else None
-            activity_rows.append((f'engagement_{sid}_{sequence}',actor,aid,tick,'session_engagement',sid,None,None,None,None,None,'{"synthetic":true}',None,country,tick))
-            sequence+=1; tick=offset(tick,600)
+        sequence=0; previous=start
+        for point in sorted(playback_ticks.get(sid,[]))+[end]:
+            while offset(previous,1500)<point:
+                previous=offset(previous,1500)
+                actor=uid if login is not None and previous>=login else None
+                activity_rows.append((f'engagement_{sid}_{sequence}',actor,aid,previous,'session_engagement',sid,None,None,None,None,None,'{"synthetic":true}',None,country,previous))
+                sequence+=1
+            previous=max(previous,point)
         actor=uid if login is not None and end>=login else None
         activity_rows.append((f'engagement_{sid}_end',actor,aid,end,'session_engagement',sid,None,None,None,None,None,'{"synthetic":true}',None,country,end))
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',activity_rows)
