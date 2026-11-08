@@ -458,6 +458,8 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `event_properties_json` | TEXT | yes | Versioned context without PII. Paywall and checkout events include `product` (`subscription` or `ppv`); blocked playback includes its reason. |
 | `ingested_at` | TIMESTAMP | no | Warehouse arrival time. |
 
+The synthetic fixture records `session_engagement` as an activity observation and `playback_heartbeat` as an observation during a linked content view. Both include a synthetic marker in event properties. They are timing evidence, not new sessions, views, watch-duration increments, payments, or independent proof of a deliberate user interaction. Playback heartbeats reference their view and remain within its start/end bounds. When `dataset_metadata.session_activity_coverage` is `complete_synthetic_v1`, the fixture includes evidence at session start and last activity, gaps under 30 minutes between qualifying session activity observations, and playback heartbeat gaps of at most five minutes for closed views. This completeness declaration applies to the synthetic fixture, not arbitrary real-world telemetry.
+
 For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matching `checkout_started`, and the successful payment in the same session; record `subscription_started` for an initial subscription. Non-purchaser paywalls and abandoned checkouts use the same product labels. `refund_requested.txn_id` refers to the original purchase; the subsequent refund transaction references that original via `related_txn_id`. A delisting notice identifies the affected user and episode before the effective delisting time.
 
 ## 5. Relationship cardinality and referential rules
@@ -555,7 +557,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | Primary-key uniqueness | Every declared PK has zero duplicates and zero nulls. |
 | FK coverage | All non-null foreign keys resolve to exactly one parent. |
 | Identity resolution | Pre-login browsing resolves only through its same-session link; each view has an authenticated user. Shared-device accounts never cross-link. |
-| Session chronology | Open sessions have NULL end/duration; closed sessions end at last activity. A gap of 30 minutes starts a new session on that device/browser; playback heartbeats count as activity. Different devices may overlap for the same user; account switching on a device creates a new session without requiring a 30-minute gap. Complete validation of inactivity requires sufficiently detailed activity and heartbeat evidence; start/end alone do not prove absence of an internal gap. |
+| Session chronology | Open sessions have NULL end/duration; closed sessions end at last activity. A gap of 30 minutes starts a new session on that device/browser; playback heartbeats count as activity. Different devices may overlap for the same user; account switching on a device creates a new session without requiring a 30-minute gap. For fixture data with declared complete synthetic activity coverage, validate observed gaps, boundary evidence and heartbeat continuity. Start/end alone do not prove absence of an internal gap in other datasets. |
 | View chronology | View start/end lies within or touches session bounds by an allowed client-clock tolerance. |
 | Episode validity | Every view/attribution composite episode key resolves to `content_episodes`. |
 | Content availability | Every view begins within a live availability interval; history intervals for an episode do not overlap. |

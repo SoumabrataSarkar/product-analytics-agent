@@ -25,8 +25,8 @@ class SessionChecks(unittest.TestCase):
             session_started_at TEXT, session_ended_at TEXT, last_activity_at TEXT, duration_sec INTEGER, platform TEXT);
           CREATE TABLE identity_links(session_id TEXT, anonymous_id TEXT, user_id TEXT, linked_at TEXT);
           CREATE TABLE transactions(session_id TEXT, user_id TEXT, transaction_at TEXT);
-          CREATE TABLE content_views(session_id TEXT, anonymous_id TEXT, user_id TEXT, view_started_at TEXT, view_ended_at TEXT);
-          CREATE TABLE user_events(session_id TEXT, anonymous_id TEXT, user_id TEXT, event_at TEXT);
+          CREATE TABLE content_views(session_id TEXT, anonymous_id TEXT, user_id TEXT, view_started_at TEXT, view_ended_at TEXT, view_id TEXT);
+          CREATE TABLE user_events(session_id TEXT, anonymous_id TEXT, user_id TEXT, event_at TEXT, event_id TEXT, event_name TEXT, view_id TEXT);
         ''')
 
     def add_session(self, sid, uid, aid, start, end, last, duration):
@@ -60,10 +60,38 @@ class SessionChecks(unittest.TestCase):
     def test_prelogin_event_stays_anonymous(self):
         self.add_session('a', 'u1', 'device1', '2026-01-01T10:00:00Z', '2026-01-01T10:10:00Z', '2026-01-01T10:10:00Z', 600)
         self.db.execute("INSERT INTO identity_links VALUES ('a','device1','u1','2026-01-01T10:05:00Z')")
-        self.db.execute("INSERT INTO user_events VALUES ('a','device1',NULL,'2026-01-01T10:02:00Z')")
+        self.db.execute("INSERT INTO user_events (session_id,anonymous_id,user_id,event_at) VALUES ('a','device1',NULL,'2026-01-01T10:02:00Z')")
         self.assertEqual(self.count('identified session event without prior login link'), 0)
         self.db.execute("UPDATE user_events SET user_id='u1'")
         self.assertEqual(self.count('identified session event without prior login link'), 1)
+
+    def test_exact_thirty_minute_gap_requires_new_session(self):
+        self.db.execute("INSERT INTO user_events (session_id,event_at,event_id,event_name) VALUES ('a','2026-01-01T10:00:00Z','1','app_opened'),('a','2026-01-01T10:29:59Z','2','session_engagement')")
+        self.assertEqual(self.count('session activity gap at least 30 minutes'), 0)
+        self.db.execute("UPDATE user_events SET event_at='2026-01-01T10:30:00Z' WHERE event_id='2'")
+        self.assertEqual(self.count('session activity gap at least 30 minutes'), 1)
+
+    def test_playback_heartbeats_prevent_idle_gap_and_require_valid_view(self):
+        self.db.execute("INSERT INTO content_views VALUES ('a','device1','u1','2026-01-01T10:00:00Z','2026-01-01T10:10:00Z','v1')")
+        self.db.execute("INSERT INTO user_events VALUES ('a','device1','u1','2026-01-01T10:05:00Z','h1','playback_heartbeat','v1'),('a','device1','u1','2026-01-01T10:10:00Z','h2','playback_heartbeat','v1')")
+        self.assertEqual(self.count('playback heartbeat invalid'), 0)
+        self.assertEqual(self.count('playback heartbeat missing or gap over five minutes'), 0)
+        self.db.execute("DELETE FROM user_events WHERE event_id='h1'")
+        self.assertGreater(self.count('playback heartbeat missing or gap over five minutes'), 0)
+        self.db.execute("UPDATE user_events SET view_id='missing'")
+        self.assertEqual(self.count('playback heartbeat invalid'), 1)
+
+    def test_long_playback_without_other_interaction(self):
+        start='2026-01-01T10:00:00Z'; end='2026-01-01T10:35:00Z'
+        self.add_session('a', 'u1', 'device1', start, end, end, 2100)
+        self.db.execute("INSERT INTO content_views VALUES ('a','device1','u1',?,?,'v1')", (start,end))
+        self.db.execute("INSERT INTO user_events VALUES ('a','device1','u1',?,'open','app_opened',NULL)", (start,))
+        for minute in range(5,36,5):
+            self.db.execute("INSERT INTO user_events VALUES ('a','device1','u1',?,?, 'playback_heartbeat','v1')",
+                            (f'2026-01-01T10:{minute:02}:00Z', f'h{minute}'))
+        self.assertEqual(self.count('session activity evidence missing boundaries'), 0)
+        self.assertEqual(self.count('session activity gap at least 30 minutes'), 0)
+        self.assertEqual(self.count('playback heartbeat missing or gap over five minutes'), 0)
 
 if __name__ == '__main__':
     unittest.main()

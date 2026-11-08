@@ -31,6 +31,9 @@ snapshot_rows = db.execute("SELECT metadata_value FROM dataset_metadata WHERE me
 if len(snapshot_rows) != 1 or not valid_utc(snapshot_rows[0][0]):
     raise SystemExit('FAIL: dataset must declare one valid UTC users_snapshot_at')
 snapshot_at = snapshot_rows[0][0]
+coverage = db.execute("SELECT metadata_value FROM dataset_metadata WHERE metadata_key='session_activity_coverage'").fetchone()
+if coverage != ('complete_synthetic_v1',):
+    raise SystemExit('FAIL: session activity coverage must be declared complete_synthetic_v1 for this fixture')
 db.create_function('users_snapshot_at', 0, lambda: snapshot_at)
 checks={
  'foreign keys': 'SELECT count(*) FROM pragma_foreign_key_check',
@@ -55,6 +58,10 @@ checks={
  'session platform invalid': "SELECT count(*) FROM sessions WHERE platform NOT IN ('ios','android','web','tv')",
  'session identity links inconsistent': "SELECT count(*) FROM identity_links l JOIN sessions s ON s.session_id=l.session_id WHERE l.anonymous_id IS NOT s.anonymous_id OR l.user_id IS NOT s.user_id OR l.linked_at<s.session_started_at OR (s.session_ended_at IS NOT NULL AND l.linked_at>s.session_ended_at)",
  'identified session event without prior login link': "SELECT count(*) FROM user_events e WHERE e.user_id IS NOT NULL AND e.session_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM identity_links l WHERE l.session_id=e.session_id AND l.user_id=e.user_id AND l.linked_at<=e.event_at)",
+ 'session activity evidence missing boundaries': "SELECT count(*) FROM sessions s WHERE NOT EXISTS(SELECT 1 FROM user_events e WHERE e.session_id=s.session_id AND e.event_name='app_opened' AND e.event_at=s.session_started_at) OR NOT EXISTS(SELECT 1 FROM user_events e WHERE e.session_id=s.session_id AND e.event_name IN ('session_engagement','playback_heartbeat') AND e.event_at=s.last_activity_at)",
+ 'session activity gap at least 30 minutes': "WITH points AS (SELECT session_id,event_at,LAG(event_at) OVER (PARTITION BY session_id ORDER BY event_at,event_id) prev FROM user_events WHERE session_id IS NOT NULL AND event_name IN ('app_opened','session_engagement','playback_heartbeat')) SELECT count(*) FROM points WHERE prev IS NOT NULL AND CAST(strftime('%s',event_at) AS INTEGER)-CAST(strftime('%s',prev) AS INTEGER)>=1800",
+ 'playback heartbeat invalid': "SELECT count(*) FROM user_events e LEFT JOIN content_views v ON v.view_id=e.view_id WHERE e.event_name='playback_heartbeat' AND (v.view_id IS NULL OR e.session_id IS NOT v.session_id OR e.user_id IS NOT v.user_id OR e.anonymous_id IS NOT v.anonymous_id OR e.event_at<v.view_started_at OR e.event_at>v.view_ended_at)",
+ 'playback heartbeat missing or gap over five minutes': "WITH points AS (SELECT view_id,view_started_at AS event_at,'0' AS event_id FROM content_views UNION ALL SELECT view_id,event_at,event_id FROM user_events WHERE event_name='playback_heartbeat'), ranked AS (SELECT view_id,event_at,LAG(event_at) OVER (PARTITION BY view_id ORDER BY event_at,event_id) prev FROM points) SELECT (SELECT count(*) FROM ranked WHERE prev IS NOT NULL AND CAST(strftime('%s',event_at) AS INTEGER)-CAST(strftime('%s',prev) AS INTEGER)>300) + (SELECT count(*) FROM content_views v WHERE NOT EXISTS(SELECT 1 FROM user_events e WHERE e.view_id=v.view_id AND e.event_name='playback_heartbeat' AND e.event_at=v.view_ended_at))",
  'in-app transaction session inconsistent': "SELECT count(*) FROM transactions t JOIN sessions s ON t.session_id=s.session_id WHERE t.user_id IS NOT s.user_id OR t.transaction_at<s.session_started_at OR (s.session_ended_at IS NOT NULL AND t.transaction_at>s.session_ended_at)",
  'unreconciled raw data issues': "SELECT count(*) FROM payment_quality_review q JOIN transactions t USING(txn_id) WHERE abs(q.corrected_amount_usd-t.amount_usd)>0.001",
  'failed payments with entitlements': "SELECT count(*) FROM transactions t JOIN transaction_content_attribution a USING(txn_id) WHERE t.status!='succeeded'",

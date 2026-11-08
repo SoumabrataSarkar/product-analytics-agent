@@ -53,8 +53,11 @@ def main():
     CREATE INDEX ix_sub_user_time ON subscription_history(user_id,effective_start_at,effective_end_at);
     CREATE INDEX ix_payment_history ON payment_status_history(txn_id,effective_at);
     CREATE INDEX ix_identity_session ON identity_links(session_id,user_id,linked_at);
+    CREATE INDEX ix_event_session_time ON user_events(session_id,event_at);
+    CREATE INDEX ix_event_view_time ON user_events(view_id,event_name,event_at);
     ''')
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('users_snapshot_at', SNAPSHOT_AT))
+    db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('session_activity_coverage', 'complete_synthetic_v1'))
     # Existing users signed up before the window; new cohorts join in every analysis month.
     users=[]; truth=[]
     cohort_sizes=[10400,1600,2201,2653,2477,2949,1720]
@@ -434,6 +437,32 @@ def main():
         else: raw.append((tid,str(amount) if n%7==0 else amount,'USD',t))
     db.executemany('INSERT INTO raw_payment_source VALUES (?,?,?,?)',raw)
     db.executemany('INSERT INTO payment_quality_review VALUES (?,?,?,?)',quality)
+    # Explicit synthetic engagement evidence, including each session's final
+    # activity. These are simulated observations, not inferred real telemetry.
+    activity_rows=[]
+    for sid,uid,aid,start,end,country,login in db.execute('''SELECT s.session_id,s.user_id,s.anonymous_id,
+        s.session_started_at,s.session_ended_at,s.country_at_event,min(l.linked_at)
+        FROM sessions s LEFT JOIN identity_links l ON l.session_id=s.session_id AND l.user_id=s.user_id
+        GROUP BY s.session_id'''):
+        if end is None: continue
+        tick=offset(start,600); sequence=0
+        while tick<end:
+            actor=uid if login is not None and tick>=login else None
+            activity_rows.append((f'engagement_{sid}_{sequence}',actor,aid,tick,'session_engagement',sid,None,None,None,None,None,'{"synthetic":true}',None,country,tick))
+            sequence+=1; tick=offset(tick,600)
+        actor=uid if login is not None and end>=login else None
+        activity_rows.append((f'engagement_{sid}_end',actor,aid,end,'session_engagement',sid,None,None,None,None,None,'{"synthetic":true}',None,country,end))
+    db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',activity_rows)
+    heartbeat_rows=[]
+    for vid,uid,aid,sid,start,end,country,tz,cid,episode in db.execute('''SELECT view_id,user_id,anonymous_id,session_id,
+        view_started_at,view_ended_at,country_at_event,event_timezone,content_id,episode_number FROM content_views'''):
+        if end is None: continue
+        tick=offset(start,300); sequence=0
+        while tick<end:
+            heartbeat_rows.append((f'heartbeat_{vid}_{sequence}',uid,aid,tick,'playback_heartbeat',sid,vid,None,None,cid,episode,'{"synthetic":true}',tz,country,tick))
+            sequence+=1; tick=offset(tick,300)
+        heartbeat_rows.append((f'heartbeat_{vid}_end',uid,aid,end,'playback_heartbeat',sid,vid,None,None,cid,episode,'{"synthetic":true}',tz,country,end))
+    db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',heartbeat_rows)
     # Recompute after all sessions and late-inserted episode views are present.
     db.execute('''UPDATE content_views SET is_first_view_of_episode = CASE WHEN view_id IN
       (SELECT view_id FROM (SELECT view_id,ROW_NUMBER() OVER
