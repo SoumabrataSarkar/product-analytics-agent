@@ -36,7 +36,7 @@ erDiagram
     SESSIONS o|--o{ TRANSACTIONS : initiates
     TRANSACTIONS ||--o{ TRANSACTION_CONTENT_ATTRIBUTION : entitles
     TRANSACTIONS ||--o{ PAYMENT_STATUS_HISTORY : changes
-    TRANSACTIONS ||--o| RAW_PAYMENT_SOURCE : source
+    TRANSACTIONS ||--|| RAW_PAYMENT_SOURCE : source
     TRANSACTIONS ||--o| PAYMENT_QUALITY_REVIEW : reviewed
     TRANSACTIONS ||--o{ REFUND_CONTENT_ATTRIBUTION : allocates
     CONTENT_EPISODES ||--o{ REFUND_CONTENT_ATTRIBUTION : refunded
@@ -463,7 +463,7 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 
 ### 4.8a `raw_payment_source` — source payment values
 
-**Grain:** one provider payment or refund source record per `txn_id`. **Primary/foreign key:** `txn_id → transactions`. Source values are retained for audit and do not constitute additional financial events.
+**Grain:** one provider payment or refund source record per `txn_id`. **Primary/foreign key:** `txn_id → transactions`. For this synthetic fixture, each transaction has exactly one source record; the checker validates coverage. This fixture rule does not imply that all real payment sources have complete, one-to-one records. Source values are retained for audit and do not constitute additional financial events.
 
 | Column | Type | Null? | Definition / rule |
 |---|---|---:|---|
@@ -536,7 +536,7 @@ The fixture records `app_opened`, a labelled `paywall_viewed`, a `checkout_start
 | `users` | `user_events` | 1 : 0..N | child optional | Pre-login activity can be linked through session. |
 | `user_events` paywall | `user_events` checkout | 1 : 0..N | child optional | A captured triggering paywall is earlier, in the same session and product; PPV episode keys also match. |
 | `transactions` | `payment_status_history` | 1 : 1..N | child yes | Status transitions. |
-| `transactions` | `raw_payment_source` | 1 : 0..1 | child yes | Original provider value for reconciliation. |
+| `transactions` | `raw_payment_source` | 1 : 1 (fixture) | child yes | Original provider value for reconciliation; fixture coverage is validated by the checker. |
 | `transactions` | `payment_quality_review` | 1 : 0..1 | child yes | Evidence and corrected amount for reviewed records. |
 | `transactions` | `refund_content_attribution` | 1 : 0..N | PPV refunds | Allocates a refund to an episode. |
 
