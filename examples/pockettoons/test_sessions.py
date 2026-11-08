@@ -93,5 +93,23 @@ class SessionChecks(unittest.TestCase):
         self.assertEqual(self.count('session activity gap at least 30 minutes'), 0)
         self.assertEqual(self.count('playback heartbeat missing or gap over five minutes'), 0)
 
+    def test_session_summary_avoids_fact_fanout_and_excludes_off_session_payments(self):
+        self.db.executescript('''
+          ALTER TABLE content_views ADD COLUMN watch_duration_sec INTEGER;
+          ALTER TABLE transactions ADD COLUMN status TEXT;
+          ALTER TABLE transactions ADD COLUMN type TEXT;
+          ALTER TABLE transactions ADD COLUMN amount_usd REAL;
+        ''')
+        self.add_session('a', 'u1', 'device1', '2026-01-01T10:00:00Z', '2026-01-01T10:20:00Z', '2026-01-01T10:20:00Z', 1200)
+        self.add_session('empty', 'u2', 'device2', '2026-01-01T10:00:00Z', '2026-01-01T10:20:00Z', '2026-01-01T10:20:00Z', 1200)
+        self.db.execute("INSERT INTO content_views (session_id,view_id,watch_duration_sec) VALUES ('a','v1',100),('a','v2',200)")
+        self.db.execute("INSERT INTO transactions (session_id,status,type,amount_usd) VALUES ('a','succeeded','ppv',2),('a','succeeded','ppv',3),(NULL,'succeeded','subscription',10)")
+        unsafe = self.db.execute("SELECT count(*),sum(v.watch_duration_sec),sum(t.amount_usd) FROM sessions s JOIN content_views v USING(session_id) JOIN transactions t USING(session_id) WHERE s.session_id='a'").fetchone()
+        self.assertEqual(unsafe, (4, 600, 10.0))
+        self.assertEqual(self.count('session summary fanout reconciliation'), 0)
+        # Session-grain analysis excludes the off-session renewal, not revenue overall.
+        self.assertEqual(self.db.execute("SELECT sum(amount_usd) FROM transactions WHERE session_id IS NOT NULL").fetchone()[0], 5.0)
+        self.assertEqual(self.db.execute("SELECT sum(amount_usd) FROM transactions").fetchone()[0], 15.0)
+
 if __name__ == '__main__':
     unittest.main()

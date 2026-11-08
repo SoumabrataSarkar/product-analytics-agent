@@ -73,6 +73,33 @@ An active period beginning 1 October ends at 1 November at the same UTC time; th
 
 Example: user U1 may have a phone session from 10:00 to 10:30 and a separate browser session from 10:10 to 10:20. A session may contain no views, one view or multiple views. Aggregate views and transactions separately by session_id before combining them. The current checker uses no client clock tolerance for these comparisons; adding a tolerance is a separate decision.
 
+### Example: one row per session without multiplying facts
+
+```sql
+WITH view_summary AS (
+  SELECT session_id, COUNT(*) AS view_count,
+         SUM(watch_duration_sec) AS watch_seconds
+  FROM content_views GROUP BY session_id
+), payment_summary AS (
+  SELECT session_id, COUNT(*) AS payment_records,
+         SUM(CASE WHEN status = 'succeeded' AND type IN ('subscription', 'ppv')
+                  THEN amount_usd ELSE 0 END) AS successful_charges,
+         SUM(CASE WHEN status = 'succeeded' AND type = 'refund'
+                  THEN amount_usd ELSE 0 END) AS successful_refunds
+  FROM transactions WHERE session_id IS NOT NULL GROUP BY session_id
+)
+SELECT s.session_id, COALESCE(v.view_count, 0) AS view_count,
+       COALESCE(v.watch_seconds, 0) AS watch_seconds,
+       COALESCE(p.payment_records, 0) AS payment_records,
+       COALESCE(p.successful_charges, 0) AS successful_charges,
+       COALESCE(p.successful_refunds, 0) AS successful_refunds
+FROM sessions s
+LEFT JOIN view_summary v ON v.session_id = s.session_id
+LEFT JOIN payment_summary p ON p.session_id = s.session_id;
+```
+
+This query returns one row per session, including sessions with no views or payments. The payment record count includes failed attempts; the amount columns include succeeded transactions only. Off-session renewals and refunds are deliberately excluded, so these amounts are not total product revenue. The fixture checker reconciles the session-grain summary's row count, view count, watch seconds, linked payment count, succeeded charge amounts and refund amounts to their independent source totals. An isolated regression case demonstrates that directly joining two views to two payments produces four rows and inflated sums. This validates the documented pattern, not every possible downstream join or metric.
+
 ## 3. content_catalog
 
 **Purpose:** Series/title metadata. **Grain:** One title. **Primary key:** content_id. **Time:** first_release_at, last_release_at?, available_from_at?, available_until_at?, created_at and updated_at; release_date derives from first release.
