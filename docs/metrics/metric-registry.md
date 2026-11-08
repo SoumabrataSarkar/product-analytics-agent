@@ -11,6 +11,8 @@
 - The registry contains definitions only. Expected values for the synthetic fixture belong in tests or evaluation files kept outside the agent's investigation context.
 - Table meanings, keys and joins come from the [data catalog](../examples/pockettoons-data-catalog.md) and the [reference data model](../examples/pockettoons-reference-data-model-v1.md). A metric definition must not contradict them.
 - Each quality check is marked **implemented and tested** or **proposed**.
+- A request that differs from a registered definition uses a registered alternative when one exists. Otherwise the result is labelled as an ad hoc variant, is not reported under the registered metric's name and is shown with its SQL. The evidence log records the definition used: registry id and version, or ad hoc with its SQL.
+- A proposed metric is named for future definition only; it has no approved semantics and must not be computed as if it were registered.
 
 ## Definition template
 
@@ -34,3 +36,9 @@
 ## Metrics
 
 No metric definitions are approved yet.
+
+## Proposed metrics
+
+| id | Intended meaning | Status |
+|---|---|---|
+| monthly_active_viewers | Distinct users who started at least one content view in a UTC calendar month; a stricter companion to MAU. | Proposed; not defined |
