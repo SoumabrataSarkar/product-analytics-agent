@@ -69,5 +69,18 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM content_views v JOIN transaction_content_attribution a USING(content_id,episode_number)').fetchone()[0],4)
         self.assertEqual(self.count('episode view and allocation fanout reconciliation'),0)
 
+    def test_tier_change_during_playback_and_later_resume(self):
+        self.db.execute('ALTER TABLE content_views ADD COLUMN view_ended_at TEXT')
+        self.db.execute("UPDATE content_tier_history SET access_tier=CASE tier_period_id WHEN 'old' THEN 'free' ELSE 'premium' END")
+        self.db.execute("UPDATE content_episodes SET access_tier='premium',ppv_list_price_usd=1.99")
+        # The attempt starts while free and ends after the premium boundary.
+        self.db.execute("INSERT INTO content_views VALUES('c1',1,'free','2026-06-30T23:55:00Z',600,'2026-07-01T00:05:00Z')")
+        self.assertEqual(self.count('free views without free tier at playback'),0)
+        # A new free attempt at the boundary must be rejected; it is rechecked.
+        self.db.execute("INSERT INTO content_views VALUES('c1',1,'free','2026-07-01T00:00:00Z',100,'2026-07-01T00:01:40Z')")
+        self.assertEqual(self.count('free views without free tier at playback'),1)
+        self.db.execute("UPDATE content_views SET view_type='sub' WHERE view_started_at='2026-07-01T00:00:00Z'")
+        self.assertEqual(self.count('free views without free tier at playback'),0)
+
 if __name__ == '__main__':
     unittest.main()

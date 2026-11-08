@@ -201,7 +201,7 @@ The quota is keyed to `user_id` across all devices and sessions, resetting at 00
 
 Active subscribers pay no PPV charge for viewing. A PPV purchase remains valid if the user later subscribes; no automatic credit is assumed. Delisting ends the entitlement permanently at the delisting time; after relisting the user must buy it again. A prior delisting warning is a separate event. A refund request is an event; a succeeded refund creates a linked positive-amount refund transaction and ends the relevant access at its effective time. A denied refund leaves access unchanged. Views already recorded are retained.
 
-The stored `content_views.view_type` records the decision at view start and is never retroactively relabelled by a later cancellation/refund. Recalculated “as-of” access must use the history tables below.
+The stored `content_views.view_type` records the decision at view start and is never retroactively relabelled by a later cancellation/refund or tier change. If an episode changes from free to premium during an already-authorized playback attempt, the attempt may continue. A later new start or resume requires a fresh access decision using the tier and entitlement at that new start. Recalculated “as-of” access must use the history tables below.
 
 ## 4. Column-level schema and grain
 
