@@ -484,6 +484,10 @@ Set :known_at to NULL to use events available now, or to a UTC timestamp for a p
 
 **Joins:** Optional FKs to user, identity, session, view, transaction, period and series; episode composite FK where populated. **Use:** paywall-to-checkout sequence. **Limitations/checks:** Different event types populate different fields. Synthetic engagement and heartbeat observations are not additional views, watch-time increments, payments or proof of deliberate interaction. Select one owner for a business moment to avoid duplicating payment/view facts. Checker covers selected session timing and heartbeat bounds, product labels, funnel and refund order; propose broader event-specific schema checks.
 
+**PPV paywall and checkout keys:** For paywall_viewed and checkout_started where event_properties_json identifies product ppv, content_id must be non-empty and episode_number must be a positive integer; the composite key must identify an existing episode. Subscription paywalls and checkouts do not require an episode. The checker validates the required PPV key and the fixture foreign-key check validates populated episode references. The current fixture already has these keys for every PPV paywall and checkout; missing-key cases are isolated tests.
+
+An episode and session match can associate related activity but does not uniquely link one checkout to one of several paywall exposures for the same episode. Exact attempt attribution is not represented by these keys alone. Other existing funnel checks assume valid JSON and can error on malformed payloads; malformed-event handling is not covered by this key check.
+
 ## 16. raw_payment_source
 
 **Purpose:** Preserve raw payment source evidence. **Grain/key:** One source record per txn_id. **Time:** received_at.
