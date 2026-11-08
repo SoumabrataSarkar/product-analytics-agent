@@ -482,6 +482,9 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 | `issue` | TEXT | no | Identified data-quality issue. |
 | `corrected_amount_usd` | NUMERIC | no | Evidence-backed positive amount in USD. |
 | `reason` | TEXT | no | Correction evidence and rationale. |
+| `reviewed_at` | TIMESTAMP | yes | UTC review completion time in fixture format `YYYY-MM-DDTHH:MM:SSZ` when known; NULL means unknown. Populated values are validated. |
+
+A NULL review time does not establish when the correction became available. The fixture generator leaves this value NULL when no review completion time is known; this table does not retain versions of earlier reviews.
 
 ### 4.9 `user_events` — supporting interaction timeline
 
