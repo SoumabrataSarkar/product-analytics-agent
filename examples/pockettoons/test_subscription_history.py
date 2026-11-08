@@ -94,5 +94,21 @@ class SubscriptionHistoryTests(unittest.TestCase):
             self.db.execute('UPDATE users SET subscription_status=?',(status,))
             self.assertEqual(self.count('user value domains invalid'),1)
 
+    def test_status_change_time_is_carried_across_renewals(self):
+        self.db.execute("INSERT INTO subscription_history VALUES('h2','u','s','renewal','active','2026-10-03T10:05:00Z','2026-11-03T10:05:00Z','2026-10-01T10:00:00Z','2026-10-03T10:05:00Z',NULL,'monthly_9_99')")
+        self.assertEqual(self.count('subscription status change time inconsistent'),0)
+        self.db.execute("UPDATE subscription_history SET subscription_status_updated_at=effective_start_at WHERE subscription_period_id='h2'")
+        self.assertEqual(self.count('subscription status change time inconsistent'),1)
+        self.db.execute("UPDATE subscription_history SET subscription_status_updated_at='2026-10-01T10:00:00Z' WHERE subscription_period_id='h2'")
+        self.db.execute("INSERT INTO subscription_history VALUES('h3','u','s','renewal','cancel_at_period_end','2026-10-05T10:05:00Z',NULL,'2026-10-05T10:05:00Z','2026-10-05T10:05:00Z','2026-10-05T10:05:00Z','monthly_9_99')")
+        self.assertEqual(self.count('subscription status change time inconsistent'),0)
+        self.db.execute("UPDATE subscription_history SET subscription_status_updated_at='2026-10-01T10:00:00Z' WHERE subscription_period_id='h3'")
+        self.assertEqual(self.count('subscription status change time inconsistent'),1)
+        self.db.execute("UPDATE subscription_history SET subscription_status_updated_at='2026-10-05T10:05:00Z' WHERE subscription_period_id='h3'")
+        self.db.execute("INSERT INTO subscription_history VALUES('h4','u','s','renewal','active','2026-10-06T10:05:00Z',NULL,'2026-10-06T10:05:00Z','2026-10-06T10:05:00Z',NULL,'monthly_9_99')")
+        self.assertEqual(self.count('subscription status change time inconsistent'),0)
+        self.db.execute("UPDATE subscription_history SET subscription_status_updated_at='2026-10-01T10:00:00Z' WHERE subscription_period_id='h4'")
+        self.assertEqual(self.count('subscription status change time inconsistent'),1)
+
 if __name__ == '__main__':
     unittest.main()
