@@ -63,6 +63,10 @@ snapshot_at = snapshot_rows[0][0]
 content_snapshot_rows = db.execute("SELECT metadata_value FROM dataset_metadata WHERE metadata_key='content_catalog_snapshot_at'").fetchall()
 if len(content_snapshot_rows) != 1 or not valid_utc(content_snapshot_rows[0][0]):
     raise SystemExit('FAIL: dataset must declare one valid UTC content_catalog_snapshot_at')
+entitlement_snapshot_rows = db.execute("SELECT metadata_value FROM dataset_metadata WHERE metadata_key='entitlement_snapshot_at'").fetchall()
+if len(entitlement_snapshot_rows) != 1 or not valid_utc(entitlement_snapshot_rows[0][0]):
+    raise SystemExit('FAIL: dataset must declare one valid UTC entitlement_snapshot_at')
+entitlement_snapshot_at = entitlement_snapshot_rows[0][0]
 coverage = db.execute("SELECT metadata_value FROM dataset_metadata WHERE metadata_key='session_activity_coverage'").fetchone()
 if coverage != ('complete_synthetic_v1',):
     raise SystemExit('FAIL: session activity coverage must be declared complete_synthetic_v1 for this fixture')
@@ -70,6 +74,7 @@ segment_coverage = db.execute("SELECT metadata_value FROM dataset_metadata WHERE
 if segment_coverage != ('complete_synthetic_v1',):
     raise SystemExit('FAIL: playback segment coverage must be declared complete_synthetic_v1 for this fixture')
 db.create_function('users_snapshot_at', 0, lambda: snapshot_at)
+db.create_function('entitlement_snapshot_at', 0, lambda: entitlement_snapshot_at)
 checks={
  'foreign keys': 'SELECT count(*) FROM pragma_foreign_key_check',
  'views before signup': 'SELECT count(*) FROM content_views v JOIN users u USING(user_id) WHERE v.view_started_at<u.signup_at',
@@ -175,6 +180,7 @@ checks={
  'PPV attribution timestamps invalid': "SELECT count(*) FROM transaction_content_attribution WHERE valid_utc(entitlement_start_at)=0 OR (entitlement_end_at IS NOT NULL AND valid_utc(entitlement_end_at)=0) OR (refunded_at IS NOT NULL AND valid_utc(refunded_at)=0) OR (delisted_at IS NOT NULL AND valid_utc(delisted_at)=0)",
  'PPV attribution status and end timestamps inconsistent': "SELECT count(*) FROM transaction_content_attribution WHERE NOT coalesce((attribution_status='granted' AND entitlement_end_at IS NULL AND refunded_at IS NULL AND delisted_at IS NULL) OR (attribution_status='refunded' AND refunded_at IS NOT NULL AND entitlement_end_at=refunded_at AND delisted_at IS NULL) OR (attribution_status='expired_delisting' AND delisted_at IS NOT NULL AND entitlement_end_at=delisted_at AND refunded_at IS NULL),0) OR entitlement_end_at<=entitlement_start_at",
  'PPV attribution on non-PPV transaction': "SELECT count(*) FROM transaction_content_attribution a LEFT JOIN transactions t ON t.txn_id=a.txn_id WHERE t.txn_id IS NULL OR t.type IS NOT 'ppv'",
+ 'PPV attribution timestamp after entitlement snapshot': "SELECT count(*) FROM transaction_content_attribution WHERE entitlement_start_at>entitlement_snapshot_at() OR entitlement_end_at>entitlement_snapshot_at() OR refunded_at>entitlement_snapshot_at() OR delisted_at>entitlement_snapshot_at()",
  'PPV entitlement start differs from purchase success': "SELECT count(*) FROM transaction_content_attribution a WHERE NOT EXISTS(SELECT 1 FROM payment_status_history p WHERE p.txn_id=a.txn_id AND p.status='succeeded' AND p.effective_at=a.entitlement_start_at)",
  'blocked active subscribers': "SELECT count(*) FROM user_events e JOIN subscription_history h ON h.user_id=e.user_id AND h.status IN ('active','cancel_at_period_end') AND h.effective_start_at<=e.event_at AND (h.effective_end_at IS NULL OR h.effective_end_at>e.event_at) WHERE e.event_name='playback_blocked'",
  'blocked valid PPV entitlements': "SELECT count(*) FROM user_events e JOIN transactions t ON t.user_id=e.user_id AND t.type='ppv' AND t.status='succeeded' JOIN transaction_content_attribution a ON a.txn_id=t.txn_id AND a.content_id=e.content_id AND a.episode_number=e.episode_number AND a.entitlement_start_at<=e.event_at AND (a.entitlement_end_at IS NULL OR a.entitlement_end_at>e.event_at) WHERE e.event_name='playback_blocked'",
