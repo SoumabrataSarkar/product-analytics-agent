@@ -413,9 +413,9 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 |---|---|---:|---|
 | `date` | DATE | no | UTC reporting calendar day (`YYYY-MM-DD`); checker validates the calendar date. |
 | `channel` | TEXT | no | Paid channel; controlled list shared with acquisition mapping. |
-| `spend_usd` | NUMERIC(12,2) | no | Non-negative daily spend. |
+| `spend_usd` | NUMERIC(12,2) | no | Finite non-negative daily spend. |
 | `impressions` | INTEGER | no | Non-negative delivered impressions. |
-| `clicks` | INTEGER | no | 0..`impressions`. |
+| `clicks` | INTEGER | no | Non-negative integer click count; may exceed impressions depending on the source definitions. |
 | `loaded_at` | TIMESTAMP | no | UTC ingestion/audit time in fixture format `YYYY-MM-DDTHH:MM:SSZ`; checker validates its format. |
 
 The timezone is part of the synthetic fixture's reporting definition; formatting checks cannot establish the actual reporting timezone of an external source.
@@ -647,7 +647,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | Authentication | No anonymous playback produces a content view; login-required attempts are recorded as events. Every view's user matches the account authenticated at playback time. |
 | Transaction/session consistency | If `transactions.session_id` is present, it belongs to the same `user_id`; null is permitted only for documented off-session flows. |
 | Event reference consistency | Each populated reference exists and agrees with its known or session-resolved identity. |
-| Marketing plausibility | `spend_usd >= 0`, `impressions >= 0`, and `0 <= clicks <= impressions`; daily channel key is unique. |
+| Marketing plausibility | `spend_usd` is finite and non-negative; `impressions` and `clicks` are non-negative integers. Clicks can exceed impressions depending on source definitions. The daily channel key is unique. |
 | Join fanout regression | Joining a transaction to its attribution bridge must not change total transaction revenue when aggregating distinct transaction IDs; session-view joins must retain one row per `view_id`. |
 
 ## 10. Synthetic dataset contract
