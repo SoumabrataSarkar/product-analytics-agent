@@ -81,24 +81,18 @@ WITH view_summary AS (
          SUM(watch_duration_sec) AS watch_seconds
   FROM content_views GROUP BY session_id
 ), payment_summary AS (
-  SELECT session_id, COUNT(*) AS payment_records,
-         SUM(CASE WHEN status = 'succeeded' AND type IN ('subscription', 'ppv')
-                  THEN amount_usd ELSE 0 END) AS successful_charges,
-         SUM(CASE WHEN status = 'succeeded' AND type = 'refund'
-                  THEN amount_usd ELSE 0 END) AS successful_refunds
+  SELECT session_id, COUNT(*) AS payment_records
   FROM transactions WHERE session_id IS NOT NULL GROUP BY session_id
 )
 SELECT s.session_id, COALESCE(v.view_count, 0) AS view_count,
        COALESCE(v.watch_seconds, 0) AS watch_seconds,
-       COALESCE(p.payment_records, 0) AS payment_records,
-       COALESCE(p.successful_charges, 0) AS successful_charges,
-       COALESCE(p.successful_refunds, 0) AS successful_refunds
+       COALESCE(p.payment_records, 0) AS payment_records
 FROM sessions s
 LEFT JOIN view_summary v ON v.session_id = s.session_id
 LEFT JOIN payment_summary p ON p.session_id = s.session_id;
 ```
 
-This query returns one row per session, including sessions with no views or payments. The payment record count includes failed attempts; the amount columns include succeeded transactions only. Off-session renewals and refunds are deliberately excluded, so these amounts are not total product revenue. The fixture checker reconciles the session-grain summary's row count, view count, watch seconds, linked payment count, succeeded charge amounts and refund amounts to their independent source totals. An isolated regression case demonstrates that directly joining two views to two payments produces four rows and inflated sums. This validates the documented pattern, not every possible downstream join or metric.
+This query returns one row per session, including sessions with no views or payments. The payment record count includes failed attempts. Off-session renewals and refunds are deliberately excluded. For money, validate and convert individual USD values to integer cents before separately aggregating them as described in the transaction entry; do not use an unvalidated REAL sum. The fixture checker reconciles the session-grain summary's row count, view count, watch seconds, linked payment count and succeeded charge/refund amounts in cents to their independent source totals. An isolated regression case demonstrates that directly joining two views to two payments produces four rows and inflated sums. This validates the documented pattern, not every possible downstream join or metric.
 
 ## 3. content_catalog
 
@@ -273,7 +267,44 @@ The fixture declares complete synthetic playback-segment coverage and contains b
 
 **Columns:** txn_id — transaction ID; user_id — economic user; date — UTC transaction date; type — subscription, ppv or refund; transaction_subtype — more specific kind; amount_usd — curated positive amount; payment_method — method; status — recorded status; transaction_at — time; session_id? — initiating session or NULL for off-session operations; provider_transaction_id — provider ID; payment_provider — provider; currency — original currency; original_amount — original-currency amount; related_txn_id? — original charge for refund; subscription_id? — logical subscription; list_price_usd?/discount_usd? — price and discount if known; country_at_event? — country if known; refund_reason? — reported refund reason, NULL for non-refunds.
 
-**Joins:** user FK, optional session FK and self-FK for original charge; txn_id links status, source, review and attribution. subscription_id is a logical link rather than a declared subscription-entity FK. **Use:** succeeded charges and refunds. **Limitations/checks:** Subtract positive refunds; exclude failed attempts where appropriate. Do not multiply amounts through status or attribution joins. Checker validates selected refund linkage, reasons and ceilings; propose comprehensive status and financial reconciliation.
+**Joins:** user FK, optional session FK and self-FK for original charge; txn_id links status, source, review and attribution. subscription_id is a logical link rather than a declared subscription-entity FK. Each transaction can have many status transitions and attribution rows; raw source/review each have at most one row per transaction. **Use:** payment attempts and succeeded charges/refunds. **Limitations/checks:** Subtract positive refunds; exclude failed attempts where appropriate. Off-session records must not be lost to an inner session join. Do not multiply amounts through status or attribution joins. Historical status requires its effective-time history, not the current status field.
+
+### Transaction columns
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| txn_id | TEXT primary key | Required by checker | Unique transaction ID. |
+| user_id | TEXT | No | Purchaser or refund recipient. |
+| date | TEXT | No | UTC date derived from transaction_at. |
+| type | TEXT | No | subscription, ppv or refund. |
+| transaction_subtype | TEXT | No | Initial/renewal subscription, episode purchase or corresponding refund subtype. |
+| amount_usd | REAL | No | Curated USD amount; positive for both charges and refunds. |
+| payment_method | TEXT | No | apple_app_store, google_play, credit_debit_card, paypal, wallet or other. |
+| status | TEXT | No | Current recorded pending, succeeded, failed or voided status. |
+| transaction_at | TEXT | No | UTC transaction creation time; not necessarily success time. |
+| session_id | TEXT | Yes | Initiating session; NULL for off-session flows. |
+| provider_transaction_id | TEXT | No | Unique provider transaction identifier. |
+| payment_provider | TEXT | No | Processing provider. |
+| currency | TEXT | No | Original currency code; the current fixture uses USD. |
+| original_amount | REAL | No | Amount in original currency; not a second payment. |
+| related_txn_id | TEXT | Yes | Original charge for a refund; NULL for purchase records. |
+| subscription_id | TEXT | Yes | Logical subscription ID where applicable, not a declared subscription-entity FK. |
+| list_price_usd | REAL | Yes | Purchase-time list price if known; not full price history. |
+| discount_usd | REAL | Yes | Discount if known; nonnegative. |
+| country_at_event | TEXT | Yes | Observed country if known. |
+| refund_reason | TEXT | Yes | Reported reason for refunds, NULL on purchases; not an independently verified cause. |
+
+Valid subtypes are subscription_initial, subscription_renewal, ppv_episode_purchase, subscription_refund and ppv_refund, paired with their corresponding broad type. The current fixture includes succeeded and failed records; delayed pending-to-success and later void transitions are isolated tests, not main-fixture examples. Valid refund reasons in this fixture contract are did_not_like_content, accidental_purchase and poor_playback_quality.
+
+### Exact USD amounts and time
+
+SQLite REAL is binary floating point. For the two-decimal USD fixture, validate each individual amount and convert using Python Decimal(str(value)) to integral cents before aggregation; reject non-finite, non-numeric or excess-precision amounts rather than silently rounding them. This conversion cannot restore precision already lost before storage; reconcile to source evidence when precision is uncertain. Subtract positive refund cents. Convert the final integer to dollars only for presentation. The checker registers a usd_cents function for its own connection; that function is not stored in SQLite and must not be assumed to exist for the agent. This USD rule does not define FX conversion or minor-unit handling for other currencies, and a stored exact-cents column in a future layer is not yet implemented.
+
+transaction_at is creation time; payment_status_history.effective_at supplies the time a status took effect. A refund's original charge must be successful at the refund attempt time, not merely have a current successful-looking status. The checker compares the current transaction status with the latest stored effective transition and rejects identical effective timestamps for the same transaction and duplicate success transitions as ambiguous in this fixture; a broader provider transition/idempotency policy remains to be designed.
+
+### Existing checks and coverage
+
+The checker validates required IDs/columns, allowed type/subtype/method/status combinations, UTC creation dates, positive exact-cent USD amounts and discount bounds, provider ID uniqueness, status history ordering and snapshot consistency, historical original-charge status at refund, exact-cent refund caps, refund reason, subscription references, PPV purchase/refund allocation reconciliation, session/user consistency and evidence-backed raw-source discrepancies. The session and episode summary checks demonstrate selected fanout-safe patterns, not every downstream metric. Currency validation checks the three-uppercase-letter shape, not membership in an authoritative ISO list; multi-currency normalization and FX are not implemented. An earlier success followed by a void is an isolated status test; its revenue-recognition policy is not finalized in the metric registry.
 
 ## 8. marketing_spend
 

@@ -2,6 +2,7 @@
 """Regression scenarios for the SQLite session checks, without changing the fixture."""
 import ast
 import datetime as dt
+from decimal import Decimal, InvalidOperation
 import sqlite3
 import unittest
 from pathlib import Path
@@ -9,6 +10,9 @@ from pathlib import Path
 source = ast.parse(Path(__file__).with_name('check_data.py').read_text())
 checks = next(ast.literal_eval(node.value) for node in source.body
               if isinstance(node, ast.Assign) and any(isinstance(x, ast.Name) and x.id == 'checks' for x in node.targets))
+money_node=next(node for node in source.body if isinstance(node,ast.FunctionDef) and node.name=='usd_cents')
+money_namespace={'Decimal':Decimal,'InvalidOperation':InvalidOperation}
+exec(compile(ast.Module(body=[money_node],type_ignores=[]),'<money>','exec'),money_namespace)
 
 def valid_utc(value):
     try:
@@ -20,6 +24,7 @@ class SessionChecks(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(':memory:')
         self.db.create_function('valid_utc', 1, valid_utc)
+        self.db.create_function('usd_cents', 1, money_namespace['usd_cents'])
         self.db.executescript('''
           CREATE TABLE sessions(session_id TEXT, user_id TEXT, anonymous_id TEXT, date TEXT,
             session_started_at TEXT, session_ended_at TEXT, last_activity_at TEXT, duration_sec INTEGER, platform TEXT);

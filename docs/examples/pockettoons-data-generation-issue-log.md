@@ -116,6 +116,12 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Resolution:** The fixture computes and checks stored completion using the same SQLite rounding expression at four decimal places. The range union and watch-time reconciliation are checked independently; stored rounding is not a substitute for complete segment evidence.
 
+### USD precision and historical payment status
+
+**Issue and impact:** Summing binary floating-point currency values can create precision discrepancies. Using a charge's current status to judge whether it was successful at an earlier refund attempt can also misclassify that refund.
+
+**Resolution:** The fixture checker validates USD values with Decimal and aggregates exact integer cents for its revenue check, refund caps and allocation reconciliation. Values with excess precision are rejected for review. Refund checks inspect the latest effective payment status at the refund attempt; isolated tests cover pending-to-success, failed, voided, refund and off-session scenarios. SQLite still stores the compatibility fields as REAL; the checker-only conversion function is not a persistent database function. FX and multi-currency minor-unit policies remain outside this fixture.
+
 ## Deliberate data-quality issues
 
 | Issue | Analytical impact | Representation and handling |
