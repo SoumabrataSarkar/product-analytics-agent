@@ -221,7 +221,7 @@ The stored `content_views.view_type` records the decision at view start and is n
 | `country_origin` | TEXT | yes | ISO country at signup if known, not nationality. |
 | `country_current` | TEXT | yes | Current profile country if known; agrees with `country` or NULL when unknown. |
 | `acquisition_source` | TEXT | no | First-touch channel (`organic`, `paid_search`, `paid_social`, `creator`, `referral`, `other`, `unknown`). `unknown` represents missing attribution, not an acquisition channel. |
-| `subscription_status` | TEXT | no | Current snapshot: `never_subscribed`, `active`, `cancel_at_period_end`, `expired`, `refunded`, `paused`. Not for historical entitlement. |
+| `subscription_status` | TEXT | no | Current snapshot: `never_subscribed`, `active`, `cancel_at_period_end`, `expired`, `refunded`. Not for historical entitlement. |
 | `subscription_start` | TIMESTAMP | yes | Start of the current/latest paid subscription period; NULL if never subscribed. |
 | `subscription_end` | TIMESTAMP | yes | Scheduled exclusive end of the current/latest paid period, including for active subscriptions; a successful refund for that still-active period ends its access at the refund effective time. NULL if unknown or never subscribed. |
 | `created_at` | TIMESTAMP | no | Source user-profile creation timestamp. |
@@ -421,7 +421,7 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `effective_start_at` | TIMESTAMP | no | UTC inclusive start of the access/status interval. |
 | `subscription_status_updated_at` | TIMESTAMP | no | UTC time the status change took effect; equals `effective_start_at` for status changes. |
 | `effective_end_at` | TIMESTAMP | yes | Exclusive end; null only while open. |
-| `status` | TEXT | no | `active`, `cancel_at_period_end`, `cancelled`, `expired`, `paused`, `refunded`. Expired and refunded states have explicit effective periods; NULL end denotes an open state. |
+| `status` | TEXT | no | `active`, `cancel_at_period_end`, `expired`, `refunded`. Expired and refunded states have explicit effective periods; NULL end denotes an open state. |
 | `plan_code` | TEXT | no | `monthly_9_99` in v1; extensible. |
 | `source_txn_id` | TEXT | yes | Charge/refund that created this state. |
 | `cancelled_at` | TIMESTAMP | yes | Cancellation request time, distinct from end of access. |
@@ -431,7 +431,7 @@ An initial paid subscription starts only when its `subscription_initial` payment
 
 A renewal payment does not grant access until it succeeds and the preceding paid period has ended. Its next paid period starts at the later of the renewal success effective time and the preceding paid period's exclusive end, and ends one calendar month later under the fixture's stated month-end limitation. If payment succeeds early, the current period is retained to its end. If success is late, the user has no subscription entitlement between the prior end and renewal success; pending and failed renewals do not themselves extend access. Record a non-access status interval for the gap, such as `expired` for an ordinary expiry. The fixture's renewals succeed at the prior period end; early and late cases are isolated tests.
 
-Subscription refund effects are effective at the refund's succeeded payment-status event, not the request or transaction-creation time. Pending and failed refund attempts do not by themselves produce a `refunded` status. A refund ends the access of its linked paid period if that period is still active; a refund of an already-ended period does not terminate a separately paid later period or create a new `refunded` status for that later period. The refund remains a financial transaction in either case. `cancelled` and `paused` transition semantics, and the treatment of `subscription_status_updated_at` when a renewal leaves status unchanged, require explicit definitions before broader use.
+Subscription refund effects are effective at the refund's succeeded payment-status event, not the request or transaction-creation time. Pending and failed refund attempts do not by themselves produce a `refunded` status. A refund ends the access of its linked paid period if that period is still active; a refund of an already-ended period does not terminate a separately paid later period or create a new `refunded` status for that later period. The refund remains a financial transaction in either case. The treatment of `subscription_status_updated_at` when a renewal leaves status unchanged requires an explicit definition before broader use.
 
 ### 4.8 `transaction_content_attribution` — supporting PPV entitlement bridge
 
