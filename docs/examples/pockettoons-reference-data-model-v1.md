@@ -407,16 +407,18 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 
 ### 4.6 `marketing_spend` — assignment-mandated
 
-**Grain:** one UTC calendar day × paid marketing channel in the synthetic source. **Natural key:** (`date`, `channel`). This aggregate table does not establish user-level attribution. Campaign or country detail needs a separately defined finer-grained source.
+**Grain:** one UTC calendar day × paid marketing channel in the synthetic source. The UTC day starts at 00:00:00 inclusive and ends at the next midnight exclusive. **Natural key:** (`date`, `channel`). This aggregate table does not establish user-level attribution. Campaign or country detail needs a separately defined finer-grained source.
 
 | Column | Type | Null? | Definition / rule |
 |---|---|---:|---|
-| `date` | DATE | no | Spend date. |
+| `date` | DATE | no | UTC reporting calendar day (`YYYY-MM-DD`); checker validates the calendar date. |
 | `channel` | TEXT | no | Paid channel; controlled list shared with acquisition mapping. |
 | `spend_usd` | NUMERIC(12,2) | no | Non-negative daily spend. |
 | `impressions` | INTEGER | no | Non-negative delivered impressions. |
 | `clicks` | INTEGER | no | 0..`impressions`. |
-| `loaded_at` | TIMESTAMP | no | Ingestion/audit time. |
+| `loaded_at` | TIMESTAMP | no | UTC ingestion/audit time in fixture format `YYYY-MM-DDTHH:MM:SSZ`; checker validates its format. |
+
+The timezone is part of the synthetic fixture's reporting definition; formatting checks cannot establish the actual reporting timezone of an external source.
 
 ### 4.7 `subscription_history` — supporting, authoritative entitlement timeline
 
