@@ -47,6 +47,7 @@ erDiagram
     SESSIONS o|--o{ USER_EVENTS : occurs_in
     CONTENT_VIEWS o|--o{ USER_EVENTS : describes
     TRANSACTIONS o|--o{ USER_EVENTS : describes
+    USER_EVENTS o|--o{ TRANSACTIONS : checkout_initiates
     SUBSCRIPTION_HISTORY o|--o{ USER_EVENTS : describes
     USER_EVENTS o|--o{ USER_EVENTS : triggers_checkout
     MARKETING_SPEND }o--|| MARKETING_CHANNELS : channel
@@ -145,6 +146,7 @@ erDiagram
     TRANSACTIONS {
       text txn_id PK
       text user_id FK
+      text checkout_event_id FK
       timestamp transaction_at
       text type
       numeric amount_usd
@@ -373,6 +375,7 @@ In a dataset declaring `dataset_metadata.playback_segment_coverage=complete_synt
 | `transaction_at` | TIMESTAMP | no | UTC payment/refund creation time; status history gives successful settlement time. |
 | `country_at_event` | TEXT | yes | Country observed for payment, if known. |
 | `session_id` | TEXT | yes | In-app initiating session; null for external renewal/support refund. |
+| `checkout_event_id` | TEXT | yes | Captured checkout_started event that initiated this payment attempt, or NULL for off-session or uncaptured links. Many payment attempts may reference one checkout. |
 | `provider_transaction_id` | TEXT | no | Unique provider id / idempotency key. |
 | `currency` | TEXT | no | Original ISO currency; v1 synthetic data uses `USD`. |
 | `original_amount` | NUMERIC(12,2) | no | Amount in original currency before USD normalization. |
@@ -381,6 +384,10 @@ In a dataset declaring `dataset_metadata.playback_segment_coverage=complete_synt
 | `subscription_id` | TEXT | yes | Logical subscription identifier for subscription charges or related refunds. |
 
 SQLite stores the fixture's monetary columns as REAL for compatibility; REAL is not exact decimal storage. For the USD fixture, validate that each amount is finite and has no more than two decimal places, convert each individual value with `Decimal(str(value))` to an integer number of cents, and aggregate cents before formatting as dollars. Reject excess-precision or invalid values for review rather than silently rounding them. The checker's `usd_cents` function is registered only while that checker runs; it is not a function persisted in the database. An exact stored cents representation for a future trusted layer remains a separate design decision. Non-USD original currencies may use different minor units; no FX or universal currency-rounding policy is implied by this USD-specific rule.
+
+When checkout_event_id is present, it references a checkout_started event for the same user and non-null session, occurring at or before transaction creation, with product matching the subscription or PPV transaction type. For PPV purchases with episode attribution, at least one attributed episode must match the checkout episode; failed or pending attempts need not have entitlement rows. Multiple attempts, including failed retries, may reference the same checkout. NULL does not distinguish off-session from an uncaptured link. user_events.txn_id may reference an individual transaction, but a single checkout event cannot use that field to represent all retries; transactions.checkout_event_id is the direction for enumerating attempts.
+
+Because the two nullable references point in opposite directions, an ingestion flow can insert the checkout event with txn_id NULL, then insert payment transactions referencing the checkout; an event-level txn_id can be populated afterward if available. Do not require an event-level txn_id to enumerate retries.
 
 For a refund attempt, use the original charge's latest effective payment status at the refund time to establish eligibility; a current transaction snapshot is not a substitute for historical status. Status events must have valid effective and recording times and provider identifiers. The fixture checker rejects ambiguous identical effective times for the same transaction and multiple succeeded transitions because no explicit tie-break/idempotency policy for those cases is represented. It validates a transaction snapshot against the latest recorded effective transition; it does not establish an independent transaction snapshot timestamp or every future payment-provider transition policy.
 
@@ -520,6 +527,7 @@ The fixture records `app_opened`, a labelled `paywall_viewed`, a `checkout_start
 | `content_episodes` | `content_tier_history` | 1 : 1..N | child yes | Effective access-tier history keyed by episode and time. |
 | `users` | `transactions` | 1 : 0..N | child yes | Each money event has one economic user. |
 | `sessions` | `transactions` | 1 : 0..N | child optional | Null for renewals/refunds outside an app session. |
+| `user_events` checkout | `transactions` | 1 : 0..N | child optional | Multiple payment attempts can share a captured checkout; off-session or uncaptured links are NULL. |
 | `transactions` | `transaction_content_attribution` | 1 : 0..N | PPV only | A single PPV may be one episode or a future bundle. |
 | `users` | `subscription_history` | 1 : 0..N | child yes | A user can churn and resubscribe. |
 | `transactions` | `subscription_history` | 1 : 0..N | child optional | State may come from support/system action. |
