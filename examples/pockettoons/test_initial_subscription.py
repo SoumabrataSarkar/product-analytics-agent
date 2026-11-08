@@ -73,6 +73,8 @@ class InitialSubscriptionTests(unittest.TestCase):
           INSERT INTO content_views VALUES('session','sub','2026-10-01T10:05:00Z');
         ''')
         self.assertEqual(self.count('initial subscription missing full journey'),0)
+        self.db.execute("DELETE FROM user_events WHERE event_name='paywall_viewed'")
+        self.assertEqual(self.count('initial subscription missing full journey'),0)
         self.db.execute("UPDATE content_views SET view_started_at='2026-10-01T10:04:00Z'")
         self.assertEqual(self.count('initial subscription missing full journey'),1)
 
