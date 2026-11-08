@@ -106,7 +106,52 @@ This query returns one row per session, including sessions with no views or paym
 
 **Columns:** content_id — title ID; title — display name; genre — primary genre; total_episodes — published/planned episode count; release_date — first-release date; first_release_at — first release timestamp; total_duration_sec — sum of episode lengths; content_tier — free, premium or mixed; content_status — current scheduled, live, delisted or archived status; last_release_at? — most recent release; available_from_at?/available_until_at? — current/latest availability boundaries; created_at/updated_at — record audit times.
 
-**Joins:** content_id → many content_episodes; identify an episode with both keys. **Use:** titles by genre. **Limitations/checks:** Title totals and current status do not describe every historical episode state. Required-value checks exist; propose reconciliation of episode counts/duration and release dates.
+**Joins:** content_id → many content_episodes; identify an episode with both keys. content_views references an episode composite key; join on content_id alone only for an explicitly title-level analysis. Availability history is episode-grain; match both episode keys and event time. **Use:** titles by genre or total catalog inventory. **Limitations/checks:** Current title tier and status do not prove an episode's historical tier or availability. Inventory includes scheduled episodes; it is not a count of episodes live now. The checker validates required fields, UTC formatting and derived release date, title status/tier, availability boundaries, inventory episode count/duration, tier consistency and title-grain join reconciliation. Its release-summary check uses non-scheduled episode status as a proxy for released episodes, not independent proof of release timing. Historical availability uses episode history at the event time.
+
+### Title columns
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| content_id | TEXT primary key | Required by checker | Series identifier. |
+| title | TEXT | No | Title name. |
+| genre | TEXT | No | Primary genre. |
+| total_episodes | INTEGER | No | Count of all episode records, including scheduled episodes. |
+| release_date | TEXT | No | UTC date derived from first_release_at. |
+| first_release_at | TEXT | No | First episode release timestamp. |
+| last_release_at | TEXT | Yes | Latest released episode timestamp if known; NULL when none known. |
+| total_duration_sec | INTEGER | No | Total duration of all episode records, including scheduled episodes. |
+| content_tier | TEXT | No | free if all episodes are free, premium if all premium, mixed if both; includes scheduled episodes. |
+| content_status | TEXT | No | Current title status: scheduled, live, delisted or archived. |
+| available_from_at | TEXT | Yes | Start of current/latest title availability if known. |
+| available_until_at | TEXT | Yes | Exclusive end of availability if known; NULL for open or unknown. |
+| created_at | TEXT | No | Record creation timestamp. |
+| updated_at | TEXT | No | Record update timestamp. |
+
+For example, a title with 10 live episodes and 2 scheduled episodes has total_episodes=12; total_duration_sec includes all 12 durations. To calculate currently live episodes, use episode-level availability at an explicitly specified time, not the inventory count. A title containing both free and premium episodes is mixed; the episode tier governs access to a particular episode.
+
+### Safe title-grain summary
+
+```sql
+WITH episodes AS (
+  SELECT content_id, COUNT(*) AS episode_rows,
+         SUM(episode_duration_sec) AS episode_seconds
+  FROM content_episodes GROUP BY content_id
+), views AS (
+  SELECT content_id, COUNT(*) AS view_rows,
+         SUM(watch_duration_sec) AS watch_seconds
+  FROM content_views GROUP BY content_id
+)
+SELECT c.content_id, c.total_duration_sec,
+       COALESCE(e.episode_rows, 0) AS episode_rows,
+       COALESCE(e.episode_seconds, 0) AS episode_seconds,
+       COALESCE(v.view_rows, 0) AS view_rows,
+       COALESCE(v.watch_seconds, 0) AS watch_seconds
+FROM content_catalog c
+LEFT JOIN episodes e ON e.content_id = c.content_id
+LEFT JOIN views v ON v.content_id = c.content_id;
+```
+
+This returns one row per title. Episode inventory and view facts are summarized independently. It does not determine live episodes, historical tier, revenue or a finalized engagement metric. The checker reconciles this pattern to source totals; isolated regression tests demonstrate how a direct join can multiply title duration and watch time.
 
 ## 4. content_episodes
 

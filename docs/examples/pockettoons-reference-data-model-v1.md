@@ -261,12 +261,12 @@ The dataset-level `dataset_metadata` table stores `users_snapshot_at` as a UTC t
 | `content_id` | TEXT | no | Title/series primary key. |
 | `title` | TEXT | no | Display title. |
 | `genre` | TEXT | no | Primary genre. |
-| `total_episodes` | INTEGER | no | Positive count of published and planned episode records. |
+| `total_episodes` | INTEGER | no | Positive count of all episode records, including published and planned episodes. |
 | `release_date` | DATE | no | Assignment-required UTC date derived from `first_release_at`. |
 | `first_release_at` | TIMESTAMP | no | UTC first episode release timestamp. |
 | `last_release_at` | TIMESTAMP | yes | UTC most recent released episode timestamp, when known. |
 | `total_duration_sec` | INTEGER | no | Derived sum of durations across all published and planned episode records; refresh when episodes change. |
-| `content_tier` | TEXT | no | Default commercial tier: `free`, `premium`, `mixed`. |
+| `content_tier` | TEXT | no | Inventory-level tier: `free` when all episodes are free, `premium` when all are premium, `mixed` when both tiers exist. Includes planned episodes. Episode access is determined by the episode tier. |
 | `content_status` | TEXT | no | Current title status: `scheduled`, `live`, `delisted`, `archived`. |
 | `available_from_at` | TIMESTAMP | yes | UTC start of current/latest title availability. |
 | `available_until_at` | TIMESTAMP | yes | UTC exclusive end of current/latest title availability; NULL while open. |
