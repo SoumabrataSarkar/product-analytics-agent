@@ -443,6 +443,20 @@ def main():
         if uid in refunded_users: continue
         db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                    (f'h_expired_{uid}',f'sub_{uid}',uid,expired_at,None,expired_at,'expired','monthly_9_99',None,None,expired_at))
+    # Keep the status-change instant across adjacent intervals with the same status.
+    db.execute('''WITH ordered AS (
+      SELECT subscription_period_id,user_id,status,effective_start_at,
+             lag(status) OVER (PARTITION BY user_id ORDER BY effective_start_at,subscription_period_id) previous_status
+      FROM subscription_history
+    ), grouped AS (
+      SELECT *,sum(CASE WHEN previous_status IS NULL OR previous_status!=status THEN 1 ELSE 0 END)
+        OVER (PARTITION BY user_id ORDER BY effective_start_at,subscription_period_id) status_group
+      FROM ordered
+    ), changes AS (
+      SELECT subscription_period_id,min(effective_start_at) OVER (PARTITION BY user_id,status_group) changed_at
+      FROM grouped
+    ) UPDATE subscription_history SET subscription_status_updated_at=changes.changed_at
+      FROM changes WHERE subscription_history.subscription_period_id=changes.subscription_period_id''')
     # Optional session metadata exists in the model even when a value is unknown.
     db.execute('ALTER TABLE sessions ADD COLUMN device_id_hash TEXT')
     db.execute('ALTER TABLE sessions ADD COLUMN app_version TEXT')
