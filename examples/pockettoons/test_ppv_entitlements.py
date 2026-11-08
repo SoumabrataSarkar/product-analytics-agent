@@ -1,4 +1,4 @@
-"""Regression coverage for PPV entitlement start timing, purchase-episode uniqueness, single ownership, status consistency and PPV-only rows."""
+"""Regression coverage for PPV entitlement start timing, purchase-episode uniqueness, single ownership, status consistency, PPV-only rows and the entitlement snapshot."""
 import ast
 import datetime as dt
 from pathlib import Path
@@ -175,6 +175,27 @@ class PpvOnlyTests(EntitlementTests):
 
     def test_missing_transaction_is_invalid(self):
         self.db.execute('DELETE FROM transactions')
+        self.assertEqual(self.violations(self.CHECK), 1)
+
+class EntitlementSnapshotTests(EntitlementTests):
+    CHECK = 'PPV attribution timestamp after entitlement snapshot'
+
+    def setUp(self):
+        super().setUp()
+        self.db.create_function('entitlement_snapshot_at', 0, lambda: '2026-01-31T23:59:59Z')
+
+    def test_timestamps_at_or_before_snapshot_are_valid(self):
+        t = '2026-01-31T23:59:59Z'
+        self.db.execute("UPDATE transaction_content_attribution SET attribution_status='refunded',entitlement_end_at=?,refunded_at=?", (t, t))
+        self.assertEqual(self.violations(self.CHECK), 0)
+
+    def test_future_dated_end_is_invalid(self):
+        t = '2026-02-03T00:00:00Z'
+        self.db.execute("UPDATE transaction_content_attribution SET attribution_status='refunded',entitlement_end_at=?,refunded_at=?", (t, t))
+        self.assertEqual(self.violations(self.CHECK), 1)
+
+    def test_start_after_snapshot_is_invalid(self):
+        self.db.execute("UPDATE transaction_content_attribution SET entitlement_start_at='2026-02-01T00:00:00Z'")
         self.assertEqual(self.violations(self.CHECK), 1)
 
 if __name__ == '__main__':
