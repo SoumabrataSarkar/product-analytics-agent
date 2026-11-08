@@ -191,7 +191,7 @@ def main():
     db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',views)
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',events)
     db.executemany('INSERT INTO marketing_spend VALUES (?,?,?,?,?,?)',spend)
-    checkout_paywall_links=[]
+    checkout_paywall_links=[]; checkout_transaction_links=[]
     # Initial subscriptions are started in an app session: paywall, checkout,
     # successful payment, then a premium view. Renewal payments remain off-session.
     for row in txns:
@@ -207,6 +207,7 @@ def main():
                 (f'{name}_{tid}',uid,aid,when,name,sid,None,tid if name=='subscription_started' else None,
                  period if name=='subscription_started' else None,None,None,'{"product":"subscription"}',zones[country],country,when))
         checkout_paywall_links.append((f'paywall_viewed_{tid}',f'checkout_started_{tid}'))
+        checkout_transaction_links.append((f'checkout_started_{tid}',tid))
         vt=offset(paid_at,120); ve=offset(vt,480)
         db.execute('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',
             (vid,uid,aid,sid,'c03',13,vt[:10],vt,ve,480,900,'sub',round(480/900,4),0,480,1,0,None,zones[country],country))
@@ -277,6 +278,7 @@ def main():
             ppv_events.append((f'paywall_{sid}',uid,aid,wall,'paywall_viewed',sid,None,None,None,cid,ep,'{"product":"ppv"}',zones[country],country,wall))
             ppv_events.append((f'checkout_{sid}',uid,aid,checkout,'checkout_started',sid,None,None,None,cid,ep,'{"product":"ppv"}',zones[country],country,checkout))
             checkout_paywall_links.append((f'paywall_{sid}',f'checkout_{sid}'))
+            checkout_transaction_links.append((f'checkout_{sid}',tid))
             ppv.append((tid,uid,t[:10],'ppv','ppv_episode_purchase',1.99,'credit_debit_card','succeeded',t,sid,tid,'demo','USD',1.99,None,None,1.99,0,users[i][3]))
             ppv_status.append((f'p_{tid}',tid,'succeeded',t,t,f'provider_{tid}'))
             refunded=j<refund_targets[month_index]
@@ -328,6 +330,7 @@ def main():
         props=None if name=='app_opened' else '{"product":"ppv"}'
         db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',('relist_'+name,uid,aid,when,name,sid,None,None,None,'c12',20,props,zones[users[i][3]],users[i][3],when))
     checkout_paywall_links.append(('relist_paywall_viewed','relist_checkout_started'))
+    checkout_transaction_links.append(('relist_checkout_started',tid))
     repurchase=(tid,uid,purchase[:10],'ppv','ppv_episode_purchase',1.99,'credit_debit_card','succeeded',purchase,sid,tid,'demo','USD',1.99,None,None,1.99,0,users[i][3])
     db.execute('INSERT INTO transactions VALUES ('+','.join('?'*19)+')',repurchase)
     db.execute('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',('p_relist',tid,'succeeded',purchase,purchase,'provider_relist'))
@@ -405,6 +408,7 @@ def main():
         db.execute('INSERT INTO transactions VALUES ('+','.join('?'*19)+')',row)
         db.execute('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',('p_'+tid,tid,'failed',created,created,'provider_'+tid))
         db.execute('UPDATE user_events SET txn_id=? WHERE event_id=?',(tid,event_id))
+        checkout_transaction_links.append((event_id,tid))
         failed_txns.append(row)
     # Refund one previously cancelled subscription per month (April–August).
     # The entitlement ends when the approved refund succeeds, not at request.
@@ -559,6 +563,9 @@ def main():
     # Link only paywall/checkout pairs explicitly constructed together above.
     db.execute('ALTER TABLE user_events ADD COLUMN triggering_paywall_event_id TEXT REFERENCES user_events(event_id)')
     db.executemany('UPDATE user_events SET triggering_paywall_event_id=? WHERE event_id=?',checkout_paywall_links)
+    # Link payments only to checkouts explicitly paired in the synthetic journeys above.
+    db.execute('ALTER TABLE transactions ADD COLUMN checkout_event_id TEXT REFERENCES user_events(event_id)')
+    db.executemany('UPDATE transactions SET checkout_event_id=? WHERE txn_id=?',checkout_transaction_links)
     # Recompute after all sessions and late-inserted episode views are present.
     db.execute('''UPDATE content_views SET is_first_view_of_episode = CASE WHEN view_id IN
       (SELECT view_id FROM (SELECT view_id,ROW_NUMBER() OVER
