@@ -118,6 +118,29 @@ checks={
  'PPV refund allocations differ in exact cents': "SELECT count(*) FROM transactions r WHERE r.transaction_subtype='ppv_refund' AND r.status='succeeded' AND (SELECT coalesce(sum(usd_cents(a.allocated_refund_usd)),0) FROM refund_content_attribution a WHERE a.refund_txn_id=r.txn_id)!=usd_cents(r.amount_usd)",
  'PPV refund allocated to unpurchased episode': "SELECT count(*) FROM refund_content_attribution r JOIN transactions refund ON refund.txn_id=r.refund_txn_id WHERE refund.type!='refund' OR refund.transaction_subtype!='ppv_refund' OR NOT EXISTS(SELECT 1 FROM transaction_content_attribution a WHERE a.txn_id=refund.related_txn_id AND a.content_id=r.content_id AND a.episode_number=r.episode_number)",
  'PPV allocation amounts invalid': "SELECT (SELECT count(*) FROM transaction_content_attribution WHERE usd_cents(attributed_amount_usd) IS NULL OR usd_cents(attributed_amount_usd)<=0)+(SELECT count(*) FROM refund_content_attribution WHERE usd_cents(allocated_refund_usd) IS NULL OR usd_cents(allocated_refund_usd)<=0)",
+ 'PPV episode cumulative refund and entitlement inconsistent': """WITH per_time AS (
+   SELECT a.txn_content_attribution_id AS aid, p.effective_at AS at,
+          sum(usd_cents(ra.allocated_refund_usd)) AS cents
+   FROM transaction_content_attribution a
+   JOIN transactions r ON r.related_txn_id=a.txn_id AND r.type='refund' AND r.transaction_subtype='ppv_refund'
+   JOIN payment_status_history p ON p.txn_id=r.txn_id AND p.status='succeeded'
+   JOIN refund_content_attribution ra ON ra.refund_txn_id=r.txn_id AND ra.content_id=a.content_id AND ra.episode_number=a.episode_number
+   GROUP BY a.txn_content_attribution_id,p.effective_at
+ ), running AS (
+   SELECT aid,at,sum(cents) OVER (PARTITION BY aid ORDER BY at ROWS UNBOUNDED PRECEDING) AS cents FROM per_time
+ ), totals AS (
+   SELECT a.txn_content_attribution_id AS aid, max(r.cents) AS refunded_cents,
+          min(CASE WHEN r.cents>=usd_cents(a.attributed_amount_usd) THEN r.at END) AS full_at
+   FROM transaction_content_attribution a LEFT JOIN running r ON r.aid=a.txn_content_attribution_id
+   GROUP BY a.txn_content_attribution_id
+ )
+ SELECT count(*) FROM transaction_content_attribution a JOIN totals x ON x.aid=a.txn_content_attribution_id
+ WHERE x.refunded_cents>usd_cents(a.attributed_amount_usd)
+    OR (a.refunded_at IS NOT NULL AND (x.full_at IS NULL OR a.refunded_at!=x.full_at))
+    OR (a.attribution_status='refunded' AND (x.full_at IS NULL OR a.refunded_at IS NOT x.full_at OR a.entitlement_end_at IS NOT x.full_at))
+    OR (x.full_at IS NOT NULL AND (a.delisted_at IS NULL OR x.full_at<a.delisted_at)
+        AND (a.attribution_status!='revoked' OR a.entitlement_end_at IS NULL OR x.full_at<=a.entitlement_end_at)
+        AND (a.refunded_at IS NOT x.full_at OR a.entitlement_end_at IS NOT x.full_at OR a.attribution_status!='refunded'))""",
  'raw USD discrepancies missing review evidence': "SELECT count(*) FROM raw_payment_source s JOIN transactions t ON t.txn_id=s.txn_id LEFT JOIN payment_quality_review q ON q.txn_id=s.txn_id WHERE s.raw_unit='USD' AND (usd_cents(s.raw_amount) IS NULL OR usd_cents(s.raw_amount)!=usd_cents(t.amount_usd)) AND q.txn_id IS NULL",
  'review corrections differ in exact cents': "SELECT count(*) FROM payment_quality_review q JOIN transactions t ON t.txn_id=q.txn_id WHERE usd_cents(q.corrected_amount_usd) IS NULL OR usd_cents(q.corrected_amount_usd)!=usd_cents(t.amount_usd)",
  'payment review evidence missing': "SELECT count(*) FROM payment_quality_review WHERE issue IS NULL OR trim(issue)='' OR reason IS NULL OR trim(reason)=''",
