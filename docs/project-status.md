@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-11-09 (Asia/Kolkata).  
 **Repository:** `SoumabrataSarkar/product-analytics-agent` (private).  
-**Current focus:** Begin the shared Metric Registry, starting with monthly active users (MAU).
+**Current focus:** Extend the shared Metric Registry beyond the approved MAU definition.
 
 This is a progress and handoff record. The data catalog, reference data model and frozen architecture remain the authoritative sources for their respective contracts.
 
@@ -20,7 +20,7 @@ The full fixture checker and targeted tests passed against the latest local data
 
 ## Pending work
 
-1. **Metric Registry — next.** Agree on a structured template and define metrics with the user one at a time, starting with MAU. For each definition cover business meaning, population, numerator/denominator where applicable, grain, timestamps/timezone, eligible data, source tables and layers, canonical calculation/SQL, filters, nulls, payment/refund/status rules, aggregation safety, quality checks, version and caveats. Do not assume an unresolved definition.
+1. **Metric Registry — in progress.** The [registry](metrics/metric-registry.md) template, variant rule and MAU (`mau` v1.0) are approved; MAU's canonical SQL is run by the fixture checker and isolated tests. `monthly_active_viewers` is listed as proposed. Define the remaining metrics with the user one at a time. For each definition cover business meaning, population, numerator/denominator where applicable, grain, timestamps/timezone, eligible data, source tables and layers, canonical calculation/SQL, filters, nulls, payment/refund/status rules, aggregation safety, quality checks, version and caveats. Do not assume an unresolved definition.
 2. **Data layers.** Design and implement actual Bronze/Silver/Gold transformations, lineage, quality handling, refresh and reconciliations. The catalog's layer assignments are planned; the existing SQLite fixture is not proof that the full layers exist.
 3. **Shared agent tools and workflow.** Implement bounded read-only SQL access, evidence logging, layer selection, clarification handling and the shared evidence-led investigation skill.
 4. **Evaluation.** Define and run at least 15 questions, expected results, quality traps, ambiguity and failure scenarios; compare supported runtimes on a fixed dataset. Keep expected synthetic findings out of the agent's independent investigation context.
@@ -51,6 +51,7 @@ Dates below use Asia/Kolkata. Git commit author names alone do not identify the 
 | 2026-11-08, approximately 17:27–17:41 | Claude Opus 5.5, **as identified in commit co-author metadata** | PPV entitlement start, duplicate ownership, status/end consistency, PPV purchase restrictions and snapshot-bound checks. Example commits: `35981da0`, `817b12b7`, `02544b45`, `91d8f35f`, `dc5ec726`. |
 | 2026-11-08 to 2026-11-09 | Codex in the current chat; exact model version not recorded in commit metadata | Event JSON and link checks; payment source/review contracts; marketing rules and variation; shared-device and identity-lifetime checks. Representative commits: `46937e32`, `463246aa`, `c2c73ef6`, `f5448627`, `1aa56d7b`. |
 | 2026-11-09 | Codex in the current chat; exact model version not recorded | This status and handoff record and entrypoint references. |
+| 2026-11-09 | Claude Opus 5.5, **as identified in commit co-author metadata** | Metric Registry template, variant rule and approved MAU definition with registry-driven checker SQL and tests. Example commits: `7187b3b`, `6957332`, `f1e8077`. |
 
 Git history contains the exact timestamps and full changes. The user also reported earlier work with GPT and Claude; attribution of every earlier table or file to a specific model cannot be verified from available evidence.
 
