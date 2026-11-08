@@ -48,6 +48,7 @@ erDiagram
     CONTENT_VIEWS o|--o{ USER_EVENTS : describes
     TRANSACTIONS o|--o{ USER_EVENTS : describes
     SUBSCRIPTION_HISTORY o|--o{ USER_EVENTS : describes
+    USER_EVENTS o|--o{ USER_EVENTS : triggers_checkout
     MARKETING_SPEND }o--|| MARKETING_CHANNELS : channel
     TRANSACTIONS o|--o{ TRANSACTIONS : refunds
 
@@ -127,6 +128,7 @@ erDiagram
       text user_id FK
       timestamp event_at
       text event_timezone
+      text triggering_paywall_event_id FK
     }
     CONTENT_VIEWS {
       text view_id PK
@@ -495,10 +497,11 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 | `episode_number` | INTEGER | yes | Relevant episode. |
 | `event_properties_json` | TEXT | yes | Versioned context without PII. Paywall and checkout events include `product` (`subscription` or `ppv`); blocked playback includes its reason. |
 | `ingested_at` | TIMESTAMP | no | Warehouse arrival time. |
+| `triggering_paywall_event_id` | TEXT | yes | On checkout_started, the observed triggering paywall_viewed event ID, when captured; NULL for direct checkout or unknown link. Other events leave it NULL. |
 
 The synthetic fixture records `session_engagement` as an activity observation and `playback_heartbeat` as an observation during a linked content view. Both include a synthetic marker in event properties. They are timing evidence, not new sessions, views, watch-duration increments, payments, or independent proof of a deliberate user interaction. Playback heartbeats reference their view and remain within its start/end bounds. When `dataset_metadata.session_activity_coverage` is `complete_synthetic_v1`, the fixture includes evidence at session start and last activity, gaps under 30 minutes between qualifying session activity observations, and playback heartbeat gaps of at most five minutes for closed views. This completeness declaration applies to the synthetic fixture, not arbitrary real-world telemetry.
 
-For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matching `checkout_started`, and the successful payment in the same session; record `subscription_started` for an initial subscription. PPV paywall and checkout events require both a non-empty `content_id` and a positive `episode_number` that together identify an existing episode. Subscription paywall and checkout events do not require an episode. Non-purchaser paywalls and abandoned checkouts use the same product labels. Matching the episode and session does not by itself establish which of multiple same-episode paywalls led to a checkout. `refund_requested.txn_id` refers to the original purchase; the subsequent refund transaction references that original via `related_txn_id`. A delisting notice identifies the affected user and episode before the effective delisting time.
+The fixture records `app_opened`, a labelled `paywall_viewed`, a `checkout_started`, and the successful payment in the same session for its in-app purchase examples; it records `subscription_started` for an initial subscription. A captured checkout-to-paywall link references one earlier paywall in the same session with the same product; PPV additionally requires the same episode. One paywall can link to multiple checkouts. Direct checkout or an unavailable link is represented by NULL; the link records observed navigation, not causal proof. PPV paywall and checkout events require both a non-empty `content_id` and a positive `episode_number` that together identify an existing episode. Subscription paywall and checkout events do not require an episode. Non-purchaser paywalls and abandoned checkouts use the same product labels. `refund_requested.txn_id` refers to the original purchase; the subsequent refund transaction references that original via `related_txn_id`. A delisting notice identifies the affected user and episode before the effective delisting time.
 
 ## 5. Relationship cardinality and referential rules
 
@@ -521,6 +524,7 @@ For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matc
 | `users` | `subscription_history` | 1 : 0..N | child yes | A user can churn and resubscribe. |
 | `transactions` | `subscription_history` | 1 : 0..N | child optional | State may come from support/system action. |
 | `users` | `user_events` | 1 : 0..N | child optional | Pre-login activity can be linked through session. |
+| `user_events` paywall | `user_events` checkout | 1 : 0..N | child optional | A captured triggering paywall is earlier, in the same session and product; PPV episode keys also match. |
 | `transactions` | `payment_status_history` | 1 : 1..N | child yes | Status transitions. |
 | `transactions` | `raw_payment_source` | 1 : 0..1 | child yes | Original provider value for reconciliation. |
 | `transactions` | `payment_quality_review` | 1 : 0..1 | child yes | Evidence and corrected amount for reviewed records. |
@@ -616,7 +620,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | PPV financial reconciliation | For each succeeded PPV transaction, attribution allocations sum to its amount once (or an explicit allocation policy documents a residual). |
 | Refund linkage | Each refund references a prior succeeded charge of the same user and has a positive amount; cumulative succeeded refunds cannot exceed the charge. PPV refunds reconcile to episode allocations. |
 | Payment transitions | Unique provider event IDs; current status matches latest transition; count each successful payment once and exclude failed payments. |
-| Event and funnel order | Each checkout has an earlier matching-product paywall; in-app subscription and PPV purchases link to their session and follow checkout. Include labelled non-purchaser paywalls and abandoned checkouts. |
+| Event and funnel order | A captured paywall link points to an earlier same-session, same-product paywall and, for PPV, the same episode. Direct checkout or an unavailable link may be NULL. Fixture purchase examples link to their session and follow checkout; labelled non-purchaser paywalls and abandoned checkouts are included. |
 | Refund timeline | Refund requests link to the original charge and precede a linked refund; reasons are populated; subscription refunds and cumulative full-episode PPV refunds end applicable access, while partial PPV refunds retain it. |
 | Delisting notice | A notice for an affected PPV holder precedes delisting; a successful repurchase after relisting occurs without a concurrent active subscription. |
 | Browsing and resumes | Include browsing-only sessions, multiple views per session, cross-session viewing and real resume positions; unauthenticated actions cannot create views. |
