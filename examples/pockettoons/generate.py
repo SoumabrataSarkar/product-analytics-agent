@@ -62,6 +62,7 @@ def main():
     ''')
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('users_snapshot_at', SNAPSHOT_AT))
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('content_catalog_snapshot_at', SNAPSHOT_AT))
+    db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('entitlement_snapshot_at', SNAPSHOT_AT))
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('session_activity_coverage', 'complete_synthetic_v1'))
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('playback_segment_coverage', 'complete_synthetic_v1'))
     # Existing users signed up before the window; new cohorts join in every analysis month.
