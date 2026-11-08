@@ -58,6 +58,23 @@ class TransactionTests(unittest.TestCase):
         self.assertGreater(self.count('transaction status history ambiguous or duplicated'),0)
         self.db.execute("UPDATE transactions SET status='pending'")
         self.assertEqual(self.count('transaction status snapshot differs from latest transition'),1)
+
+    def test_status_as_of_effective_and_knowledge_times(self):
+        self.db.execute("UPDATE payment_status_history SET effective_at='2026-01-01T10:05:00Z', recorded_at='2026-01-01T10:07:00Z' WHERE payment_status_event_id='e1'")
+        query = '''SELECT p.status FROM transactions t LEFT JOIN payment_status_history p
+          ON p.payment_status_event_id = (
+            SELECT h.payment_status_event_id FROM payment_status_history h
+            WHERE h.txn_id=t.txn_id AND h.effective_at<=:event_at
+              AND (:known_at IS NULL OR h.recorded_at<=:known_at)
+            ORDER BY h.effective_at DESC, h.recorded_at DESC, h.payment_status_event_id DESC LIMIT 1
+          ) WHERE t.txn_id=:txn_id'''
+        def status(event_at, known_at):
+            return self.db.execute(query, {'txn_id':'p','event_at':event_at,'known_at':known_at}).fetchone()[0]
+        self.assertEqual(status('2026-01-01T10:06:00Z', None), 'succeeded')
+        self.assertEqual(status('2026-01-01T10:06:00Z', '2026-01-01T10:06:00Z'), 'pending')
+        self.assertEqual(status('2026-01-01T10:06:00Z', '2026-01-01T10:07:00Z'), 'succeeded')
+        self.assertIsNone(status('2026-01-01T09:59:00Z', None))
+        self.assertIsNone(status('2026-01-01T10:06:00Z', '2026-01-01T09:59:00Z'))
     def test_refund_exact_cent_cap_and_original_success_time(self):
         self.db.executescript('''
           INSERT INTO transactions VALUES('r1','u','2026-01-01','refund','ppv_refund',0.10,'credit_debit_card','succeeded','2026-01-01T10:02:00Z',NULL,'provider-r1','demo','USD',0.10,'p',NULL,NULL,NULL,'accidental_purchase'),
