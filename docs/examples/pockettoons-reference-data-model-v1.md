@@ -658,7 +658,7 @@ The PocketToons fixture uses a fixed seed, produces a reproducible SQLite databa
 
 ### Business story and measurement
 
-- **MAU:** count distinct authenticated users with a session in each UTC calendar month. Quarter MAU is the average of its three monthly MAUs, not the sum of monthly users. The second-quarter average is approximately 20% higher than the first.
+- **MAU:** defined in the [Metric Registry](../metrics/metric-registry.md) as `mau`: distinct resolved users with a session active in each complete UTC calendar month. Quarter MAU is the average of its three monthly MAUs, not the sum of monthly users. The second-quarter average is approximately 20% higher than the first.
 - **Net revenue:** sum successful subscription and PPV charges and subtract successful refunds at their successful-payment effective times. Amounts in both types of transaction are stored as positive values. Quarter-on-quarter net revenue is within ±2%.
 - **Drivers:** the fixture includes a larger paid-social audience in the later quarter, lower observed 30-day subscription conversion for the newer signup cohorts, and departures among existing subscribers alongside replacement payments. Quantify the revenue bridge and distinguish association from causation. Use only cohorts with a complete 30-day observation window; March signups are not eligible when activity begins in April.
 - **Coverage:** every analysis month contains signup cohorts and every UTC day contains activity. Vary cohort sizes, title episode counts, sessions, views, payment volumes and cancellation/refund timing without introducing implausible deterministic cross-dimension relationships. Include non-paying users, browsing-only sessions and non-purchaser funnel paths.
