@@ -76,6 +76,7 @@ if segment_coverage != ('complete_synthetic_v1',):
 db.create_function('users_snapshot_at', 0, lambda: snapshot_at)
 db.create_function('entitlement_snapshot_at', 0, lambda: entitlement_snapshot_at)
 checks={
+ 'marketing reporting date or load timestamp invalid': "SELECT count(*) FROM marketing_spend WHERE valid_utc(date || 'T00:00:00Z')=0 OR valid_utc(loaded_at)=0",
  'foreign keys': 'SELECT count(*) FROM pragma_foreign_key_check',
  'views before signup': 'SELECT count(*) FROM content_views v JOIN users u USING(user_id) WHERE v.view_started_at<u.signup_at',
  'view fields and UTC dates invalid': "SELECT count(*) FROM content_views WHERE view_id IS NULL OR trim(view_id)='' OR view_type NOT IN ('free','sub','ppv') OR is_first_view_of_episode NOT IN (0,1) OR free_quota_consuming NOT IN (0,1) OR valid_utc(view_started_at)=0 OR date!=substr(view_started_at,1,10) OR (view_ended_at IS NOT NULL AND (valid_utc(view_ended_at)=0 OR view_ended_at<view_started_at))",
