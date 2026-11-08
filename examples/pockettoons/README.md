@@ -19,7 +19,7 @@ The later growth has an increased paid-social share; newer signup cohorts have l
 
 An arithmetic revenue bridge compares users who joined before July with users who joined in July or later. Q1 gross subscription charges were $29,970 from pre-July users; in Q2 they were $29,210.76 from those users and $769.23 from new users, before subtracting refunds. This cohort bridge demonstrates offsetting amounts, but does not by itself prove that all lost pre-July revenue was caused by cancellation; use subscription history to analyze the cancellations. PPV and refunds vary by month, including one additional purchase after a relisting.
 
-Refunds comprise 44 PPV refunds and five subscription refunds, each linked to its original purchase. `refund_reason` is populated only on refunds and records a synthetic reported reason (`did_not_like_content`, `accidental_purchase`, or `poor_playback_quality`), not an independently verified cause. Subscription refunds close access when approved; prior views remain in the data.
+Refunds comprise 44 PPV refunds and five subscription refunds, each linked to its original purchase. The fixture sets each PPV refund allocation's created_at and updated_at to its refund transaction time and models no allocation corrections. These UTC values are synthetic assumptions; they do not preserve prior versions. `refund_reason` is populated only on refunds and records a synthetic reported reason (`did_not_like_content`, `accidental_purchase`, or `poor_playback_quality`), not an independently verified cause. Subscription refunds close access when approved; prior views remain in the data.
 
 ## Data quality
 
