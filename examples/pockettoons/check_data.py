@@ -193,6 +193,7 @@ checks={
     OR (a.attribution_status='refunded' AND (x.full_at IS NULL OR a.refunded_at IS NOT x.full_at OR a.entitlement_end_at IS NOT x.full_at))
     OR (x.full_at IS NOT NULL AND (a.delisted_at IS NULL OR x.full_at<a.delisted_at)
         AND (a.refunded_at IS NOT x.full_at OR a.entitlement_end_at IS NOT x.full_at OR a.attribution_status!='refunded'))""",
+ 'transaction raw source coverage invalid': "SELECT count(*) FROM (SELECT t.txn_id FROM transactions t LEFT JOIN raw_payment_source s ON s.txn_id=t.txn_id GROUP BY t.txn_id HAVING count(s.txn_id) != 1)",
  'raw USD discrepancies missing review evidence': "SELECT count(*) FROM raw_payment_source s JOIN transactions t ON t.txn_id=s.txn_id LEFT JOIN payment_quality_review q ON q.txn_id=s.txn_id WHERE s.raw_unit='USD' AND (usd_cents(s.raw_amount) IS NULL OR usd_cents(s.raw_amount)!=usd_cents(t.amount_usd)) AND q.txn_id IS NULL",
  'review corrections differ in exact cents': "SELECT count(*) FROM payment_quality_review q JOIN transactions t ON t.txn_id=q.txn_id WHERE usd_cents(q.corrected_amount_usd) IS NULL OR usd_cents(q.corrected_amount_usd)!=usd_cents(t.amount_usd)",
  'payment review evidence missing': "SELECT count(*) FROM payment_quality_review WHERE issue IS NULL OR trim(issue)='' OR reason IS NULL OR trim(reason)=''",
