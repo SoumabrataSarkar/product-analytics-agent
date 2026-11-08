@@ -44,7 +44,7 @@ def main():
     CREATE TABLE payment_status_history(payment_status_event_id TEXT PRIMARY KEY, txn_id TEXT NOT NULL REFERENCES transactions, status TEXT NOT NULL, effective_at TEXT NOT NULL, recorded_at TEXT NOT NULL, provider_event_id TEXT NOT NULL UNIQUE);
     CREATE TABLE subscription_history(subscription_period_id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users, effective_start_at TEXT NOT NULL, effective_end_at TEXT, subscription_status_updated_at TEXT NOT NULL, status TEXT NOT NULL, plan_code TEXT NOT NULL, source_txn_id TEXT REFERENCES transactions, cancelled_at TEXT, recorded_at TEXT NOT NULL);
     CREATE TABLE transaction_content_attribution(txn_content_attribution_id TEXT PRIMARY KEY, txn_id TEXT NOT NULL REFERENCES transactions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, entitlement_start_at TEXT NOT NULL, entitlement_end_at TEXT, attributed_amount_usd REAL NOT NULL, attribution_status TEXT NOT NULL, refunded_at TEXT, delisted_at TEXT, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes, UNIQUE(txn_id,content_id,episode_number));
-    CREATE TABLE refund_content_attribution(refund_allocation_id TEXT PRIMARY KEY, refund_txn_id TEXT NOT NULL REFERENCES transactions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, allocated_refund_usd REAL NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
+    CREATE TABLE refund_content_attribution(refund_allocation_id TEXT PRIMARY KEY, refund_txn_id TEXT NOT NULL REFERENCES transactions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, allocated_refund_usd REAL NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE UNIQUE INDEX ux_refund_episode ON refund_content_attribution(refund_txn_id,content_id,episode_number);
     CREATE TABLE user_events(event_id TEXT PRIMARY KEY, user_id TEXT REFERENCES users, anonymous_id TEXT REFERENCES anonymous_identities, event_at TEXT NOT NULL, event_name TEXT NOT NULL, session_id TEXT REFERENCES sessions, view_id TEXT REFERENCES content_views, txn_id TEXT REFERENCES transactions, subscription_period_id TEXT REFERENCES subscription_history, content_id TEXT REFERENCES content_catalog, episode_number INTEGER, event_properties_json TEXT, event_timezone TEXT, country_at_event TEXT, ingested_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE marketing_spend(date TEXT NOT NULL, channel TEXT NOT NULL, spend_usd REAL NOT NULL, impressions INTEGER NOT NULL, clicks INTEGER NOT NULL, loaded_at TEXT NOT NULL, PRIMARY KEY(date,channel));
@@ -282,7 +282,7 @@ def main():
                 ppv_status.append((f'p_{rid}',rid,'succeeded',rt,rt,f'provider_{rid}'))
                 request_at=offset(rt,-3600)
                 ppv_refund_events.append((f'request_{rid}',uid,None,request_at,'refund_requested',None,None,tid,None,cid,ep,None,None,country,request_at))
-                refund_attrs.append((f'ra_{month}_{j}',rid,cid,ep,1.99))
+                refund_attrs.append((f'ra_{month}_{j}',rid,cid,ep,1.99,rt,rt))
             attrs.append((f'attr_{month}_{j}',tid,cid,ep,t,rt if refunded else None,1.99,'refunded' if refunded else 'granted',rt if refunded else None,None))
     db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',ppv_sessions)
     db.executemany('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',ppv_links)
@@ -292,7 +292,7 @@ def main():
     db.executemany('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',ppv_status)
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',ppv_refund_events)
     db.executemany('INSERT INTO transaction_content_attribution VALUES (?,?,?,?,?,?,?,?,?,?)',attrs)
-    db.executemany('INSERT INTO refund_content_attribution VALUES (?,?,?,?,?)',refund_attrs)
+    db.executemany('INSERT INTO refund_content_attribution VALUES (?,?,?,?,?,?,?)',refund_attrs)
     # One episode is removed and later returns. Delisting closes the old PPV;
     # the original buyer purchases it again before playing it after relisting.
     original=next(row for row in attrs if row[1]=='ppv_4_39')
