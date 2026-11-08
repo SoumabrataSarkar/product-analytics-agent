@@ -420,6 +420,8 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 
 The timezone is part of the synthetic fixture's reporting definition; formatting checks cannot establish the actual reporting timezone of an external source.
 
+For a daily spend/signups comparison, aggregate spend and users separately by UTC day and recorded channel before joining. Preserve unmatched channel-days and report unknown acquisition sources separately. A signup-day/channel match is an observational comparison, not proof that same-day spend caused a signup or a link to an individual ad exposure. Missing aggregates are not automatically zero; check source coverage. Use an explicit verified channel mapping if source labels differ.
+
 ### 4.7 `subscription_history` — supporting, authoritative entitlement timeline
 
 **Grain:** one non-overlapping effective period for a `subscription_id`; split a period whenever entitlement/status changes. **Primary key:** `subscription_period_id`. **Foreign keys:** `user_id → users`, `source_txn_id → transactions`.
