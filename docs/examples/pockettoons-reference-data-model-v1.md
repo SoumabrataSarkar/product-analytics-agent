@@ -200,7 +200,7 @@ Playback requires an authenticated account. If a visitor is not logged in, recor
 
 The quota is keyed to `user_id` across all devices and sessions, resetting at 00:00 UTC. Anonymous browsing consumes no quota because anonymous playback is not allowed. Retries of the same free-tier episode on the same UTC day consume no additional slot. Separate accounts have separate quotas; account sharing or creation of multiple accounts is outside this rule.
 
-Active subscribers pay no PPV charge for viewing. A PPV purchase remains valid if the user later subscribes; no automatic credit is assumed. Delisting ends the entitlement permanently at the delisting time; after relisting the user must buy it again. A prior delisting warning is a separate event. A refund request is an event; a succeeded refund creates a linked positive-amount refund transaction and ends the relevant access at its effective time. A denied refund leaves access unchanged. Views already recorded are retained.
+Active subscribers pay no PPV charge for viewing. A PPV purchase remains valid if the user later subscribes; no automatic credit is assumed. Delisting ends the entitlement permanently at the delisting time; after relisting the user must buy it again. A prior delisting warning is a separate event. A refund request is an event; a succeeded refund creates a linked positive-amount refund transaction. For PPV, partial episode refunds retain access; cumulative succeeded allocations reaching the full episode purchase allocation end that episode's entitlement at the success time of the final refund, if still active. Subscription refunds end the relevant subscription access. A denied refund leaves access unchanged. Views already recorded are retained.
 
 The stored `content_views.view_type` records the decision at view start and is never retroactively relabelled by a later cancellation/refund or tier change. If an episode changes from free to premium during an already-authorized playback attempt, the attempt may continue. A later new start or resume requires a fresh access decision using the tier and entitlement at that new start. Recalculated “as-of” access must use the history tables below.
 
@@ -390,7 +390,7 @@ For a historical status using current knowledge, select the latest event effecti
 
 ### 4.5b `refund_content_attribution`
 
-One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn_id` (required FK → transactions), `content_id` and `episode_number` (required composite FK → content_episodes), `allocated_refund_usd` (required positive amount). The refund's `related_txn_id` points to the original PPV purchase; the episode must match its attribution. Allocate a single-episode refund fully to that episode. Partial refunds are allowed, with total succeeded refunds capped at the original charge; a successful partial or full PPV refund ends that episode's entitlement at its effective time. Subscription refunds have no episode allocation. Bundle allocation is deferred.
+One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn_id` (required FK → transactions), `content_id` and `episode_number` (required composite FK → content_episodes), `allocated_refund_usd` (required positive amount). The refund's `related_txn_id` points to the original PPV purchase; the episode must match its attribution. Allocate a single-episode refund fully to that episode. Partial refunds retain that episode's entitlement; cumulative succeeded refund allocations reaching its original allocation end it at the final refund's success effective time, unless it ended earlier for another reason. Cumulative allocations cannot exceed the episode allocation or the original charge. Subscription refunds have no episode allocation. A bundle requires explicit episode allocations; the allocation method is not specified.
 
 ### 4.6 `marketing_spend` — assignment-mandated
 
@@ -434,10 +434,10 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `content_id` | TEXT | no | Entitled series/title. |
 | `episode_number` | INTEGER | no | Entitled episode. |
 | `entitlement_start_at` | TIMESTAMP | no | Inclusive access start. |
-| `entitlement_end_at` | TIMESTAMP | yes | UTC exclusive end on refund or delisting; NULL while open. There is no time-based expiry. |
+| `entitlement_end_at` | TIMESTAMP | yes | UTC exclusive end on full episode refund or delisting; NULL while open. There is no time-based expiry. |
 | `attributed_amount_usd` | NUMERIC(12,2) | no | Purchase allocation; sum equals the completed PPV charge. Refund allocations require an explicit policy and cannot be inferred for bundles. |
 | `attribution_status` | TEXT | no | Current state: `granted`, `revoked`, `refunded`, `expired_delisting`; historical queries use effective timestamps. |
-| `refunded_at` | TIMESTAMP | yes | UTC refund revocation time. |
+| `refunded_at` | TIMESTAMP | yes | UTC full-episode-refund revocation time, if refund ended this entitlement. |
 | `delisted_at` | TIMESTAMP | yes | UTC delisting time that ends this entitlement; relisting does not restore it. |
 
 ### 4.8a `raw_payment_source` — source payment values
@@ -522,7 +522,7 @@ Use half-open intervals: `effective_start_at <= as_of_ts AND (effective_end_at >
 
 **Subscription as of a view:** choose at most one `subscription_history` row for the user containing `content_views.view_started_at` and with access-granting status (`active` or `cancel_at_period_end`). A cancellation event changes the status but does not remove access before `effective_end_at`; a refund can close/revoke access according to its effective timestamp.
 
-**PPV as of a view:** choose a `transaction_content_attribution` row matching `content_id`, `episode_number`, and the view start interval, with a grant effective at view time; join to a succeeded purchase. Use `entitlement_end_at` or `refunded_at` as an exclusive cutoff: a later refund must not erase entitlement before its effective time. PPV has no time-based expiry, but refund or delisting ends it. Relisting requires a new purchase.
+**PPV as of a view:** choose a `transaction_content_attribution` row matching `content_id`, `episode_number`, and the view start interval, with a grant effective at view time; join to a succeeded purchase. Use `entitlement_end_at` or `refunded_at` as an exclusive cutoff: a later full episode refund must not erase entitlement before its effective time. PPV has no time-based expiry; a full episode refund or delisting ends it. Partial refunds retain access. Relisting requires a new purchase.
 
 **Subscription status:** after the initial subscription, record continuous non-overlapping status periods, including explicit `expired` and `refunded` periods, until the next status change. For a time before the first subscription, the status is `never_subscribed`; a user with no subscription history is `never_subscribed`. Preserve `cancel_at_period_end` access until the paid period ends; a successful refund ends access at its effective timestamp. Derive `users.subscription_*` at a declared snapshot instant. Reports use the latest corrected history; recorded timestamps support auditing but do not by themselves preserve every earlier warehouse version.
 
@@ -605,7 +605,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | Refund linkage | Each refund references a prior succeeded charge of the same user and has a positive amount; cumulative succeeded refunds cannot exceed the charge. PPV refunds reconcile to episode allocations. |
 | Payment transitions | Unique provider event IDs; current status matches latest transition; count each successful payment once and exclude failed payments. |
 | Event and funnel order | Each checkout has an earlier matching-product paywall; in-app subscription and PPV purchases link to their session and follow checkout. Include labelled non-purchaser paywalls and abandoned checkouts. |
-| Refund timeline | Refund requests link to the original charge and precede a linked refund; reasons are populated; approved refunds terminate applicable access. |
+| Refund timeline | Refund requests link to the original charge and precede a linked refund; reasons are populated; subscription refunds and cumulative full-episode PPV refunds end applicable access, while partial PPV refunds retain it. |
 | Delisting notice | A notice for an affected PPV holder precedes delisting; a successful repurchase after relisting occurs without a concurrent active subscription. |
 | Browsing and resumes | Include browsing-only sessions, multiple views per session, cross-session viewing and real resume positions; unauthenticated actions cannot create views. |
 | Data quality | Source issues, evidence and curated values reconcile by transaction; invalid text is not silently coerced, failed payments are excluded, and unknown sources are disclosed. |
