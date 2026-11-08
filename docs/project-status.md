@@ -31,7 +31,7 @@ The order of dependent work may be refined with the user; do not represent plann
 
 ## Data location and reproduction
 
-The reviewed SQLite file is a local artifact, not a committed GitHub file. The latest local copy from this work is named `pockettoons-marketing-variation.sqlite`. A fresh database can be created and checked from repository code:
+The reviewed SQLite file is a local artifact, not a committed GitHub file. Earlier local copies, such as `pockettoons-marketing-variation.sqlite`, predate the activity-realism generator changes; generate a new copy (about 0.6 GB) to obtain the current fixture. A fresh database can be created and checked from repository code:
 
 ```sh
 python3 examples/pockettoons/generate.py --output pockettoons.sqlite
