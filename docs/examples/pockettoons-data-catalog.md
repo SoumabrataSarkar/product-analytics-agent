@@ -371,9 +371,33 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 **Time and joins:** For status at an event instant, select the latest effective event at or before that instant, then join the resulting one row per transaction to the parent. For a historical knowledge-time question, also restrict recorded_at to the chosen knowledge cutoff; this is not a complete audit/versioning contract and late corrections or source deletions may require additional history. Before the first known status, the status is unknown. No separate transaction snapshot timestamp is stored; the current transaction status is checked against the latest stored effective event. A direct join to all history events repeats transaction amounts; never sum them without first reducing the history to the required transaction grain. Monthly payment-event amounts are counted once at success effective time, with refunds subtracted separately, subject to the monetary and metric limitations in the transactions entry.
 
+### Status at event time and knowledge time
+
+For ordinary historical analysis, use the latest status effective by the event instant among the events available now. For a question about what was known at a past instant, also exclude events recorded after the knowledge cutoff. If no eligible event exists, the status is unknown. Explain which interpretation was used when the distinction affects a conclusion.
+
+Example: pending at 10:00, succeeded effective at 10:05 and recorded at 10:07 (all UTC). For event time 10:06, the status using current knowledge is succeeded. With a knowledge cutoff of 10:06 it is pending; with a cutoff of 10:07 it is succeeded.
+
+```sql
+SELECT p.status
+FROM transactions t
+LEFT JOIN payment_status_history p
+  ON p.payment_status_event_id = (
+    SELECT h.payment_status_event_id
+    FROM payment_status_history h
+    WHERE h.txn_id = t.txn_id
+      AND h.effective_at <= :event_at
+      AND (:known_at IS NULL OR h.recorded_at <= :known_at)
+    ORDER BY h.effective_at DESC, h.recorded_at DESC, h.payment_status_event_id DESC
+    LIMIT 1
+  )
+WHERE t.txn_id = :txn_id;
+```
+
+Set :known_at to NULL to use events available now, or to a UTC timestamp for a past knowledge cutoff. A NULL status for an existing transaction means no eligible event was found; a nonexistent transaction returns no row. The isolated regression test covers the example and both unknown cases. This reconstruction assumes the relevant original events remain available: recorded_at alone cannot reconstruct overwritten or deleted records. It is not a complete historical versioning or correction policy.
+
 **Checks:** The checker validates required identifiers, allowed status values, UTC timestamp formats, status effective time not before transaction creation, unique provider event IDs, no duplicate effective timestamps or multiple successes per transaction, current-status agreement with the latest event, and no void effective after success. Existing foreign-key checks cover transaction references. These checks do not validate every permissible transition, establish a universal provider policy, or prove all late events were captured. They do not require recorded_at to follow effective_at.
 
-**Fixture coverage:** The current fixture has one status row per transaction, with succeeded and failed statuses; delayed success and pre-success void are exercised in isolated tests, not represented as multi-step histories in the fixture.
+**Fixture coverage:** The current fixture has one status row per transaction, with succeeded and failed statuses; delayed success, late recording and pre-success void are exercised in isolated tests, not represented as multi-step histories in the fixture.
 
 ## 15. user_events
 
