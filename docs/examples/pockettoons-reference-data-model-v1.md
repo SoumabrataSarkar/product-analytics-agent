@@ -502,7 +502,7 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 | `subscription_period_id` | TEXT | yes | Subscription state described, if applicable. |
 | `content_id` | TEXT | yes | Relevant title. |
 | `episode_number` | INTEGER | yes | Relevant episode. |
-| `event_properties_json` | TEXT | yes | Versioned context without PII. Paywall and checkout events include `product` (`subscription` or `ppv`); blocked playback includes its reason. |
+| `event_properties_json` | TEXT | yes | Versioned context without PII. When populated, the value must be syntactically valid JSON; validation flags malformed values without altering the source. Paywall and checkout events include `product` (`subscription` or `ppv`); blocked playback includes its reason. |
 | `ingested_at` | TIMESTAMP | no | Warehouse arrival time. |
 | `triggering_paywall_event_id` | TEXT | yes | On checkout_started, the observed triggering paywall_viewed event ID, when captured; NULL for direct checkout or unknown link. Other events leave it NULL. |
 
