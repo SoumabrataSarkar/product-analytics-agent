@@ -159,7 +159,7 @@ ORDER BY m.month_start, r.platform
 9. **Null, status and refund rules.** As `mau`; payment and subscription state do not affect activity or engagement.
 10. **Aggregation safety.** All are distinct counts and non-additive: never sum days into weeks or months, or weeks into months. A monthly figure for a daily metric is reported as an average over the month's complete days and labelled as such ("average DAU").
 11. **Quality checks.** Implemented and tested: isolated tests for each metric's period boundaries, coverage, the 60-second threshold and proportional allocation; the fixture checker verifies that the shared active-user block reproduces `mau_monthly`. Proposed: as for `mau`.
-12. **Caveats.** In the fixture every view has at least 60 seconds of watch time, so engaged counts equal "started a view" counts; real data may differ. The first and last partial ISO weeks of the coverage window are not reported.
+12. **Caveats.** The fixture includes playback abandoned within the first minute, so engaged counts are lower than "started a view" counts. The first and last partial ISO weeks of the coverage window are not reported.
 
 #### Shared building blocks
 
