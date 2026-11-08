@@ -436,7 +436,7 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `entitlement_start_at` | TIMESTAMP | no | Inclusive access start; exactly the `effective_at` of the purchase's `succeeded` event in `payment_status_history`. Not purchase creation, a pending period or the success `recorded_at`. A purchase with no succeeded event has no entitlement. |
 | `entitlement_end_at` | TIMESTAMP | yes | UTC exclusive end on full episode refund or delisting; NULL while open. There is no time-based expiry. |
 | `attributed_amount_usd` | NUMERIC(12,2) | no | Purchase allocation; sum equals the completed PPV charge. Refund allocations require an explicit policy and cannot be inferred for bundles. |
-| `attribution_status` | TEXT | no | Current state: `granted`, `revoked`, `refunded`, `expired_delisting`; historical queries use effective timestamps. |
+| `attribution_status` | TEXT | no | Current state: `granted` (no end, `refunded_at` or `delisted_at`), `refunded` (`entitlement_end_at` = `refunded_at`, no `delisted_at`) or `expired_delisting` (`entitlement_end_at` = `delisted_at`, no `refunded_at`). At most one end reason; an end is later than the start. Other revocation reasons are not modeled. Historical queries use the effective timestamps, not this current status. |
 | `refunded_at` | TIMESTAMP | yes | UTC full-episode-refund revocation time, if refund ended this entitlement. |
 | `delisted_at` | TIMESTAMP | yes | UTC delisting time that ends this entitlement; relisting does not restore it. |
 
