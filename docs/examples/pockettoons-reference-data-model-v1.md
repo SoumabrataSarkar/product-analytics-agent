@@ -427,6 +427,8 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `cancelled_at` | TIMESTAMP | yes | Cancellation request time, distinct from end of access. |
 | `recorded_at` | TIMESTAMP | no | Warehouse knowledge time for late-arrival audit. |
 
+An initial paid subscription starts only when its `subscription_initial` payment succeeds. Its first `active` interval starts at that payment status event's `effective_at`, not transaction creation or recording time; a pending or failed initial payment does not itself grant subscription access. The first paid period ends one calendar month after that success instant, subject to the fixture's stated month-end limitation, unless a later cancellation or refund changes the applicable status or access. The fixture's initial payments succeed at creation time; delayed success is tested separately. This rule does not change the documented renewal or refund rules.
+
 ### 4.8 `transaction_content_attribution` — supporting PPV entitlement bridge
 
 **Grain:** one PPV purchase transaction × content title × episode entitlement. It resolves PPV to the episode actually bought and permits future bundles without duplicating transaction money. **Primary key:** `txn_content_attribution_id`. **Unique:** (`txn_id`, `content_id`, `episode_number`); a purchase has at most one row per episode, and a bundle has one row per distinct episode. **Foreign keys:** `txn_id → transactions`, and (`content_id`, `episode_number`) → `content_episodes`.
