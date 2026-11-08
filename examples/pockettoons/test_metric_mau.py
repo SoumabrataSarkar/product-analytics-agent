@@ -20,6 +20,7 @@ class MauTests(unittest.TestCase):
                                     session_id TEXT, linked_at TEXT);
         ''')
         self.n = 0
+        self.addCleanup(self.db.close)
 
     def session(self, user, start, last, platform='ios', anon='d1'):
         self.n += 1
