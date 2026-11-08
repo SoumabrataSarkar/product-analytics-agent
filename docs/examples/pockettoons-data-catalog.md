@@ -369,11 +369,37 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 ## 13. refund_content_attribution
 
-**Purpose:** Episode-level allocation of PPV refunds. **Grain/key:** One refund × episode allocation per refund_allocation_id. The combination (refund_txn_id, content_id, episode_number) must be unique: one refund may cover different episodes, and different refunds may cover the same episode. New fixtures enforce this with a unique index; the checker also detects duplicates in older fixtures, which may not have that index. **Time:** refund timing comes from the linked transaction/status history.
+**Purpose:** Allocate a PPV refund transaction to the episode or episodes it concerns. An allocation is an intended amount until the refund succeeds; it is not another payment. **Grain:** One refund transaction × episode. **Primary key:** refund_allocation_id. **Unique:** (refund_txn_id, content_id, episode_number). Separate refunds may refer to the same episode, and one refund may cover multiple distinct episodes. The generator enforces uniqueness; the checker also detects duplicates in older fixtures.
 
-**Columns:** refund_allocation_id — allocation ID; refund_txn_id — refund; content_id/episode_number — episode; allocated_refund_usd — positive allocated refund.
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| refund_allocation_id | TEXT primary key | Required by checker | Allocation identifier. |
+| refund_txn_id | TEXT | No | PPV refund transaction; its related_txn_id points to the original purchase. |
+| content_id | TEXT | No | Title ID; use with episode_number. |
+| episode_number | INTEGER | No | Episode number within the title. |
+| allocated_refund_usd | REAL | No | Positive amount allocated to this episode, intended before success and completed upon success. |
 
-**Joins:** Refund transaction FK and episode composite FK. **Use:** PPV net revenue by episode. **Limitations/checks:** Not a second payment; subtract positive refund. Checker detects duplicate refund–episode combinations and reconciles PPV refund allocations; do not assume subscription refunds are episode allocations. This is not a complete lifecycle policy for pending and failed refunds.
+**Lifecycle:** Record allocation rows for PPV refund transactions in all statuses: pending, succeeded, failed or voided. Their amounts sum to the refund transaction amount in each status, including failed and voided attempts. Only succeeded refund allocations reduce revenue or count toward full-refund entitlement termination, effective at the succeeded payment-status event's effective_at. The allocation itself has no creation, update or recording timestamp; it does not preserve historical allocation versions or prove what allocation was known at an earlier instant. This policy concerns a refund transaction, not a refund request event that has not produced a transaction.
+
+**Joins and timing:** refund_txn_id → transactions → related_txn_id → original PPV purchase; match the original purchase and composite episode key to transaction_content_attribution. Join the refund to payment_status_history for status and success time. One refund can have many status events and episode allocations; independently summarise each child to the required grain before combining. Use success effective time for revenue periods and use the relevant event-time cutoff for as-of analysis; current status alone is not historical evidence. Filter by recorded_at as well for knowledge-time questions, subject to the history/versioning limitations documented in payment_status_history.
+
+**Money and entitlement:** Store refund amounts as positive values and subtract succeeded allocations from episode purchase allocations. Convert valid USD values to exact cents before aggregation. Pending, failed and voided allocations are not completed refunds and do not count toward the succeeded-refund cap or entitlement termination. A partial refund retains access; cumulative succeeded allocations reaching the full episode purchase allocation terminate access at the success time of the final refund, if it was still open.
+
+**Example: succeeded refund allocation in cents as of a UTC instant**
+
+```sql
+SELECT COALESCE(SUM(usd_cents(a.allocated_refund_usd)),0)
+FROM refund_content_attribution a
+JOIN transactions r ON r.txn_id=a.refund_txn_id
+JOIN payment_status_history p ON p.txn_id=r.txn_id AND p.status='succeeded'
+WHERE r.type='refund' AND r.transaction_subtype='ppv_refund'
+  AND a.content_id=:content_id AND a.episode_number=:episode_number
+  AND p.effective_at<=:as_of;
+```
+
+This is a cumulative amount, not a complete net-revenue metric. It assumes valid two-decimal USD amounts, unique success events and the fixture's no-post-success-void rule; it excludes knowledge-time filtering and does not prove allocations were available at a past cutoff. usd_cents is a Python function registered on the fixture checker's connection, not a built-in SQLite function or a database object; another client must provide an equivalent validated exact-cent conversion. The fixture checker separately rejects invalid amounts and duplicate success events.
+
+**Checks and coverage:** The checker validates required values, foreign keys, unique refund–episode combinations, positive exact-cent amounts, the original purchased episode, allocations adding to the transaction amount for every refund status, and cumulative succeeded refund caps and selected access timing. Lifecycle, delayed-success and failed/voided cases are isolated regression tests. The main fixture contains 44 single-episode succeeded full PPV refunds and no pending, failed, voided or partial PPV refunds. Bundle allocation methodology is not specified. Counts and sums of all allocation rows, including the episode fanout reconciliation check, are structural reconciliation rather than recognised revenue.
 
 ## 14. payment_status_history
 
