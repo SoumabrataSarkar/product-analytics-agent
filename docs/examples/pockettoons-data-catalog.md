@@ -1,6 +1,6 @@
 # Data Catalog: PocketToons reference fixture
 
-**Status:** Draft for review. This catalog describes the synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 17 modeled and source-quality tables plus dataset_metadata. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
+**Status:** Draft for review. This catalog describes the synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 19 tables, including dataset_metadata and content_tier_history. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
 
 **Reading the column lists:** Each line identifies a column and its meaning. All columns have SQLite TEXT type except amounts and completion percentages (REAL), counts, durations, positions, episode numbers and boolean flags (INTEGER), and raw_amount (no declared type). Timestamps are UTC ISO-8601 values stored as TEXT. Dates are TEXT. A question mark after a column means nullable in the current schema; other non-key columns are declared NOT NULL. SQLite text primary keys are not always explicitly declared NOT NULL, but the model and existing checker require non-null identifiers. Composite key columns are declared NOT NULL.
 
@@ -159,7 +159,42 @@ This returns one row per title. Episode inventory and view facts are summarized 
 
 **Columns:** content_id and episode_number — composite episode key; episode_title? — display name; episode_duration_sec — length; release_at — release time; access_tier — free or premium; episode_status — current scheduled, live, delisted or archived; ppv_list_price_usd? — current list price when offered; available_from_at?/available_until_at? — availability interval.
 
-**Joins:** content_id → content_catalog; composite key → views, availability history and attribution. **Use:** episodes and their access tiers. **Limitations/checks:** Episode number alone is not unique; current price is not necessarily purchase price. Required fields and selected relationships are checked; propose domain and price/tier consistency tests.
+**Joins:** content_id → content_catalog; composite key → views, availability history, tier history and attribution. Each parent episode may have many views, purchases, refunds and history rows. **Use:** episode catalog and current tier at content_catalog_snapshot_at. **Limitations/checks:** Episode number alone is not unique; current price is not necessarily purchase price. The fixture stores current list price and actual charged transaction amount, not historical list-price changes. The checker validates episode domains, UTC times and availability boundaries, nonnegative premium-only list prices, episode FK resolution, duration/position bounds, title inventory reconciliation, as-of tier eligibility and safe episode-grain aggregation. The current fixture assumes episode lengths do not change over time; production data may require versioned duration history.
+
+### Episode column details
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| content_id | TEXT composite primary key | No | Parent title ID. |
+| episode_number | INTEGER composite primary key | No | Positive episode number within the title. |
+| episode_title | TEXT | Yes | Episode name; NULL if unavailable. |
+| episode_duration_sec | INTEGER | No | Positive full episode duration in seconds. |
+| release_at | TEXT | No | UTC scheduled or actual release time. |
+| access_tier | TEXT | No | Current snapshot: free or premium; use content_tier_history for earlier times. |
+| episode_status | TEXT | No | Current scheduled, live, delisted or archived status. |
+| ppv_list_price_usd | REAL | Yes | Current premium-episode PPV list price, nonnegative; NULL when not offered. A past actual charge is in transactions. |
+| available_from_at | TEXT | Yes | Current/latest availability start, if known. |
+| available_until_at | TEXT | Yes | Exclusive end; NULL for open or unknown. |
+
+Example: episode 21 of title c01 is premium before 2026-07-01T00:00:00Z and free from that instant. A subscriber view before the change and a free view afterward remain distinct historical facts. Use episode key plus event timestamp to look up the effective tier; availability and entitlement are separate checks. The snapshot date is stored in dataset_metadata.content_catalog_snapshot_at.
+
+### Episode-grain joins and safeguards
+
+content_views, transaction_content_attribution and refund_content_attribution are independent one-to-many facts. Pre-aggregate each by (content_id, episode_number), then join those summaries to content_episodes. A direct join of 100 views with 10 allocations can produce 1,000 rows. The checker reconciles this independent-aggregate pattern to source counts, watch seconds and allocation totals; this is not a complete revenue metric or a guarantee for arbitrary queries. The data layers and their layer-specific mappings remain planned.
+
+```sql
+-- One row per view, joined to the tier in effect at its playback start.
+SELECT v.view_id, v.content_id, v.episode_number, v.view_started_at,
+       h.access_tier AS tier_at_view
+FROM content_views v
+JOIN content_tier_history h
+  ON h.content_id = v.content_id
+ AND h.episode_number = v.episode_number
+ AND h.effective_start_at <= v.view_started_at
+ AND (h.effective_end_at IS NULL OR v.view_started_at < h.effective_end_at);
+```
+
+The example requires non-overlapping tier periods and matches only views with known history. Use a left join plus missing-match checks when auditing completeness; separately establish episode availability and the user's entitlement. An as-of tier match is not, by itself, proof of access or a complete metric.
 
 ## 5. content_availability_history
 
@@ -271,4 +306,20 @@ The user-profile update check covers generated status changes but not all possib
 
 ## 18. dataset_metadata
 
-**Purpose:** Dataset-wide metadata. **Grain/key:** One value per metadata_key. **Columns:** metadata_key TEXT primary key NOT NULL; metadata_value TEXT NOT NULL. users_snapshot_at is the UTC as-of instant for all user snapshots, not a per-user update time. session_activity_coverage=complete_synthetic_v1 declares this fixture's synthetic evidence coverage for session boundary and heartbeat checks. The checker requires these values; it does not validate unrelated metadata keys. **Use:** determine snapshot timing and applicable activity checks. **Limitations:** Later datasets with independent refresh times or incomplete source telemetry need different handling; the synthetic coverage flag is not proof of completeness in real data.
+**Purpose:** Dataset-wide metadata. **Grain/key:** One value per metadata_key. **Columns:** metadata_key TEXT primary key NOT NULL; metadata_value TEXT NOT NULL. users_snapshot_at and content_catalog_snapshot_at are separate UTC as-of instants for the respective snapshots. session_activity_coverage=complete_synthetic_v1 declares this fixture's synthetic evidence coverage for session boundary and heartbeat checks. The checker requires these values; it does not validate unrelated metadata keys. **Use:** determine snapshot timing and applicable activity checks. **Limitations:** Later datasets with independent refresh times or incomplete source telemetry need different handling; the synthetic coverage flag is not proof of completeness in real data.
+
+## 19. content_tier_history
+
+**Purpose:** Effective-dated episode access tiers. **Grain:** One tier period for one episode. **Primary key:** tier_period_id. **Time:** effective_start_at inclusive, effective_end_at exclusive; recorded_at is when the period was recorded.
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| tier_period_id | TEXT primary key | No | Period identifier. |
+| content_id | TEXT | No | Parent title. |
+| episode_number | INTEGER | No | Episode number within title. |
+| access_tier | TEXT | No | free or premium during this interval. |
+| effective_start_at | TEXT | No | UTC inclusive start. |
+| effective_end_at | TEXT | Yes | UTC exclusive end; NULL for an open interval. |
+| recorded_at | TEXT | No | UTC recording time; not a full historical warehouse version. |
+
+**Joins:** Composite FK (content_id, episode_number) → content_episodes, then match event timestamp within the interval. **Use:** determine whether an episode was free at view start or premium at PPV purchase. **Limitations/checks:** Do not multiply a view by all historical periods or infer availability from tier. Checker validates domains, UTC timestamps, contiguous non-overlapping intervals, coverage from release, current snapshot reconciliation, free views and PPV purchase eligibility. Price and duration history are not represented by this table.

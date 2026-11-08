@@ -30,6 +30,7 @@ erDiagram
     CONTENT_EPISODES ||--o{ CONTENT_VIEWS : viewed
     CONTENT_EPISODES ||--o{ TRANSACTION_CONTENT_ATTRIBUTION : purchased
     CONTENT_EPISODES ||--o{ CONTENT_AVAILABILITY_HISTORY : availability
+    CONTENT_EPISODES ||--o{ CONTENT_TIER_HISTORY : tier_periods
     USERS ||--o{ TRANSACTIONS : makes
     SESSIONS o|--o{ TRANSACTIONS : initiates
     TRANSACTIONS ||--o{ TRANSACTION_CONTENT_ATTRIBUTION : entitles
@@ -287,8 +288,14 @@ The dataset-level `dataset_metadata` table stores `users_snapshot_at` as a UTC t
 | `available_from_at` | TIMESTAMP | yes | UTC start of current/latest availability. |
 | `available_until_at` | TIMESTAMP | yes | UTC exclusive availability end; NULL while open. |
 | `episode_status` | TEXT | no | Current status: `scheduled`, `live`, `delisted`, `archived`. |
-| `access_tier` | TEXT | no | `free` or `premium`; subscription unlocks both; free quota applies to eligible episodes. |
+| `access_tier` | TEXT | no | Current snapshot: `free` or `premium`; historical tier comes from `content_tier_history`. |
 | `ppv_list_price_usd` | NUMERIC(12,2) | yes | Current list price for PPV-eligible premium episodes; default $1.99 in v1, NULL when not offered. The transaction retains the price charged at purchase. |
+
+### 4.3a.1 `content_tier_history` — historical episode access tier
+
+**Grain:** one effective tier interval per episode. **Primary key:** `tier_period_id`; composite FK (`content_id`, `episode_number`) → `content_episodes`. Fields: `access_tier` (`free` or `premium`), `effective_start_at` (inclusive UTC), `effective_end_at` (exclusive UTC; NULL if open), and `recorded_at` (UTC recording time). Periods are contiguous and non-overlapping from release onward. A change from premium to free does not erase prior purchases, views or the tier that applied at those times. Derive the tier at an event by matching its episode and timestamp to exactly one period. Current `content_episodes.access_tier` is the tier at `dataset_metadata.content_catalog_snapshot_at`; `content_catalog.content_tier` summarizes those current episode tiers. Recorded time supports audit but does not preserve every past warehouse version.
+
+Current list price is a snapshot; actual charges remain on transactions. The fixture does not provide a historical list-price timeline or historical episode-duration versions. Episode durations are constant across time in this fixture, while views store duration at playback; a future source with changing episode versions requires duration history rather than comparing past views to the latest length.
 
 ### 4.3b `content_availability_history` — historical availability
 
@@ -475,6 +482,7 @@ For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matc
 | `content_episodes` | `content_views` | 1 : 0..N | child yes | Composite key identifies the exact episode. |
 | `content_episodes` | `transaction_content_attribution` | 1 : 0..N | child yes | Composite key identifies the purchased episode. |
 | `content_episodes` | `content_availability_history` | 1 : 0..N | child yes | Records availability over time. |
+| `content_episodes` | `content_tier_history` | 1 : 1..N | child yes | Effective access-tier history keyed by episode and time. |
 | `users` | `transactions` | 1 : 0..N | child yes | Each money event has one economic user. |
 | `sessions` | `transactions` | 1 : 0..N | child optional | Null for renewals/refunds outside an app session. |
 | `transactions` | `transaction_content_attribution` | 1 : 0..N | PPV only | A single PPV may be one episode or a future bundle. |
@@ -489,6 +497,8 @@ For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matc
 ## 6. Temporal / as-of logic
 
 Use half-open intervals: `effective_start_at <= as_of_ts AND (effective_end_at > as_of_ts OR effective_end_at IS NULL)`. This eliminates boundary double-counting.
+
+**Episode tier as of a view or purchase:** match `content_id`, `episode_number` and event time to `content_tier_history` using the half-open interval. Free playback requires a free tier at view start; a new PPV purchase requires a premium tier at its entitlement start. Do not apply the current snapshot tier retroactively. Availability and entitlement must also be checked separately.
 
 **Subscription as of a view:** choose at most one `subscription_history` row for the user containing `content_views.view_started_at` and with access-granting status (`active` or `cancel_at_period_end`). A cancellation event changes the status but does not remove access before `effective_end_at`; a refund can close/revoke access according to its effective timestamp.
 
@@ -560,6 +570,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | Session chronology | Open sessions have NULL end/duration; closed sessions end at last activity. A gap of 30 minutes starts a new session on that device/browser; playback heartbeats count as activity. Different devices may overlap for the same user; account switching on a device creates a new session without requiring a 30-minute gap. For fixture data with declared complete synthetic activity coverage, validate observed gaps, boundary evidence and heartbeat continuity. Start/end alone do not prove absence of an internal gap in other datasets. |
 | View chronology | View start/end lies within or touches session bounds by an allowed client-clock tolerance. |
 | Episode validity | Every view/attribution composite episode key resolves to `content_episodes`. |
+| Episode tier history | Each episode has contiguous non-overlapping tier intervals from release; exactly one period matches the content snapshot and its tier equals the episode snapshot. Free views and PPV purchases match the applicable historical tier at their event time. |
 | Content availability | Every view begins within a live availability interval; history intervals for an episode do not overlap. |
 | UTC consistency | Event timestamps have UTC offsets; required dates equal their source timestamp's UTC date. |
 | Status history | Status changes have non-overlapping effective periods, including expired/refunded states; current snapshot reconciles to the status effective at its declared snapshot instant. |

@@ -84,7 +84,19 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** Missing documented columns, including creation and update timestamps, prevent the SQLite database from implementing the agreed model.
 
-**Resolution:** All documented columns for the 17 model and source-quality tables are present. Validation checks table/column presence, required values, foreign keys and selected business invariants. Column coverage alone does not prove every possible behavior.
+**Resolution:** Documented columns for the model and source-quality tables are present. Validation checks table/column presence, required values, foreign keys and selected business invariants. Column coverage alone does not prove every possible behavior.
+
+### Episode tier changes
+
+**Issue and impact:** A current episode tier alone cannot identify the tier that applied when an earlier view or purchase occurred. Applying the current value retroactively can misclassify access and PPV eligibility.
+
+**Resolution:** Effective-dated tier history records each episode's tier over time. As-of checks validate free views and PPV purchases against the appropriate interval, and a premium-to-free example includes views on both sides. The current tier snapshot is checked at the declared catalog snapshot time. Historical list-price changes remain outside this fixture.
+
+### Identical episode durations
+
+**Issue and impact:** A single episode length across the entire catalog is unrealistic and can obscure incorrect assumptions about durations and completion.
+
+**Resolution:** Episode durations vary by title and episode. Title duration totals and view duration/completion fields reconcile to the episode values. The fixture uses continuous, non-rewinding playback and does not model historical changes to episode length; those limitations constrain completion and duration-history tests.
 
 ## Deliberate data-quality issues
 
@@ -101,3 +113,4 @@ The quality-review table is available as evidence. Consulting an existing correc
 The fixed-seed generator and checks cover the documented columns, required values, foreign keys, timestamps, subscription and PPV entitlement, refund linkage, checkout order, quota behavior, cohort windows and the MAU/revenue targets. Independent checks cover additional timeline and relationship cases. The generator refuses to overwrite an existing output file.
 
 The dataset is a controlled synthetic fixture. Payment-status transitions, concurrent-device activity and some edge cases have limited examples; one quota-boundary and one delist/relist journey do not prove coverage of every combination. The data-quality corrections are explicitly documented. The agent, its 15+ evaluation questions and the investigation output remain separate work.
+

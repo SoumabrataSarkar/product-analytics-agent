@@ -36,6 +36,7 @@ def main():
     CREATE TABLE identity_links(identity_link_id TEXT PRIMARY KEY, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, user_id TEXT NOT NULL REFERENCES users, session_id TEXT NOT NULL REFERENCES sessions, linked_at TEXT NOT NULL, link_method TEXT NOT NULL);
     CREATE TABLE content_catalog(content_id TEXT PRIMARY KEY, title TEXT NOT NULL, genre TEXT NOT NULL, total_episodes INTEGER NOT NULL, release_date TEXT NOT NULL, first_release_at TEXT NOT NULL, total_duration_sec INTEGER NOT NULL, content_tier TEXT NOT NULL, content_status TEXT NOT NULL, last_release_at TEXT, available_from_at TEXT, available_until_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE content_episodes(content_id TEXT NOT NULL REFERENCES content_catalog, episode_number INTEGER NOT NULL, episode_title TEXT, episode_duration_sec INTEGER NOT NULL, release_at TEXT NOT NULL, access_tier TEXT NOT NULL, episode_status TEXT NOT NULL, ppv_list_price_usd REAL, available_from_at TEXT, available_until_at TEXT, PRIMARY KEY(content_id,episode_number));
+    CREATE TABLE content_tier_history(tier_period_id TEXT PRIMARY KEY NOT NULL, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, access_tier TEXT NOT NULL, effective_start_at TEXT NOT NULL, effective_end_at TEXT, recorded_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE content_availability_history(availability_id TEXT PRIMARY KEY, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, available_from_at TEXT NOT NULL, available_until_at TEXT, status TEXT NOT NULL, recorded_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, session_id TEXT NOT NULL REFERENCES sessions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, date TEXT NOT NULL, view_started_at TEXT NOT NULL, view_ended_at TEXT NOT NULL, watch_duration_sec INTEGER NOT NULL, content_duration_sec INTEGER NOT NULL, view_type TEXT NOT NULL, completion_pct REAL, playback_position_start_sec INTEGER NOT NULL, playback_position_end_sec INTEGER, is_first_view_of_episode INTEGER NOT NULL, free_quota_consuming INTEGER NOT NULL, free_quota_sequence INTEGER, event_timezone TEXT, country_at_event TEXT, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE transactions(txn_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, date TEXT NOT NULL, type TEXT NOT NULL, transaction_subtype TEXT NOT NULL, amount_usd REAL NOT NULL, payment_method TEXT NOT NULL, status TEXT NOT NULL, transaction_at TEXT NOT NULL, session_id TEXT REFERENCES sessions, provider_transaction_id TEXT NOT NULL UNIQUE, payment_provider TEXT NOT NULL, currency TEXT NOT NULL, original_amount REAL NOT NULL, related_txn_id TEXT REFERENCES transactions, subscription_id TEXT, list_price_usd REAL, discount_usd REAL, country_at_event TEXT);
@@ -55,8 +56,10 @@ def main():
     CREATE INDEX ix_identity_session ON identity_links(session_id,user_id,linked_at);
     CREATE INDEX ix_event_session_time ON user_events(session_id,event_at);
     CREATE INDEX ix_event_view_time ON user_events(view_id,event_name,event_at);
+    CREATE INDEX ix_tier_episode_time ON content_tier_history(content_id,episode_number,effective_start_at,effective_end_at);
     ''')
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('users_snapshot_at', SNAPSHOT_AT))
+    db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('content_catalog_snapshot_at', SNAPSHOT_AT))
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('session_activity_coverage', 'complete_synthetic_v1'))
     # Existing users signed up before the window; new cohorts join in every analysis month.
     users=[]; truth=[]
@@ -78,16 +81,25 @@ def main():
     # Private answer key: no account/source truth is published in the analytics database.
     db.executemany('INSERT INTO anonymous_identities VALUES (?,?,?)',[(f'a{i:05}',u[2],None) for i,u in enumerate(users)])
     start='2026-03-01T00:00:00Z'
-    catalogs=[]; episodes=[]; availability=[]
+    catalogs=[]; episodes=[]; availability=[]; tier_history=[]
+    duration_rng=random.Random(SEED+240)
     episode_counts=[24,32,21,37,28,34,22,39,26,31,23,20]
     for k in range(1,13):
         count=episode_counts[k-1]
-        cid=f'c{k:02}'; catalogs.append((cid,'Skybound' if k==1 else f'Series {k}', ['action','drama','fantasy'][k%3],count,start[:10],start,count*900,'mixed','live',start,start,None,start,start))
+        cid=f'c{k:02}'; duration_total=0
         for ep in range(1,count+1):
-            episodes.append((cid,ep,f'Episode {ep}',900,start,'free' if ep<=12 else 'premium','live',None if ep<=12 else 1.99,start,None))
+            duration=duration_rng.randint(960,1500); duration_total+=duration
+            changed=cid=='c01' and ep==21
+            current_tier='free' if ep<=12 or changed else 'premium'
+            episodes.append((cid,ep,f'Episode {ep}',duration,start,current_tier,'live',None if current_tier=='free' else 1.99,start,None))
+            change_at='2026-07-01T00:00:00Z' if changed else None
+            tier_history.append((f'tier_{cid}_{ep:02}_initial',cid,ep,'free' if ep<=12 else 'premium',start,change_at,start))
+            if changed: tier_history.append((f'tier_{cid}_{ep:02}_free',cid,ep,'free',change_at,None,change_at))
             availability.append((f'av{k:02}_{ep:02}',cid,ep,start,None,'live',start))
+        catalogs.append((cid,'Skybound' if k==1 else f'Series {k}', ['action','drama','fantasy'][k%3],count,start[:10],start,duration_total,'mixed','live',start,start,None,start,'2026-07-01T00:00:00Z' if k==1 else start))
     db.executemany('INSERT INTO content_catalog VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',catalogs)
     db.executemany('INSERT INTO content_episodes VALUES (?,?,?,?,?,?,?,?,?,?)',episodes)
+    db.executemany('INSERT INTO content_tier_history VALUES (?,?,?,?,?,?,?)',tier_history)
     db.executemany('INSERT INTO content_availability_history VALUES (?,?,?,?,?,?,?)',availability)
     # Non-rounded targets retain approximately 20% quarter-average MAU growth.
     # A balanced sample of users signed up before each month yields real cohorts.
@@ -437,6 +449,22 @@ def main():
         else: raw.append((tid,str(amount) if n%7==0 else amount,'USD',t))
     db.executemany('INSERT INTO raw_payment_source VALUES (?,?,?,?)',raw)
     db.executemany('INSERT INTO payment_quality_review VALUES (?,?,?,?)',quality)
+    # Preserve existing journeys while demonstrating an episode changing from
+    # premium to free: one entitled subscriber view before the change and one
+    # free-tier view after it. Avoid rows used as bases for resume journeys.
+    for access, operator, boundary in [('sub','<','2026-07-01'),('free','>=','2026-07-01')]:
+        eligible=db.execute(f'''SELECT v.view_id FROM content_views v WHERE v.view_type=? AND v.date {operator} ?
+            AND (?!='free' OR v.free_quota_consuming=1)
+            AND NOT EXISTS(SELECT 1 FROM content_views r WHERE r.view_id=v.view_id||'_return')
+            AND v.view_id NOT LIKE '%_return' AND v.view_id NOT LIKE 'v_quota_%'
+            ORDER BY v.view_started_at,v.view_id LIMIT 1''',(access,boundary,access)).fetchone()
+        if not eligible: raise RuntimeError('missing tier-change demonstration view')
+        db.execute("UPDATE content_views SET content_id='c01', episode_number=21 WHERE view_id=?",eligible)
+    # This fixture keeps episode duration constant over time. Reconcile view
+    # snapshots and completion with each episode's generated duration.
+    db.execute('''UPDATE content_views SET content_duration_sec=(SELECT e.episode_duration_sec FROM content_episodes e
+        WHERE e.content_id=content_views.content_id AND e.episode_number=content_views.episode_number)''')
+    db.execute('UPDATE content_views SET completion_pct=round(1.0*watch_duration_sec/content_duration_sec,4) WHERE completion_pct IS NOT NULL')
     # Explicit synthetic engagement evidence, including each session's final
     # activity. These are simulated observations, not inferred real telemetry.
     activity_rows=[]
