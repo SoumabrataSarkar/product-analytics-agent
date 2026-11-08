@@ -18,6 +18,14 @@ def timestamp(month, day, hour=12, minute=0):
 def offset(ts, seconds):
     return (dt.datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ') + dt.timedelta(seconds=seconds)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
+def marketing_metrics(rng, month, channel):
+    """Generate correlated daily marketing values from an independent RNG."""
+    base = 350 if month >= 7 and channel == 'paid_social' else 150
+    amount = round(base * rng.uniform(0.70, 1.30), 2)
+    impressions = round(amount * rng.uniform(75, 125))
+    clicks = round(impressions * rng.uniform(0.025, 0.055))
+    return amount, impressions, clicks
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', default='pockettoons.sqlite')
@@ -26,6 +34,7 @@ def main():
     if path.exists():
         raise SystemExit(f'{path} already exists; choose a new output path')
     rng = random.Random(SEED)
+    marketing_rng = random.Random(SEED + 2718)
     db = sqlite3.connect(path)
     db.executescript('''
     PRAGMA foreign_keys=ON;
@@ -184,8 +193,8 @@ def main():
             views.append(view); view_pairs.append((sessions[-1],view))
         for day in range(1,calendar.monthrange(2026,month)[1]+1):
             for channel in ('paid_social','paid_search'):
-                amount=(350 if month>=7 and channel=='paid_social' else 150)
-                spend.append((f'2026-{month:02}-{day:02}',channel,amount,amount*100,amount*4,timestamp(month,day,23)))
+                amount, impressions, clicks = marketing_metrics(marketing_rng, month, channel)
+                spend.append((f'2026-{month:02}-{day:02}',channel,amount,impressions,clicks,timestamp(month,day,23)))
     db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',sessions)
     db.executemany('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',links)
     db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',views)
