@@ -41,3 +41,5 @@ The dataset includes free, subscription and PPV playback, same-day resumes, mult
 Subscription history carries subscription_status_updated_at across consecutive intervals with the same status, including renewals. A status transition sets it to the effective time of that transition; it is not an ingestion timestamp or a full correction history.
 
 For synthetic checkout journeys, the generator explicitly records triggering_paywall_event_id from the paywall and checkout pair constructed together. A NULL link means direct checkout or an uncaptured link. This relationship is not a payment link or causal proof, and it should not be inferred from nearest event time in other data.
+
+For synthetic purchase journeys, the generator explicitly sets transactions.checkout_event_id for linked in-app payment attempts. Multiple attempts can point to one checkout; off-session or uncaptured links are NULL. The main fixture's failed payments are not a same-checkout retry sequence; that behavior is covered by isolated tests.
