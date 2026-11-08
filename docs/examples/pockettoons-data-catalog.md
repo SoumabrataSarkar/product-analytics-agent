@@ -367,11 +367,11 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 ## 13. refund_content_attribution
 
-**Purpose:** Episode-level allocation of PPV refunds. **Grain/key:** One refund × episode allocation per refund_allocation_id. **Time:** refund timing comes from the linked transaction/status history.
+**Purpose:** Episode-level allocation of PPV refunds. **Grain/key:** One refund × episode allocation per refund_allocation_id. The combination (refund_txn_id, content_id, episode_number) must be unique: one refund may cover different episodes, and different refunds may cover the same episode. New fixtures enforce this with a unique index; the checker also detects duplicates in older fixtures, which may not have that index. **Time:** refund timing comes from the linked transaction/status history.
 
 **Columns:** refund_allocation_id — allocation ID; refund_txn_id — refund; content_id/episode_number — episode; allocated_refund_usd — positive allocated refund.
 
-**Joins:** Refund transaction FK and episode composite FK. **Use:** PPV net revenue by episode. **Limitations/checks:** Not a second payment; subtract positive refund. Checker reconciles PPV refund allocations; do not assume subscription refunds are episode allocations.
+**Joins:** Refund transaction FK and episode composite FK. **Use:** PPV net revenue by episode. **Limitations/checks:** Not a second payment; subtract positive refund. Checker detects duplicate refund–episode combinations and reconciles PPV refund allocations; do not assume subscription refunds are episode allocations. This is not a complete lifecycle policy for pending and failed refunds.
 
 ## 14. payment_status_history
 
