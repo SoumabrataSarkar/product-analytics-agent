@@ -50,6 +50,14 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Resolution:** Episode counts, monthly activity, payment volumes, session lengths and playback durations vary. All analysis months have signup cohorts and all 183 analysis days contain sessions. Monthly targets remain controlled to support the synthetic assignment scenario.
 
+### Activity frequency, time of day, platforms and abandonment
+
+**Issue and impact:** One visit per active user per month, session starts confined to 08:00–18:59 UTC regardless of country, one platform per user for life and no playback shorter than four minutes made stickiness about 3%, removed local daily patterns, hid multi-device use and made engaged-user counts identical to viewer counts.
+
+**Resolution:** Each user has a stable activity intensity; active days per month vary, with subscribers more active. Starts are drawn from local-hour weights with an evening peak and converted to UTC. Some users have a second installation on another platform, and some playback ends within the first minute. Additional visits fall on distinct UTC days inside the month and inside their UTC day, so monthly MAU and day-level quota rules are preserved. A same-day resume or next-episode subscriber view is generated only while the subscription still grants access. Session engagement observations are emitted only as needed to keep gaps under 30 minutes, since playback heartbeats already evidence activity during views. Activity variation uses an independent random stream; payment and refund amounts, statuses and months are unchanged, while some purchase and refund timestamps differ because purchases avoid overlapping visits.
+
+**Limitation:** Keeping a visit and any same-day resume inside one UTC day slightly under-represents starts shortly before 00:00 UTC, which is the early evening in the United States. Visits avoid the reserved subscription-checkout and quota-boundary scenario windows.
+
 ### Cohort window and cohort size
 
 **Issue and impact:** Comparing cohorts with equal artificial sizes looks unrealistic. Comparing conversion over unequal or incompletely observed windows can misstate the conversion difference.
