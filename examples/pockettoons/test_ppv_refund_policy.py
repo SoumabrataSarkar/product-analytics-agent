@@ -51,6 +51,12 @@ class RefundPolicyTests(unittest.TestCase):
         self.db.execute("UPDATE transaction_content_attribution SET refunded_at='2026-01-01T10:00:00Z'")
         self.assertEqual(self.violations(), 1)
 
+    def test_pending_refund_does_not_revoke(self):
+        self.refund('r', 1.99, '2026-01-01T10:00:00Z', status='pending')
+        self.assertEqual(self.violations(), 0)
+        self.db.execute("UPDATE transaction_content_attribution SET refunded_at='2026-01-01T10:00:00Z'")
+        self.assertEqual(self.violations(), 1)
+
     def test_multiple_refunds_at_same_instant(self):
         self.refund('r1', 0.99, '2026-01-01T10:00:00Z')
         self.refund('r2', 1.00, '2026-01-01T10:00:00Z')
