@@ -487,6 +487,8 @@ Set :known_at to NULL to use events available now, or to a UTC timestamp for a p
 
 **Joins:** Optional FKs to user, identity, session, view, transaction, period and series; episode composite FK where populated. **Use:** paywall-to-checkout sequence. **Limitations/checks:** Different event types populate different fields. Synthetic engagement and heartbeat observations are not additional views, watch-time increments, payments or proof of deliberate interaction. Select one owner for a business moment to avoid duplicating payment/view facts. Checker covers selected session timing and heartbeat bounds, product labels, funnel and refund order; propose broader event-specific schema checks.
 
+**Episode detail views:** Each episode_detail_viewed event identifies an existing episode. A detail view can occur before login, so user_id may be NULL; this does not authorize anonymous playback. The checker validates the episode link without requiring a user ID.
+
 **Blocked playback:** Each playback_blocked event identifies an existing episode and includes a non-empty text reason in event_properties_json. Reasons include premium_requires_payment and daily_free_quota_exhausted; other non-empty reasons can be recorded. The checker validates the episode link and reason, but this check alone does not prove the recorded reason was correct.
 
 **Subscription events:** subscription_started and subscription_cancel_requested identify the user and the user's subscription period. A start event links to the period's source subscription purchase. A cancellation request's event_at matches that period's cancelled_at. The checker validates these links and the cancellation time; the cancellation request need not share the purchase session.
