@@ -76,6 +76,7 @@ if segment_coverage != ('complete_synthetic_v1',):
 db.create_function('users_snapshot_at', 0, lambda: snapshot_at)
 db.create_function('entitlement_snapshot_at', 0, lambda: entitlement_snapshot_at)
 checks={
+ 'marketing spend or count values invalid': "SELECT count(*) FROM marketing_spend WHERE spend_usd IS NULL OR typeof(spend_usd) NOT IN ('integer','real') OR spend_usd<0 OR spend_usd>1.7976931348623157e308 OR impressions IS NULL OR typeof(impressions)!='integer' OR impressions<0 OR clicks IS NULL OR typeof(clicks)!='integer' OR clicks<0",
  'marketing reporting date or load timestamp invalid': "SELECT count(*) FROM marketing_spend WHERE valid_utc(date || 'T00:00:00Z')=0 OR valid_utc(loaded_at)=0",
  'foreign keys': 'SELECT count(*) FROM pragma_foreign_key_check',
  'views before signup': 'SELECT count(*) FROM content_views v JOIN users u USING(user_id) WHERE v.view_started_at<u.signup_at',
