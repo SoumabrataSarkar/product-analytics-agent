@@ -507,7 +507,7 @@ A checkout's optional triggering_paywall_event_id references the specific trigge
 
 **Purpose:** Preserve raw payment source evidence. **Grain/key:** One source record per txn_id. For this synthetic fixture, every transaction must have exactly one source record; the checker validates coverage, and the primary key prevents duplicate non-NULL txn_id values. This fixture rule is not a universal requirement for real payment sources. **Time:** received_at.
 
-**Columns:** txn_id — linked transaction; raw_amount — untyped source value, which may be numeric, numeric text, unavailable text or mis-scaled; raw_unit — reported unit, which may be misleading; received_at — source arrival.
+**Columns:** txn_id — linked transaction; raw_amount — untyped source value, which may be numeric, numeric text, unavailable text or mis-scaled; raw_unit — reported unit, which may be misleading; received_at — UTC source arrival in the fixture's second-precision format YYYY-MM-DDTHH:MM:SSZ. The checker validates received_at for every source record.
 
 **Joins:** txn_id FK → transactions; logical same-key link to optional payment_quality_review. **Use:** investigate unusual source amounts. **Limitations/checks:** Not another payment; do not silently cast invalid text or correct an outlier without evidence. Checker validates transaction-to-source coverage and reconciles reviewed values with curated transactions; propose additional source profiling.
 
