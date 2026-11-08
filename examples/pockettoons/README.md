@@ -7,11 +7,13 @@ python3 examples/pockettoons/generate.py --output pockettoons.sqlite
 python3 examples/pockettoons/check_data.py pockettoons.sqlite
 ```
 
-The generator refuses to overwrite an existing database. The main random seed is 8126; marketing uses a separate deterministic stream seeded with 10844 so marketing variation does not change other generated records. The six analysis months are April–September 2026. There are 10,400 existing March signups; the monthly signup cohorts from April through September are 1,600, 2,201, 2,653, 2,477, 2,949, and 1,720. All times are UTC. The database has 24,000 users, 72,094 sessions, 94,047 views, and 6,331 payment/refund attempts (including 30 failed attempts). Its 12 titles have between 20 and 39 episodes each.
+The generator refuses to overwrite an existing database. The main random seed is 8126; marketing uses a separate deterministic stream seeded with 10844 so marketing variation does not change other generated records. The six analysis months are April–September 2026. There are 10,400 existing March signups; the monthly signup cohorts from April through September are 1,600, 2,201, 2,653, 2,477, 2,949, and 1,720. All times are UTC. The database has 24,000 users, 261,874 sessions, 335,509 views, and 6,331 payment/refund attempts (including 30 failed attempts); the file is about 0.6 GB. Activity variation uses its own deterministic stream (seed 8126 + 4409), so it does not change monthly MAU or revenue. Its 12 titles have between 20 and 39 episodes each.
 
 ## Synthetic story and metric definitions
 
 This section contains expected synthetic findings. Exclude it from the agent's investigation context when evaluating independent discovery.
+
+Users are active on a varying number of days each month; monthly stickiness (average DAU ÷ MAU) is about 12%. Session starts follow each country's local daily pattern with an evening peak, some users use a second installation on another platform, and about 12% of views end within the first minute.
 
 Quarter MAU is the average of monthly distinct active users, where activity is a session. Monthly MAU is 7,937, 9,134, 9,976, 10,138, 10,871, and 11,447, an approximately 20% increase in quarter-average MAU. Revenue is succeeded subscription and PPV charges less succeeded refunds, before fees/tax, measured at success time. All charges and refunds are stored as positive amounts; subtract refunds explicitly with `CASE WHEN type='refund' THEN -amount_usd ELSE amount_usd END`. Monthly net revenue is $9,863.83, $10,293.40, $9,987.77, $10,171.53, $9,819.93, and $10,175.51 respectively. The monthly values are controlled synthetic targets.
 
