@@ -440,6 +440,8 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `refunded_at` | TIMESTAMP | yes | UTC full-episode-refund revocation time, if refund ended this entitlement. |
 | `delisted_at` | TIMESTAMP | yes | UTC delisting time that ends this entitlement; relisting does not restore it. |
 
+A user holds at most one open PPV entitlement per episode at any instant: a succeeded purchase cannot start an entitlement while the same user's entitlement for that episode is open at that start (half-open intervals; a full refund or delisting supplies the end). A purchase at or after the earlier end, including after relisting, is valid. A bundle containing an already-held episode is not supported.
+
 ### 4.8a `raw_payment_source` — source payment values
 
 **Grain:** one provider payment or refund source record per `txn_id`. **Primary/foreign key:** `txn_id → transactions`. Source values are retained for audit and do not constitute additional financial events.
