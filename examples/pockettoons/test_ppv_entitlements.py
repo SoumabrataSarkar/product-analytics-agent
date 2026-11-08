@@ -1,4 +1,4 @@
-"""Regression coverage for PPV entitlement start timing, purchase-episode uniqueness, single ownership and status consistency."""
+"""Regression coverage for PPV entitlement start timing, purchase-episode uniqueness, single ownership, status consistency and PPV-only rows."""
 import ast
 import datetime as dt
 from pathlib import Path
@@ -161,6 +161,21 @@ class TimestampFormatTests(EntitlementTests):
         self.assertEqual(self.violations(name), 0)
         self.db.execute("UPDATE transaction_content_attribution SET entitlement_end_at='2026-01-02 10:00:00'")
         self.assertEqual(self.violations(name), 1)
+
+class PpvOnlyTests(EntitlementTests):
+    CHECK = 'PPV attribution on non-PPV transaction'
+
+    def test_ppv_purchase_is_valid(self):
+        self.assertEqual(self.violations(self.CHECK), 0)
+
+    def test_subscription_or_refund_transaction_is_invalid(self):
+        for kind in ('subscription', 'refund'):
+            self.db.execute('UPDATE transactions SET type=?', (kind,))
+            self.assertEqual(self.violations(self.CHECK), 1)
+
+    def test_missing_transaction_is_invalid(self):
+        self.db.execute('DELETE FROM transactions')
+        self.assertEqual(self.violations(self.CHECK), 1)
 
 if __name__ == '__main__':
     unittest.main()
