@@ -384,6 +384,8 @@ For a refund attempt, use the original charge's latest effective payment status 
 
 One row per status transition: `payment_status_event_id` (TEXT PK), `txn_id` (required FK → transactions), `status` (required: pending, succeeded, failed, voided), `effective_at` and `recorded_at` (required UTC timestamps), and `provider_event_id` (required unique idempotency key). Current transaction status reflects the latest effective transition. Count each succeeded charge or refund once at its success effective time; exclude pending, failed and voided payments.
 
+`voided` represents cancellation before success; a status event effective after a success cannot be `voided`. Money returned after success is represented by a separate positive-amount refund transaction linked to the original charge. The fixture checker enforces this specific ordering rule; it does not implement a complete provider-specific state machine.
+
 ### 4.5b `refund_content_attribution`
 
 One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn_id` (required FK → transactions), `content_id` and `episode_number` (required composite FK → content_episodes), `allocated_refund_usd` (required positive amount). The refund's `related_txn_id` points to the original PPV purchase; the episode must match its attribution. Allocate a single-episode refund fully to that episode. Partial refunds are allowed, with total succeeded refunds capped at the original charge; a successful partial or full PPV refund ends that episode's entitlement at its effective time. Subscription refunds have no episode allocation. Bundle allocation is deferred.
