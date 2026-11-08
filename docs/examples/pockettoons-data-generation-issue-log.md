@@ -102,7 +102,19 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** A single episode length across the entire catalog is unrealistic and can obscure incorrect assumptions about durations and completion.
 
-**Resolution:** Episode durations vary by title and episode. Title duration totals and view duration/completion fields reconcile to the episode values. The fixture uses continuous, non-rewinding playback and does not model historical changes to episode length; those limitations constrain completion and duration-history tests.
+**Resolution:** Episode durations vary by title and episode. Title duration totals and view duration/completion fields reconcile to the episode values. Playback segments provide range evidence for rewind and skip scenarios; the fixture does not model historical changes to episode length.
+
+### Completion with rewinds and skips
+
+**Issue and impact:** Total watch seconds and the final playback position do not identify unique content watched when a viewer rewinds or skips. Treating them as unique coverage can overstate completion and distort episode analysis.
+
+**Resolution:** Ordered playback segments record watched position ranges and watch seconds. Reconciliation merges overlapping position ranges within an attempt, and tests also merge ranges across attempts. The fixture includes rewind and skip examples. Coverage is exact only where segment evidence is complete; historic episode-length versions remain outside scope.
+
+### Completion rounding consistency
+
+**Issue and impact:** Different rounding behavior at half-way values can cause generated completion fractions and SQL reconciliation to disagree even when watched ranges are correct.
+
+**Resolution:** The fixture computes and checks stored completion using the same SQLite rounding expression at four decimal places. The range union and watch-time reconciliation are checked independently; stored rounding is not a substitute for complete segment evidence.
 
 ## Deliberate data-quality issues
 

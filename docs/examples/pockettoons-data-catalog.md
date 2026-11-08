@@ -1,6 +1,6 @@
 # Data Catalog: PocketToons reference fixture
 
-**Status:** Draft for review. This catalog describes the synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 19 tables, including dataset_metadata and content_tier_history. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
+**Status:** Draft for review. This catalog describes the synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 20 tables, including dataset_metadata, content_tier_history and playback_segments. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
 
 **Reading the column lists:** Each line identifies a column and its meaning. All columns have SQLite TEXT type except amounts and completion percentages (REAL), counts, durations, positions, episode numbers and boolean flags (INTEGER), and raw_amount (no declared type). Timestamps are UTC ISO-8601 values stored as TEXT. Dates are TEXT. A question mark after a column means nullable in the current schema; other non-key columns are declared NOT NULL. SQLite text primary keys are not always explicitly declared NOT NULL, but the model and existing checker require non-null identifiers. Composite key columns are declared NOT NULL.
 
@@ -238,7 +238,34 @@ The LEFT JOIN keeps a view with missing history visible as an unknown rather tha
 
 **Columns:** view_id — attempt ID; user_id — authenticated viewer; anonymous_id — session identity; session_id — containing session; content_id/episode_number — episode; date — UTC start date; view_started_at/view_ended_at — boundaries; watch_duration_sec — watched seconds, including rewatches; content_duration_sec — episode length at playback; view_type — free, sub or ppv entitlement at start; completion_pct? — known unique coverage fraction; playback_position_start_sec/playback_position_end_sec? — positions; is_first_view_of_episode — first known view flag; free_quota_consuming — slot-consumption flag; free_quota_sequence? — slot number if applicable; event_timezone? — reported IANA timezone; country_at_event? — viewing country.
 
-**Joins:** Required user, session and identity FKs and composite episode FK. **Use:** watch time by episode. **Limitations/checks:** Views are not distinct viewers or necessarily complete episodes. Current fixture requires view_ended_at although the model allows NULL for incomplete events. Existing tests cover selected login, session chronology, availability, quota and entitlement cases; propose full position, date and fanout validation.
+**Joins:** Required user, session and identity FKs and composite episode FK. Tier, availability, subscription and PPV entitlement use separate as-of lookups at view start. view_id → many playback_segments and user_events; aggregate each child independently to avoid fanout. **Use:** watch time by episode or a user journey. **Limitations/checks:** Views are not distinct viewers or necessarily complete episodes. Current fixture requires view_ended_at although the model allows NULL for incomplete events. Checks cover dates, first-view flag, free quota sequencing and resumes, access precedence, historical access, session consistency, playback bounds and segment reconciliation. These fixture checks do not cover every possible playback, late event or data-source behavior.
+
+### View column details
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| view_id | TEXT primary key | Required by checker | Playback-attempt ID. |
+| user_id | TEXT | No | Authenticated viewer. |
+| anonymous_id | TEXT | No | Session browser/installation identity. |
+| session_id | TEXT | No | Session containing the view. |
+| content_id | TEXT | No | Parent title ID. |
+| episode_number | INTEGER | No | Episode within the title. |
+| date | TEXT | No | UTC date derived from view start. |
+| view_started_at | TEXT | No | Playback start or resume time. |
+| view_ended_at | TEXT | No in fixture | Playback end; the model permits NULL for incomplete records. |
+| watch_duration_sec | INTEGER | No | Total time watched in this attempt, including repeated sections. |
+| content_duration_sec | INTEGER | No | Episode duration at playback. |
+| view_type | TEXT | No | Access at start: free, sub or ppv. |
+| completion_pct | REAL | Yes | Unique position coverage in this attempt divided by duration, from 0 to 1; NULL if coverage unknown. |
+| playback_position_start_sec | INTEGER | No | Starting position. |
+| playback_position_end_sec | INTEGER | Yes | Final position if known; can be below start after a rewind. |
+| is_first_view_of_episode | INTEGER | No | 1 for first known user/episode attempt, otherwise 0. |
+| free_quota_consuming | INTEGER | No | 1 if this free attempt consumes a new UTC-day slot, otherwise 0. |
+| free_quota_sequence | INTEGER | Yes | Slot 1–8 for a quota-consuming attempt; NULL otherwise. |
+| event_timezone | TEXT | Yes | Reported IANA timezone if known, context only. |
+| country_at_event | TEXT | Yes | Observed country if known. |
+
+The fixture declares complete synthetic playback-segment coverage and contains both rewind and skip examples. For ranges [0,300) and [180,360), 480 seconds were watched but only 360 unique content seconds were covered. Per-attempt completion is 360 divided by the episode duration. For completion across attempts, merge all ranges for the chosen user and episode; do not sum attempt completion fractions. In other datasets, missing segments make exact unique coverage unknown, not zero.
 
 ## 7. transactions
 
@@ -334,7 +361,7 @@ The user-profile update check covers generated status changes but not all possib
 
 ## 18. dataset_metadata
 
-**Purpose:** Dataset-wide metadata. **Grain/key:** One value per metadata_key. **Columns:** metadata_key TEXT primary key NOT NULL; metadata_value TEXT NOT NULL. users_snapshot_at and content_catalog_snapshot_at are separate UTC as-of instants for the respective snapshots. session_activity_coverage=complete_synthetic_v1 declares this fixture's synthetic evidence coverage for session boundary and heartbeat checks. The checker requires these values; it does not validate unrelated metadata keys. **Use:** determine snapshot timing and applicable activity checks. **Limitations:** Later datasets with independent refresh times or incomplete source telemetry need different handling; the synthetic coverage flag is not proof of completeness in real data.
+**Purpose:** Dataset-wide metadata. **Grain/key:** One value per metadata_key. **Columns:** metadata_key TEXT primary key NOT NULL; metadata_value TEXT NOT NULL. users_snapshot_at and content_catalog_snapshot_at are separate UTC as-of instants for the respective snapshots. session_activity_coverage=complete_synthetic_v1 declares this fixture's synthetic session evidence; playback_segment_coverage=complete_synthetic_v1 declares complete watched-range evidence for the fixture. The checker requires these values; it does not validate unrelated metadata keys. **Use:** determine snapshot timing and applicable coverage checks. **Limitations:** Later datasets with independent refresh times or incomplete telemetry need different handling; synthetic coverage flags are not proof of completeness in real data.
 
 ## 19. content_tier_history
 
@@ -353,3 +380,46 @@ The user-profile update check covers generated status changes but not all possib
 **Joins:** Composite FK (content_id, episode_number) → content_episodes, then match event timestamp within the interval. **Use:** determine whether an episode was free at view start or premium at PPV purchase. **Limitations/checks:** Do not multiply a view by all historical periods or infer availability from tier. Checker validates domains, UTC timestamps, contiguous non-overlapping intervals, coverage from release, current snapshot reconciliation, free views and PPV purchase eligibility. Price and duration history are not represented by this table.
 
 If an episode changes from free to premium while an authorized playback attempt is already in progress, that attempt may continue under the decision made at its start. A later start or resume is a separate attempt and must be checked against the tier and user entitlement at that later time. The isolated regression test verifies the tier decision at the exact boundary; subscription and PPV entitlement and episode availability remain separate checks. This scenario is tested independently and is not represented as an in-progress tier change in the main fixture.
+
+## 20. playback_segments
+
+**Purpose:** Observed continuous watched position ranges within an attempt. **Grain:** One forward-consumed range in one view; a seek or rewind starts another segment. **Key:** segment_id; (view_id, segment_index) is unique. **Time:** segment_started_at and segment_ended_at are UTC event times.
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| segment_id | TEXT primary key | No | Segment identifier. |
+| view_id | TEXT | No | Parent playback attempt. |
+| segment_index | INTEGER | No | Positive chronological sequence within the view. |
+| segment_started_at | TEXT | No | Wall-clock segment start. |
+| segment_ended_at | TEXT | No | Wall-clock segment end. |
+| position_start_sec | INTEGER | No | Inclusive episode position where this continuous range starts. |
+| position_end_sec | INTEGER | No | Exclusive episode position where the range ends. |
+| watch_duration_sec | INTEGER | No | Time watched within the segment; not necessarily the position difference at every playback speed. |
+
+**Joins:** view_id → content_views, one view to many segments. Use the parent view for user, session and episode. Sum segment watch time only once per segment, and merge overlapping position intervals for unique coverage. **Checks:** parent FK, required values, ordered non-overlapping wall-clock intervals, view/time/position bounds, view watch-time reconciliation, first/final position consistency and per-attempt unique-completion reconciliation. **Limitations:** The fixture declares full synthetic segment coverage and uses second-level positions; real sources can lose segments, and current data does not model historical episode-length changes. Seek actions themselves are inferred from discontinuous positions rather than stored as separately timed events.
+
+The following SQLite query merges overlapping position ranges for one attempt without relying on checker-specific functions:
+
+```sql
+WITH ordered AS (
+  SELECT view_id, segment_id, position_start_sec AS start_pos, position_end_sec AS end_pos,
+         MAX(position_end_sec) OVER (
+           PARTITION BY view_id ORDER BY position_start_sec, position_end_sec, segment_id
+           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+         ) AS previous_max_end
+  FROM playback_segments
+), grouped AS (
+  SELECT *, SUM(CASE WHEN previous_max_end IS NULL OR start_pos > previous_max_end
+                     THEN 1 ELSE 0 END) OVER (
+           PARTITION BY view_id ORDER BY start_pos, end_pos, segment_id
+         ) AS island
+  FROM ordered
+), ranges AS (
+  SELECT view_id, island, MIN(start_pos) AS start_pos, MAX(end_pos) AS end_pos
+  FROM grouped GROUP BY view_id, island
+)
+SELECT view_id, SUM(end_pos - start_pos) AS unique_content_seconds
+FROM ranges GROUP BY view_id;
+```
+
+This returns views with segment records only. Confirm declared coverage before interpreting missing views or computing completion. For user/episode coverage across attempts, partition and group by the chosen user and episode instead, while accounting for compatible episode versions and the analysis window.

@@ -39,6 +39,7 @@ def main():
     CREATE TABLE content_tier_history(tier_period_id TEXT PRIMARY KEY NOT NULL, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, access_tier TEXT NOT NULL, effective_start_at TEXT NOT NULL, effective_end_at TEXT, recorded_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE content_availability_history(availability_id TEXT PRIMARY KEY, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, available_from_at TEXT NOT NULL, available_until_at TEXT, status TEXT NOT NULL, recorded_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, anonymous_id TEXT NOT NULL REFERENCES anonymous_identities, session_id TEXT NOT NULL REFERENCES sessions, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL, date TEXT NOT NULL, view_started_at TEXT NOT NULL, view_ended_at TEXT NOT NULL, watch_duration_sec INTEGER NOT NULL, content_duration_sec INTEGER NOT NULL, view_type TEXT NOT NULL, completion_pct REAL, playback_position_start_sec INTEGER NOT NULL, playback_position_end_sec INTEGER, is_first_view_of_episode INTEGER NOT NULL, free_quota_consuming INTEGER NOT NULL, free_quota_sequence INTEGER, event_timezone TEXT, country_at_event TEXT, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
+    CREATE TABLE playback_segments(segment_id TEXT PRIMARY KEY NOT NULL, view_id TEXT NOT NULL REFERENCES content_views, segment_index INTEGER NOT NULL, segment_started_at TEXT NOT NULL, segment_ended_at TEXT NOT NULL, position_start_sec INTEGER NOT NULL, position_end_sec INTEGER NOT NULL, watch_duration_sec INTEGER NOT NULL, UNIQUE(view_id,segment_index));
     CREATE TABLE transactions(txn_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users, date TEXT NOT NULL, type TEXT NOT NULL, transaction_subtype TEXT NOT NULL, amount_usd REAL NOT NULL, payment_method TEXT NOT NULL, status TEXT NOT NULL, transaction_at TEXT NOT NULL, session_id TEXT REFERENCES sessions, provider_transaction_id TEXT NOT NULL UNIQUE, payment_provider TEXT NOT NULL, currency TEXT NOT NULL, original_amount REAL NOT NULL, related_txn_id TEXT REFERENCES transactions, subscription_id TEXT, list_price_usd REAL, discount_usd REAL, country_at_event TEXT);
     CREATE TABLE payment_status_history(payment_status_event_id TEXT PRIMARY KEY, txn_id TEXT NOT NULL REFERENCES transactions, status TEXT NOT NULL, effective_at TEXT NOT NULL, recorded_at TEXT NOT NULL, provider_event_id TEXT NOT NULL UNIQUE);
     CREATE TABLE subscription_history(subscription_period_id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users, effective_start_at TEXT NOT NULL, effective_end_at TEXT, subscription_status_updated_at TEXT NOT NULL, status TEXT NOT NULL, plan_code TEXT NOT NULL, source_txn_id TEXT REFERENCES transactions, cancelled_at TEXT, recorded_at TEXT NOT NULL);
@@ -57,10 +58,12 @@ def main():
     CREATE INDEX ix_event_session_time ON user_events(session_id,event_at);
     CREATE INDEX ix_event_view_time ON user_events(view_id,event_name,event_at);
     CREATE INDEX ix_tier_episode_time ON content_tier_history(content_id,episode_number,effective_start_at,effective_end_at);
+    CREATE INDEX ix_segments_view ON playback_segments(view_id,segment_index);
     ''')
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('users_snapshot_at', SNAPSHOT_AT))
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('content_catalog_snapshot_at', SNAPSHOT_AT))
     db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('session_activity_coverage', 'complete_synthetic_v1'))
+    db.execute('INSERT INTO dataset_metadata VALUES (?,?)', ('playback_segment_coverage', 'complete_synthetic_v1'))
     # Existing users signed up before the window; new cohorts join in every analysis month.
     users=[]; truth=[]
     cohort_sizes=[10400,1600,2201,2653,2477,2949,1720]
@@ -473,10 +476,38 @@ def main():
         if not eligible: raise RuntimeError('missing tier-change demonstration view')
         db.execute("UPDATE content_views SET content_id='c01', episode_number=21 WHERE view_id=?",eligible)
     # This fixture keeps episode duration constant over time. Reconcile view
-    # snapshots and completion with each episode's generated duration.
+    # snapshots with each episode's generated duration.
     db.execute('''UPDATE content_views SET content_duration_sec=(SELECT e.episode_duration_sec FROM content_episodes e
         WHERE e.content_id=content_views.content_id AND e.episode_number=content_views.episode_number)''')
-    db.execute('UPDATE content_views SET completion_pct=round(1.0*watch_duration_sec/content_duration_sec,4) WHERE completion_pct IS NOT NULL')
+    rewind=db.execute("""SELECT v.view_id FROM content_views v WHERE v.view_type='sub' AND v.watch_duration_sec=480
+        AND v.playback_position_start_sec=0 AND NOT (v.content_id='c01' AND v.episode_number=21)
+        AND NOT EXISTS(SELECT 1 FROM content_views r WHERE r.view_id=v.view_id||'_return')
+        ORDER BY v.view_started_at,v.view_id LIMIT 1""").fetchone()
+    skip=db.execute("SELECT view_id FROM content_views WHERE view_type='ppv' AND watch_duration_sec=600 AND playback_position_start_sec=0 ORDER BY view_started_at,view_id LIMIT 1").fetchone()
+    if not rewind or not skip: raise RuntimeError('missing playback segment scenario views')
+    rewind_id,skip_id=rewind[0],skip[0]
+    segment_rows=[]
+    for vid,start,end,pos_start,pos_end,watched,duration in db.execute('''SELECT view_id,view_started_at,view_ended_at,
+        playback_position_start_sec,playback_position_end_sec,watch_duration_sec,content_duration_sec FROM content_views'''):
+        if vid==rewind_id:
+            # Watch 0–300, rewind to 180, then watch through 360: 480s total, 360s unique.
+            parts=[(start,offset(start,300),0,300,300),(offset(start,300),end,180,360,180)]
+            unique=360
+        elif vid==skip_id:
+            # Watch 0–300, skip ahead to 450, then watch through 750: 600s total, 600s unique.
+            parts=[(start,offset(start,300),0,300,300),(offset(start,300),end,450,750,300)]
+            unique=600
+        else:
+            parts=[(start,end,pos_start,pos_end,watched)]
+            unique=pos_end-pos_start
+        for n,(a,b,p,q,w) in enumerate(parts,1):
+            segment_rows.append((f'segment_{vid}_{n}',vid,n,a,b,p,q,w))
+        if vid in (rewind_id,skip_id):
+            db.execute('UPDATE content_views SET playback_position_end_sec=?,completion_pct=round(1.0*? / ?,4) WHERE view_id=?',
+                       (parts[-1][3],unique,duration,vid))
+        else:
+            db.execute('UPDATE content_views SET completion_pct=round(1.0*? / ?,4) WHERE view_id=?',(unique,duration,vid))
+    db.executemany('INSERT INTO playback_segments VALUES (?,?,?,?,?,?,?,?)',segment_rows)
     # Explicit synthetic engagement evidence, including each session's final
     # activity. These are simulated observations, not inferred real telemetry.
     activity_rows=[]

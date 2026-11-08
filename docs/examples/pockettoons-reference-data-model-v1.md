@@ -26,6 +26,7 @@ erDiagram
     USERS ||--o{ IDENTITY_LINKS : identifies
     USERS ||--o{ CONTENT_VIEWS : watches
     SESSIONS ||--o{ CONTENT_VIEWS : contains
+    CONTENT_VIEWS ||--o{ PLAYBACK_SEGMENTS : contains
     CONTENT_CATALOG ||--o{ CONTENT_EPISODES : contains
     CONTENT_EPISODES ||--o{ CONTENT_VIEWS : viewed
     CONTENT_EPISODES ||--o{ TRANSACTION_CONTENT_ATTRIBUTION : purchased
@@ -333,7 +334,7 @@ On delisting, every succeeded PPV entitlement active immediately before the boun
 | `session_id` | TEXT | no | Session containing the view. |
 | `view_started_at` | TIMESTAMP | no | UTC playback-start time. |
 | `view_ended_at` | TIMESTAMP | yes | UTC end; null only for an interrupted/incomplete event. |
-| `completion_pct` | NUMERIC | yes | Unique content consumed divided by episode length, 0..1, if player coverage is known. |
+| `completion_pct` | NUMERIC | yes | Union of unique episode positions consumed within this attempt divided by episode length, 0..1, if coverage is complete. It is not cumulative completion across attempts. |
 | `playback_position_start_sec` | INTEGER | no | Resume position, >= 0. |
 | `playback_position_end_sec` | INTEGER | yes | Final position when known; can be less than start after rewinding. |
 | `is_first_view_of_episode` | BOOLEAN | no | First known valid view by the user for this episode; recompute after late arrivals. |
@@ -341,6 +342,12 @@ On delisting, every succeeded PPV entitlement active immediately before the boun
 | `free_quota_sequence` | INTEGER | yes | Slot 1–8 for a quota-consuming free view; NULL otherwise. |
 | `event_timezone` | TEXT | yes | IANA timezone reported at event time, when known; context only. |
 | `country_at_event` | TEXT | yes | Country observed at playback, if known. |
+
+### 4.4a `playback_segments` — observed continuous playback ranges
+
+**Grain:** one continuous, forward-consumed position range within one view attempt. **Primary key:** `segment_id`; `view_id → content_views`; (`view_id`, `segment_index`) is unique. Columns: `segment_index` (positive ordering within a view), `segment_started_at` and `segment_ended_at` (UTC timestamps), `position_start_sec` and `position_end_sec` (start-inclusive, end-exclusive episode positions), and `watch_duration_sec` (actual seconds watched in this segment). A seek, rewind or gap creates a new segment; the next position may be earlier or later than the prior end. Segment elapsed time and content-position range need not match watch seconds in every possible playback-speed or buffering scenario. Segments must be ordered, must not overlap in wall-clock time, and must lie inside their parent view and episode duration.
+
+In a dataset declaring `dataset_metadata.playback_segment_coverage=complete_synthetic_v1`, segment watch seconds reconcile to the parent view and all watched ranges are represented. Compute per-attempt completion by merging overlapping position intervals before dividing by the view's content duration. For example, watching positions 0–300 and then 180–360 produces 480 seconds watched but only 360 seconds of unique coverage. For combined completion across attempts, merge ranges across the relevant user and episode; never sum attempt completion percentages. With incomplete range coverage, retain the limitation and do not infer exact unique completion. The fixture contains a rewind and a forward skip; it does not model historical changes in episode length or every playback speed/buffering condition.
 
 ### 4.5 `transactions` — assignment-mandated
 
@@ -481,6 +488,7 @@ For an in-app purchase, record `app_opened`, a labelled `paywall_viewed`, a matc
 | `users` | `sessions` | 1 : 0..N | child optional | NULL before login; session-scoped link resolves prior anonymous activity. |
 | `anonymous_identities`, `users`, `sessions` | `identity_links` | 1 : 0..N each | child yes | One login links only the same session's prior anonymous actions. |
 | `sessions` | `content_views` | 1 : 0..N | child yes | Every valid view is within exactly one session. |
+| `content_views` | `playback_segments` | 1 : 0..N | child yes | Complete fixture coverage reconciles segments to the parent view; a zero-watch or incompletely instrumented view may have none in other sources. |
 | `users` | `content_views` | 1 : 0..N | child yes | Every view belongs to the authenticated account at playback start. |
 | `content_catalog` | `content_episodes` | 1 : 0..N | child yes | Episodes belong to one title. |
 | `content_episodes` | `content_views` | 1 : 0..N | child yes | Composite key identifies the exact episode. |
@@ -581,6 +589,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | UTC consistency | Event timestamps have UTC offsets; required dates equal their source timestamp's UTC date. |
 | Status history | Status changes have non-overlapping effective periods, including expired/refunded states; current snapshot reconciles to the status effective at its declared snapshot instant. |
 | Playback bounds | Watch time is non-negative and may exceed duration; positions lie within the episode and known completion is in [0,1]. |
+| Playback segment reconciliation | With declared complete fixture coverage, segments have valid keys, times, positions and order, their watch seconds sum to the parent attempt, and merged unique position coverage reconciles to known completion. Rewinds and skips do not count repeated or unwatched positions as unique content. |
 | Subscription non-overlap | No overlapping effective intervals for the same `subscription_id`; at most one access-granting period per user at an instant. |
 | Snapshot reconciliation | `users.subscription_*` matches the latest relevant subscription-history state. |
 | PPV uniqueness | A granted PPV entitlement maps to one specific title/episode; no duplicate active entitlement for the same user/episode unless explicitly modeled as a replacement. |
