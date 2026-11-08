@@ -509,6 +509,8 @@ A checkout's optional triggering_paywall_event_id references the specific trigge
 
 **Columns:** txn_id — linked transaction; raw_amount — untyped source value, which may be numeric, numeric text, unavailable text or mis-scaled; raw_unit — reported unit, which may be misleading; received_at — UTC source arrival in the fixture's second-precision format YYYY-MM-DDTHH:MM:SSZ. The checker validates received_at for every source record.
 
+**Unexpected units:** In this USD-based fixture, a source unit other than USD requires a payment_quality_review record. The original unit and amount are preserved; the checker does not convert them or assume that the source unit is wrong. Existing review-evidence and corrected-amount checks apply to the review.
+
 **Joins:** txn_id FK → transactions; logical same-key link to optional payment_quality_review. **Use:** investigate unusual source amounts. **Limitations/checks:** Not another payment; do not silently cast invalid text or correct an outlier without evidence. Checker validates transaction-to-source coverage and reconciles reviewed values with curated transactions; propose additional source profiling.
 
 ## 17. payment_quality_review
