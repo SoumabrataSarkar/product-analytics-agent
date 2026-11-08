@@ -425,7 +425,7 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 
 ### 4.8 `transaction_content_attribution` — supporting PPV entitlement bridge
 
-**Grain:** one PPV purchase transaction × content title × episode entitlement. It resolves PPV to the episode actually bought and permits future bundles without duplicating transaction money. **Primary key:** `txn_content_attribution_id`. **Foreign keys:** `txn_id → transactions`, and (`content_id`, `episode_number`) → `content_episodes`.
+**Grain:** one PPV purchase transaction × content title × episode entitlement. It resolves PPV to the episode actually bought and permits future bundles without duplicating transaction money. **Primary key:** `txn_content_attribution_id`. **Unique:** (`txn_id`, `content_id`, `episode_number`); a purchase has at most one row per episode, and a bundle has one row per distinct episode. **Foreign keys:** `txn_id → transactions`, and (`content_id`, `episode_number`) → `content_episodes`.
 
 | Column | Type | Null? | Definition / rule |
 |---|---|---:|---|
@@ -433,7 +433,7 @@ One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn
 | `txn_id` | TEXT | no | The original `type='ppv'` purchase. Refunds link to it via `transactions.related_txn_id`. |
 | `content_id` | TEXT | no | Entitled series/title. |
 | `episode_number` | INTEGER | no | Entitled episode. |
-| `entitlement_start_at` | TIMESTAMP | no | Inclusive access start. |
+| `entitlement_start_at` | TIMESTAMP | no | Inclusive access start; exactly the `effective_at` of the purchase's `succeeded` event in `payment_status_history`. Not purchase creation, a pending period or the success `recorded_at`. A purchase with no succeeded event has no entitlement. |
 | `entitlement_end_at` | TIMESTAMP | yes | UTC exclusive end on full episode refund or delisting; NULL while open. There is no time-based expiry. |
 | `attributed_amount_usd` | NUMERIC(12,2) | no | Purchase allocation; sum equals the completed PPV charge. Refund allocations require an explicit policy and cannot be inferred for bundles. |
 | `attribution_status` | TEXT | no | Current state: `granted`, `revoked`, `refunded`, `expired_delisting`; historical queries use effective timestamps. |
