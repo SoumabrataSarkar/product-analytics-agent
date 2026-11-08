@@ -6,6 +6,8 @@ An LLM-agnostic product analytics agent using shared analytical skills, metric d
 
 ## Start here
 
+- [Project status and handoff](docs/project-status.md)
+- [Data catalog](docs/examples/pockettoons-data-catalog.md)
 - [Architecture v1.0 — frozen baseline](docs/architecture/v1.md)
 - [Architecture changelog](docs/architecture/changelog.md)
 - [Architecture Decision Records](docs/architecture/decisions/)
@@ -40,10 +42,10 @@ The committed [`web/index.html`](web/index.html) is a **static documentation pro
 
 ## Planned work
 
-1. Data Catalog and canonical Metric Registry.
-2. PocketToons synthetic-data generation, validation and Bronze/Silver/Gold SQLite transformations.
-3. Shared bounded SQL and evidence tools.
-4. Runnable analytical skill and independent evaluation (15+ questions).
-5. Board-ready investigation output and secure optional web integration.
+1. Define the shared Metric Registry, starting with MAU; integrate the accepted catalog into the agent.
+2. Implement and reconcile Bronze/Silver/Gold SQLite transformations.
+3. Build shared bounded SQL and evidence tools.
+4. Implement the analytical skill and independent evaluation (15+ questions).
+5. Produce evidence-backed investigation output and, when requested, secure optional web integration.
 
 The framework is intended for eventual open-source publication. Keep confidential assignment material, keys and private data out of public releases and their Git history. Licensing will be decided before publication.
