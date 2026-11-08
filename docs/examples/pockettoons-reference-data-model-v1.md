@@ -493,7 +493,7 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 | `user_id` | TEXT | yes | Signed-in actor, NULL before login. |
 | `anonymous_id` | TEXT | yes | Required for client events; NULL permitted for account-only server events. |
 | `country_at_event` | TEXT | yes | Observed event country if known. |
-| `event_at` | TIMESTAMP | no | UTC event time. |
+| `event_at` | TIMESTAMP | no | UTC event time, in fixture format `YYYY-MM-DDTHH:MM:SSZ`; validated for every event. |
 | `event_timezone` | TEXT | yes | IANA timezone reported at event time, if known; timestamps remain UTC. |
 | `event_name` | TEXT | no | Controlled event, e.g. `app_opened`, `episode_detail_viewed`, `paywall_viewed`, `checkout_started`, `subscription_cancel_requested`, `playback_blocked`. |
 | `session_id` | TEXT | yes | Null only for server/background/support events. |
@@ -503,7 +503,7 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 | `content_id` | TEXT | yes | Relevant title. |
 | `episode_number` | INTEGER | yes | Relevant episode. |
 | `event_properties_json` | TEXT | yes | Versioned context without PII. When populated, the value must be syntactically valid JSON; validation flags malformed values without altering the source. Paywall and checkout events include `product` (`subscription` or `ppv`); a playback_blocked event identifies an existing episode and includes a non-empty text reason, such as `premium_requires_payment` or `daily_free_quota_exhausted`. Other non-empty reasons are allowed; presence alone does not establish that the reason is correct. |
-| `ingested_at` | TIMESTAMP | no | Warehouse arrival time. |
+| `ingested_at` | TIMESTAMP | no | UTC warehouse arrival time, in fixture format `YYYY-MM-DDTHH:MM:SSZ`; validated for every event. Clock differences mean no ordering against `event_at` is enforced. |
 | `triggering_paywall_event_id` | TEXT | yes | On checkout_started, the observed triggering paywall_viewed event ID, when captured; NULL for direct checkout or unknown link. Other events leave it NULL. |
 
 The synthetic fixture records `session_engagement` as an activity observation and `playback_heartbeat` as an observation during a linked content view. Both include a synthetic marker in event properties. They are timing evidence, not new sessions, views, watch-duration increments, payments, or independent proof of a deliberate user interaction. Playback heartbeats reference their view and remain within its start/end bounds. When `dataset_metadata.session_activity_coverage` is `complete_synthetic_v1`, the fixture includes evidence at session start and last activity, gaps under 30 minutes between qualifying session activity observations, and playback heartbeat gaps of at most five minutes for closed views. This completeness declaration applies to the synthetic fixture, not arbitrary real-world telemetry.
