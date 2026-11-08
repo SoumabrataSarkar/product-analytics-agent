@@ -665,7 +665,7 @@ The source fixture contains missing acquisition values, numeric and text payment
 |---|---|
 | Subscription, PPV and free access | Subscription unlocks premium content; a non-subscriber needs PPV for premium, and free-tier usage obeys the UTC daily quota. |
 | Multi-session journey | Session, view, payment, event and user keys preserve chronological activity across sessions without multiplying metrics. |
-| Subscription journey | Initial in-app subscription includes labelled paywall and checkout events, successful payment, effective entitlement and a subsequent view. The fixture also includes non-purchaser subscription exposures and abandoned checkouts; off-session renewals are permitted. |
+| Subscription journey | An initial in-app subscription can be completed without a view in the same or any later session. Any subscription view must have entitlement at its own playback start. The fixture includes labelled paywalls, checkouts, non-purchaser exposures and abandoned checkouts; off-session renewals are permitted. |
 | PPV and refund | Purchases, views, refund requests, positive refund transactions, reason and episode allocations reconcile to the correct user, purchase and effective entitlement. |
 | Expiry and refund as-of | The historical status remains queryable after an access period ends and agrees with the user snapshot at the snapshot instant. |
 | Quota boundary | A user can start eight distinct free-tier episodes, resume an already-counted episode that day, and is blocked from a ninth new one. |
