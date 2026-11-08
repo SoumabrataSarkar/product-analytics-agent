@@ -49,7 +49,7 @@ def main():
     CREATE TABLE user_events(event_id TEXT PRIMARY KEY, user_id TEXT REFERENCES users, anonymous_id TEXT REFERENCES anonymous_identities, event_at TEXT NOT NULL, event_name TEXT NOT NULL, session_id TEXT REFERENCES sessions, view_id TEXT REFERENCES content_views, txn_id TEXT REFERENCES transactions, subscription_period_id TEXT REFERENCES subscription_history, content_id TEXT REFERENCES content_catalog, episode_number INTEGER, event_properties_json TEXT, event_timezone TEXT, country_at_event TEXT, ingested_at TEXT NOT NULL, FOREIGN KEY(content_id,episode_number) REFERENCES content_episodes);
     CREATE TABLE marketing_spend(date TEXT NOT NULL, channel TEXT NOT NULL, spend_usd REAL NOT NULL, impressions INTEGER NOT NULL, clicks INTEGER NOT NULL, loaded_at TEXT NOT NULL, PRIMARY KEY(date,channel));
     CREATE TABLE raw_payment_source(txn_id TEXT PRIMARY KEY REFERENCES transactions, raw_amount NOT NULL, raw_unit TEXT NOT NULL, received_at TEXT NOT NULL);
-    CREATE TABLE payment_quality_review(txn_id TEXT PRIMARY KEY REFERENCES transactions, issue TEXT NOT NULL, corrected_amount_usd REAL NOT NULL, reason TEXT NOT NULL);
+    CREATE TABLE payment_quality_review(txn_id TEXT PRIMARY KEY REFERENCES transactions, issue TEXT NOT NULL, corrected_amount_usd REAL NOT NULL, reason TEXT NOT NULL, reviewed_at TEXT);
     CREATE INDEX ix_sessions_user_time ON sessions(user_id,session_started_at);
     CREATE INDEX ix_views_user_time ON content_views(user_id,view_started_at);
     CREATE INDEX ix_transactions_user_time ON transactions(user_id,transaction_at);
@@ -489,7 +489,7 @@ def main():
             quality.append((tid,'non-numeric source amount',amount,'Recovered from confirmed provider payment.'))
         else: raw.append((tid,str(amount) if n%7==0 else amount,'USD',t))
     db.executemany('INSERT INTO raw_payment_source VALUES (?,?,?,?)',raw)
-    db.executemany('INSERT INTO payment_quality_review VALUES (?,?,?,?)',quality)
+    db.executemany('INSERT INTO payment_quality_review (txn_id,issue,corrected_amount_usd,reason) VALUES (?,?,?,?)',quality)
     # Preserve existing journeys while demonstrating an episode changing from
     # premium to free: one entitled subscriber view before the change and one
     # free-tier view after it. Avoid rows used as bases for resume journeys.
