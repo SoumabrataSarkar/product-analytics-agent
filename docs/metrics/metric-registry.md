@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`. Draft: the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate` and `growth_accounting_monthly`. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate` and `growth_accounting_monthly`. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -137,7 +137,7 @@ ORDER BY m.month_start, r.platform
 
 12. **Caveats.** The PocketToons fixture's coverage window is `2026-04-01T00:00:00Z` to `2026-10-01T00:00:00Z` (April–September), taken from the documented dataset contract rather than declared in the data. In the fixture every session has a `user_id` and no session crosses a month boundary; those cases are exercised only by isolated tests. Unidentified sessions are excluded from MAU and should be reported alongside it.
 
-### Activity family: DAU, WAU, DEU, WEU, MEU        version: 1.0   status: draft
+### Activity family: DAU, WAU, DEU, WEU, MEU        version: 1.0   status: approved
 
 | id | Name | Period | Qualifying rule |
 |---|---|---|---|
@@ -294,7 +294,7 @@ SELECT period AS week_start, users AS weu FROM engaged_users ORDER BY week_start
 SELECT period AS month, users AS meu FROM engaged_users ORDER BY month
 ```
 
-### Stickiness and engagement rate        version: 1.0   status: draft
+### Stickiness and engagement rate        version: 1.0   status: approved
 
 | id | Formula | Meaning |
 |---|---|---|
@@ -332,7 +332,7 @@ FROM active a JOIN engaged e ON e.month = a.month
 ORDER BY a.month
 ```
 
-### Monthly growth accounting        id: growth_accounting_monthly   version: 1.0   status: draft
+### Monthly growth accounting        id: growth_accounting_monthly   version: 1.0   status: approved
 
 1. **Business meaning.** Explains the change in MAU from one complete month to the next.
 2. **Population.** Resolved active users as in `mau`; account creation time from `users.signup_at`.
