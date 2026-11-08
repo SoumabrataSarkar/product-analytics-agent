@@ -210,7 +210,7 @@ The example requires non-overlapping tier periods and matches only views with kn
 | available_until_at | TEXT | Yes | Exclusive effective end; NULL while the period is open. |
 | recorded_at | TEXT | No | UTC recording time; not necessarily the effective time. |
 
-For the fixture's c12 episode 20, the live period ends exactly as delisted begins on 10 September 2026 UTC; live resumes exactly on 20 September. Every succeeded PPV entitlement active immediately before delisting ends at that boundary. Prior refunds or other already-ended entitlements remain ended; relisting does not restore them. Each affected holder has a prior synthetic notice. An entitlement after relisting requires a new succeeded purchase while live.
+For the fixture's c12 episode 20, the live period ends exactly as delisted begins on 10 September 2026 UTC; live resumes exactly on 20 September. Every succeeded PPV entitlement active immediately before delisting ends at that boundary. Prior fully refunded or other already-ended entitlements remain ended; relisting does not restore them. Each affected holder has a prior synthetic notice. An entitlement after relisting requires a new succeeded purchase while live.
 
 ### As-of join
 
@@ -340,11 +340,26 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 ## 12. transaction_content_attribution
 
-**Purpose:** PPV transaction-to-episode grant and allocation. **Grain/key:** One transaction × episode attribution per txn_content_attribution_id. **Time:** entitlement_start_at, entitlement_end_at?, refunded_at?, delisted_at?.
+**Purpose:** Link a PPV purchase to its episode entitlement and the purchase amount allocated to that episode. **Grain:** One purchase × episode entitlement. **Primary key:** txn_content_attribution_id. **Joins:** txn_id → transactions; (content_id, episode_number) → content_episodes. The user is identified through the purchase. A transaction can have multiple episode allocations; independent views and refunds must be pre-aggregated before joining to avoid fanout.
 
-**Columns:** txn_content_attribution_id — attribution ID; txn_id — purchase; content_id/episode_number — episode; entitlement_start_at/entitlement_end_at? — access interval; attributed_amount_usd — allocated purchase amount; attribution_status — grant status; refunded_at?/delisted_at? — relevant cutoff.
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| txn_content_attribution_id | TEXT primary key | Required by checker | Attribution identifier. |
+| txn_id | TEXT | No | Original PPV purchase transaction. |
+| content_id | TEXT | No | Title identifier; combine with episode_number. |
+| episode_number | INTEGER | No | Episode within the title. |
+| entitlement_start_at | TEXT | No | Inclusive UTC entitlement start. |
+| entitlement_end_at | TEXT | Yes | Exclusive UTC end when entitlement closes; NULL means open under the intended contract. |
+| attributed_amount_usd | REAL | No | Purchase amount allocated to this episode; not a separate payment. |
+| attribution_status | TEXT | No | Current recorded grant state: granted, revoked, refunded or expired_delisting per the model. |
+| refunded_at | TEXT | Yes | UTC time a full episode refund ended this entitlement, when applicable. |
+| delisted_at | TEXT | Yes | UTC time delisting ended this entitlement, when applicable. |
 
-**Joins:** Transaction FK and episode composite FK; user obtained through transaction. **Use:** PPV entitlement at playback. **Limitations/checks:** A bundle can create multiple rows; do not repeat full purchase amount. Refund or delisting ends entitlement; relisting requires repurchase. Checker covers selected PPV access and failed-payment scenarios; propose full allocation reconciliation.
+**Refund policy:** Succeeded partial PPV refunds reduce revenue but do not end the episode entitlement. For each original purchase and episode, add the positive allocations of succeeded refunds in exact cents. When cumulative allocated refunds reach the full episode purchase allocation, the entitlement ends at the success effective time of the refund that completes the total, provided it has not already ended. Refunds cannot exceed the episode allocation. If delisting ended access earlier, a later refund does not rewrite the earlier end. A refund request or failed refund is not a successful refund. Refunds and their allocations are separate records, not negative purchase amounts. Subscription-refund access is a separate policy.
+
+**Bundle limitation:** Episode allocations are required to identify which episode is fully refunded. The fixture has only single-episode purchases; its bundle allocation method is not specified. The policy is tested with a small isolated bundle case, not demonstrated in the main fixture.
+
+**Use and checks:** At a view instant, match the user through the purchase, the composite episode key, a succeeded purchase as of the view, and the entitlement's start-inclusive/end-exclusive interval. Check availability separately. Relisting does not revive an entitlement ended by delisting. The checker reconciles succeeded PPV allocations to purchase amounts in exact USD cents, validates selected entitlement/view and delisting/notice scenarios, and checks cumulative succeeded episode refund allocations, early refund revocation, over-refund and required full-refund end timing. It does not comprehensively validate all status/timestamp combinations, other revocation reasons, grant-at-success timing, duplicate purchase–episode rows or every bundle allocation policy. Current SQLite REAL storage and USD conversion limitations are described in the transactions entry. The fixture has 251 single-episode purchase rows, including 44 full PPV refunds and no partial PPV refunds; partial and cumulative cases are isolated regression tests.
 
 ## 13. refund_content_attribution
 
