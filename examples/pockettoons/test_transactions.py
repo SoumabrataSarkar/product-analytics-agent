@@ -66,6 +66,7 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(self.count('refund values exceed original in exact cents'),0)
         self.assertEqual(self.count('refund original was not successful by refund attempt'),1)
         self.db.execute("INSERT INTO payment_status_history VALUES('e2','p','voided','2026-01-01T10:04:00Z','2026-01-01T10:04:00Z','provider-e2')")
+        self.assertEqual(self.count('payment voided after success'),1)
         self.assertEqual(self.count('refund original was not successful by refund attempt'),2)
         self.db.execute("UPDATE transactions SET amount_usd=0.21,original_amount=0.21 WHERE txn_id='r2'")
         self.assertEqual(self.count('refund values exceed original in exact cents'),1)
@@ -90,11 +91,17 @@ class TransactionTests(unittest.TestCase):
         self.db.execute("INSERT INTO transaction_content_attribution(txn_id,attributed_amount_usd) VALUES('p',0.30)")
         self.assertEqual(self.count('failed payments with entitlements'),1)
 
-    def test_later_void_is_current_state_and_off_session_is_permitted(self):
+    def test_post_success_void_is_invalid_and_off_session_is_permitted(self):
         self.db.execute("UPDATE transactions SET status='voided'")
         self.db.execute("INSERT INTO payment_status_history VALUES('e2','p','voided','2026-01-01T11:00:00Z','2026-01-01T11:00:00Z','provider-e2')")
         self.assertEqual(self.count('transaction status snapshot differs from latest transition'),0)
+        self.assertEqual(self.count('payment voided after success'),1)
         self.assertEqual(self.count('in-app transaction session inconsistent'),0)
+
+    def test_pending_to_void_is_permitted(self):
+        self.db.execute("DELETE FROM payment_status_history WHERE status='succeeded'")
+        self.db.execute("INSERT INTO payment_status_history VALUES('e2','p','voided','2026-01-01T11:00:00Z','2026-01-01T11:00:00Z','provider-e2')")
+        self.assertEqual(self.count('payment voided after success'),0)
 
     def test_subscription_charge_and_refund_reference_same_subscription(self):
         self.db.executescript('''
