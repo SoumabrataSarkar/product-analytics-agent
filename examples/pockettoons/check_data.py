@@ -365,10 +365,17 @@ for name,sql in checks.items():
     n=db.execute(sql).fetchone()[0]
     print(('PASS' if n==0 else 'FAIL'),name,n)
     failed+=bool(n)
-rows=db.execute("SELECT substr(session_started_at,1,7),count(DISTINCT user_id) FROM sessions GROUP BY 1 ORDER BY 1").fetchall()
-q1=sum(v for _,v in rows[:3])/3; q2=sum(v for _,v in rows[3:])/3
-print('Quarter-average MAU change:',round((q2/q1-1)*100,2),'%')
-if len(rows)!=6 or abs(q2/q1-1.2)>0.0005: failed+=1
+# MAU uses the canonical Metric Registry SQL; the fixture's documented activity coverage is April-September 2026.
+from metric_registry import load_sql, with_monthly
+coverage={'coverage_start':'2026-04-01T00:00:00Z','coverage_end':'2026-10-01T00:00:00Z'}
+rows=db.execute(load_sql('mau_monthly'),coverage).fetchall()
+quarters=[v for _,v in db.execute(with_monthly(load_sql('mau_quarter_average')),coverage).fetchall()]
+print('Monthly MAU and excluded unidentified sessions:',rows)
+if len(rows)!=6 or len(quarters)!=2 or any(u for _,_,u in rows): failed+=1
+else:
+    q1,q2=quarters
+    print('Quarter-average MAU change:',round((q2/q1-1)*100,2),'%')
+    if abs(q2/q1-1.2)>0.0005: failed+=1
 bad_money=db.execute('SELECT count(*) FROM transactions WHERE usd_cents(amount_usd) IS NULL').fetchone()[0]
 duplicate_success=db.execute("SELECT count(*) FROM (SELECT txn_id FROM payment_status_history WHERE status='succeeded' GROUP BY txn_id HAVING count(*)>1)").fetchone()[0]
 if bad_money or duplicate_success:
