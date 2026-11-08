@@ -229,7 +229,7 @@ The dataset-level `dataset_metadata` table stores `users_snapshot_at` as a UTC t
 
 ### 4.2 `sessions` — assignment-mandated
 
-**Grain:** one device visit. A gap of 30 minutes without engagement or playback activity closes a session; player progress/heartbeats count as activity. Login can link the anonymous part of that session. Switching signed-in accounts closes the session and starts another. **Primary key:** `session_id`; FK `anonymous_id → anonymous_identities`, optional FK `user_id → users`.
+**Grain:** one device/browser visit. A gap of 30 minutes without engagement or playback activity on that device/browser closes a session; player progress/heartbeats count as activity. A user may have overlapping sessions on different devices. Login can link the anonymous part of that session. Switching signed-in accounts on the same device closes the session and starts another, even if less than 30 minutes have elapsed. **Primary key:** `session_id`; FK `anonymous_id → anonymous_identities`, optional FK `user_id → users`.
 
 | Column | Type | Null? | Definition / rule |
 |---|---|---:|---|
@@ -555,7 +555,7 @@ These assertions are acceptance requirements for any dataset implementing this c
 | Primary-key uniqueness | Every declared PK has zero duplicates and zero nulls. |
 | FK coverage | All non-null foreign keys resolve to exactly one parent. |
 | Identity resolution | Pre-login browsing resolves only through its same-session link; each view has an authenticated user. Shared-device accounts never cross-link. |
-| Session chronology | Open sessions have NULL end/duration; closed sessions end at last activity. A gap of 30 minutes starts a new session; playback heartbeats count as activity. |
+| Session chronology | Open sessions have NULL end/duration; closed sessions end at last activity. A gap of 30 minutes starts a new session on that device/browser; playback heartbeats count as activity. Different devices may overlap for the same user; account switching on a device creates a new session without requiring a 30-minute gap. Complete validation of inactivity requires sufficiently detailed activity and heartbeat evidence; start/end alone do not prove absence of an internal gap. |
 | View chronology | View start/end lies within or touches session bounds by an allowed client-clock tolerance. |
 | Episode validity | Every view/attribution composite episode key resolves to `content_episodes`. |
 | Content availability | Every view begins within a live availability interval; history intervals for an episode do not overlap. |

@@ -52,7 +52,26 @@ An active period beginning 1 October ends at 1 November at the same UTC time; th
 
 **Columns:** session_id — visit ID; user_id? — signed-in user if known; anonymous_id — installation/browser identity; date — UTC start date; session_started_at — start; session_ended_at? — end, NULL while open; last_activity_at — latest engagement; duration_sec? — session elapsed seconds, not episode duration; platform — device platform; country_at_event? — observed country; device_id_hash? — optional privacy-safe device identifier; app_version? — optional version.
 
-**Joins:** user_id → users (optional), anonymous_id → anonymous_identities; session_id is referenced by identity_links, views, events and optional transactions. **Use:** session activity by platform. **Limitations/checks:** A session can have zero or many views. Thirty minutes without activity triggers a new session; player engagement counts. Existing checks cover selected timing and session spacing; proposed checks cover complete inactivity logic, date agreement and open-session semantics.
+**Joins:** user_id → users (optional), anonymous_id → anonymous_identities; session_id is referenced by identity_links, views, events and optional transactions. Each parent has zero or many child records. **Use:** session activity by platform. **Limitations/checks:** A session can have zero or many views. A 30-minute inactivity gap on the same browser/device starts a new session; playback heartbeats count. The same user may use multiple devices concurrently. A different account on the same device starts a new session even without a 30-minute gap. The checker validates timestamp/date/duration, same-identity overlapping intervals, platform, linked identity consistency, and view, event and in-app transaction user/time consistency. It does not prove the 30-minute inactivity rule: that requires complete engagement and playback-heartbeat evidence, including within-session gaps. Anonymous IDs are browser/installation identifiers, not definitive proof of a physical device. The fixture includes browsing-only sessions; open and unidentified sessions are covered by isolated regression scenarios, not the generated population.
+
+### Session columns and null meanings
+
+| Column | SQLite type | Nullable? | Meaning |
+|---|---|---|---|
+| session_id | TEXT primary key | Required by checker | Session identifier. |
+| user_id | TEXT | Yes | Authenticated user when identified; NULL otherwise. |
+| anonymous_id | TEXT | No | Browser/installation identity, not a person identifier. |
+| date | TEXT | No | UTC date of session_started_at. |
+| session_started_at | TEXT | No | UTC session start. |
+| session_ended_at | TEXT | Yes | End at last observed activity; NULL for an open session. |
+| last_activity_at | TEXT | No | Latest observed engagement or playback heartbeat. |
+| duration_sec | INTEGER | Yes | Elapsed seconds; NULL while open. |
+| platform | TEXT | No | ios, android, web or tv; fixture contains ios, android, web. |
+| country_at_event | TEXT | Yes | Observed country, NULL if unavailable. |
+| device_id_hash | TEXT | Yes | Privacy-safe device identifier if available; not a person key. |
+| app_version | TEXT | Yes | App version when available. |
+
+Example: user U1 may have a phone session from 10:00 to 10:30 and a separate browser session from 10:10 to 10:20. A session may contain no views, one view or multiple views. Aggregate views and transactions separately by session_id before combining them. The current checker uses no client clock tolerance for these comparisons; adding a tolerance is a separate decision.
 
 ## 3. content_catalog
 
