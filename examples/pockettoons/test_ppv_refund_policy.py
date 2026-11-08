@@ -57,6 +57,20 @@ class RefundPolicyTests(unittest.TestCase):
         self.db.execute("UPDATE transaction_content_attribution SET refunded_at='2026-01-01T10:00:00Z',entitlement_end_at='2026-01-01T10:00:00Z',attribution_status='refunded'")
         self.assertEqual(self.violations(), 0)
 
+    def test_duplicate_refund_episode_is_flagged(self):
+        self.refund('r1', 0.50, '2026-01-01T10:00:00Z')
+        self.db.execute("INSERT INTO refund_content_attribution VALUES('r1','series',1,0.49)")
+        self.assertEqual(self.db.execute(checks['duplicate refund episode allocations']).fetchone()[0], 1)
+
+    def test_unique_index_allows_distinct_refunds_and_episodes(self):
+        self.db.execute('CREATE UNIQUE INDEX ux_refund_episode ON refund_content_attribution(refund_txn_id,content_id,episode_number)')
+        self.refund('r1', 0.50, '2026-01-01T10:00:00Z')
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("INSERT INTO refund_content_attribution VALUES('r1','series',1,0.49)")
+        self.db.execute("INSERT INTO refund_content_attribution VALUES('r1','series',2,0.49)")
+        self.refund('r2', 0.50, '2026-01-02T10:00:00Z')
+        self.assertEqual(self.db.execute(checks['duplicate refund episode allocations']).fetchone()[0], 0)
+
     def test_refund_after_delisting_does_not_rewrite_earlier_end(self):
         self.db.execute("UPDATE transaction_content_attribution SET delisted_at='2026-01-01T09:00:00Z',entitlement_end_at='2026-01-01T09:00:00Z',attribution_status='expired_delisting'")
         self.refund('r', 1.99, '2026-01-01T10:00:00Z')
