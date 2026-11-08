@@ -347,7 +347,7 @@ This comparison does not identify an individual ad exposure or establish campaig
 
 **Purpose:** Pseudonymous browser/installation identities. **Grain/key:** One identity per anonymous_id. **Time:** created_at and retired_at?.
 
-**Columns:** anonymous_id — identity; created_at — required UTC creation time; retired_at? — optional UTC retirement time, strictly after creation. Both use the fixture format YYYY-MM-DDTHH:MM:SSZ. A login/signup link must occur on or after creation and before retirement, when present; the checker validates timestamp formats, ordering and observed link times. The fixture currently contains no retired IDs; retirement boundary cases are tested separately.
+**Columns:** anonymous_id — identity; created_at — required UTC creation time; retired_at? — optional UTC retirement time, strictly after creation. Both use the fixture format YYYY-MM-DDTHH:MM:SSZ. A login/signup link must occur on or after creation and before retirement, when present; the checker validates timestamp formats, ordering and observed link times. Each session's start and latest recorded activity must also be within the identity lifetime, including for open sessions; this check does not assume an open session continues indefinitely. The fixture currently contains no retired IDs; retirement boundary cases are tested separately.
 
 **Joins:** Referenced by sessions, identity_links, views and optional events. **Use:** browser-level pre-login activity. **Limitations/checks:** An identity is not a person; shared devices can have multiple users. Anonymous playback is prohibited. Existing checks test authenticated playback; propose shared-device resolution checks.
 
