@@ -470,7 +470,7 @@ A user holds at most one open PPV entitlement per episode at any instant: a succ
 | `txn_id` | TEXT | no | Matched payment or refund. |
 | `raw_amount` | NUMERIC OR TEXT | no | Original source value; may be numeric, numeric text, non-numeric text, or contain an intentional unit error. Validate before arithmetic. |
 | `raw_unit` | TEXT | no | Unit as reported by the source; may itself be incorrect. |
-| `received_at` | TIMESTAMP | no | UTC source arrival timestamp. |
+| `received_at` | TIMESTAMP | no | UTC source arrival in fixture format `YYYY-MM-DDTHH:MM:SSZ`; validated for every source record. |
 
 ### 4.8b `payment_quality_review` — documented source corrections
 
