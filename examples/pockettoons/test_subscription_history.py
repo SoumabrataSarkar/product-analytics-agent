@@ -85,5 +85,14 @@ class SubscriptionHistoryTests(unittest.TestCase):
         self.db.execute("UPDATE transactions SET subscription_id='other' WHERE txn_id='charge'")
         self.assertEqual(self.count('subscription linked transaction ownership inconsistent'),1)
 
+    def test_removed_statuses_are_rejected_in_history_and_snapshot(self):
+        self.db.execute('CREATE TABLE users(acquisition_source TEXT,subscription_status TEXT)')
+        self.db.execute("INSERT INTO users VALUES('organic','active')")
+        for status in ('paused','cancelled'):
+            self.db.execute("UPDATE subscription_history SET status=? WHERE subscription_period_id='h1'",(status,))
+            self.assertEqual(self.count('subscription status period fields invalid'),1)
+            self.db.execute('UPDATE users SET subscription_status=?',(status,))
+            self.assertEqual(self.count('user value domains invalid'),1)
+
 if __name__ == '__main__':
     unittest.main()
