@@ -198,6 +198,7 @@ checks={
  'raw payment unexpected unit missing review': "SELECT count(*) FROM raw_payment_source s LEFT JOIN payment_quality_review q ON q.txn_id=s.txn_id WHERE s.raw_unit IS NOT 'USD' AND q.txn_id IS NULL",
  'raw USD discrepancies missing review evidence': "SELECT count(*) FROM raw_payment_source s JOIN transactions t ON t.txn_id=s.txn_id LEFT JOIN payment_quality_review q ON q.txn_id=s.txn_id WHERE s.raw_unit='USD' AND (usd_cents(s.raw_amount) IS NULL OR usd_cents(s.raw_amount)!=usd_cents(t.amount_usd)) AND q.txn_id IS NULL",
  'review corrections differ in exact cents': "SELECT count(*) FROM payment_quality_review q JOIN transactions t ON t.txn_id=q.txn_id WHERE usd_cents(q.corrected_amount_usd) IS NULL OR usd_cents(q.corrected_amount_usd)!=usd_cents(t.amount_usd)",
+ 'payment review UTC timestamp invalid': "SELECT count(*) FROM payment_quality_review WHERE reviewed_at IS NOT NULL AND valid_utc(reviewed_at)=0",
  'payment review evidence missing': "SELECT count(*) FROM payment_quality_review WHERE issue IS NULL OR trim(issue)='' OR reason IS NULL OR trim(reason)=''",
  'subscription history overlap': "SELECT count(*) FROM subscription_history a JOIN subscription_history b ON a.user_id=b.user_id AND a.subscription_period_id<b.subscription_period_id AND a.effective_start_at<coalesce(b.effective_end_at,'9999') AND b.effective_start_at<coalesce(a.effective_end_at,'9999')",
  'subscription status period fields invalid': "SELECT count(*) FROM subscription_history h WHERE h.status NOT IN ('active','cancel_at_period_end','expired','refunded') OR valid_utc(h.effective_start_at)=0 OR valid_utc(h.subscription_status_updated_at)=0 OR valid_utc(h.recorded_at)=0 OR (h.effective_end_at IS NOT NULL AND (valid_utc(h.effective_end_at)=0 OR h.effective_end_at<=h.effective_start_at)) OR (h.cancelled_at IS NOT NULL AND valid_utc(h.cancelled_at)=0) OR trim(h.subscription_id)='' OR trim(h.plan_code)=''",
@@ -314,7 +315,7 @@ expected={
  'subscription_history':'subscription_period_id subscription_id user_id effective_start_at subscription_status_updated_at effective_end_at status plan_code source_txn_id cancelled_at recorded_at',
  'transaction_content_attribution':'txn_content_attribution_id txn_id content_id episode_number entitlement_start_at entitlement_end_at attributed_amount_usd attribution_status refunded_at delisted_at',
  'raw_payment_source':'txn_id raw_amount raw_unit received_at',
- 'payment_quality_review':'txn_id issue corrected_amount_usd reason',
+ 'payment_quality_review':'txn_id issue corrected_amount_usd reason reviewed_at',
  'user_events':'event_id user_id anonymous_id country_at_event event_at event_timezone event_name session_id view_id txn_id subscription_period_id content_id episode_number event_properties_json ingested_at triggering_paywall_event_id',
 }
 for table,cols in expected.items():
