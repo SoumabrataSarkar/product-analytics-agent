@@ -317,6 +317,32 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 
 **Joins:** Channel/time matching to acquisition is logical, not an individual-user FK. **Use:** spend by channel and day. **Limitations/checks:** No campaign/country breakdown; real sources require their actual reporting timezone to be established. Joining one spend row to many users repeats spend. The checker validates required fields, UTC calendar date and load timestamp, finite non-negative numeric spend, and non-negative integer impression and click counts. Clicks may exceed impressions; their relationship depends on the source definitions.
 
+**Daily spend and signup comparison:** Aggregate spend and signups independently to UTC day and channel before joining. signup_date is the signup day and acquisition_source is the recorded first-touch source; neither establishes that spend on that day caused a signup. In this fixture the paid channel names align; elsewhere use an explicit verified mapping. Include unmatched channel-days and keep unknown acquisition sources separate. A missing spend or signup aggregate is NULL, not automatically zero; investigate coverage before treating it as zero. Do not join raw spend to individual users and sum the repeated values.
+
+```sql
+WITH daily_spend AS (
+  SELECT date, channel, SUM(spend_usd) AS spend_usd
+  FROM marketing_spend
+  GROUP BY date, channel
+), daily_signups AS (
+  SELECT signup_date AS date, acquisition_source AS channel,
+         COUNT(*) AS signup_count
+  FROM users
+  GROUP BY signup_date, acquisition_source
+), day_channels AS (
+  SELECT date, channel FROM daily_spend
+  UNION
+  SELECT date, channel FROM daily_signups
+)
+SELECT k.date, k.channel, s.spend_usd, u.signup_count
+FROM day_channels AS k
+LEFT JOIN daily_spend AS s ON s.date = k.date AND s.channel = k.channel
+LEFT JOIN daily_signups AS u ON u.date = k.date AND u.channel = k.channel
+ORDER BY k.date, k.channel;
+```
+
+This comparison does not identify an individual ad exposure or establish campaign-level attribution. Any cost-per-signup calculation requires an explicitly defined metric and its attribution and coverage caveats.
+
 ## 9. anonymous_identities
 
 **Purpose:** Pseudonymous browser/installation identities. **Grain/key:** One identity per anonymous_id. **Time:** created_at and retired_at?.
