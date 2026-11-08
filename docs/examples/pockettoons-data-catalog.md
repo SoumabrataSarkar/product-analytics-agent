@@ -353,7 +353,7 @@ This comparison does not identify an individual ad exposure or establish campaig
 
 ## 10. identity_links
 
-**Purpose:** Observed login/signup connection between identity and account in a session. **Grain/key:** One link per identity_link_id. **Time:** linked_at.
+**Purpose:** Observed login/signup connection between identity and account in a session. **Grain/key:** One link per identity_link_id. **Time:** linked_at is the required UTC login/signup timestamp in fixture format YYYY-MM-DDTHH:MM:SSZ; the checker validates it.
 
 **Columns:** identity_link_id — ID; anonymous_id — installation identity; user_id — linked account; session_id — session; linked_at — login/signup time; link_method — login or signup; the checker flags other or missing values.
 
