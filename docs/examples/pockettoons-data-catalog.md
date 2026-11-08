@@ -21,7 +21,7 @@ All tables below exist in newly generated fixtures. Logical Bronze/Silver/Gold a
 
 **Columns:** user_id — opaque user ID; signup_date — derived date; signup_at — account-creation timestamp; country — current country or unknown; country_origin? — signup country, not nationality; country_current? — current profile country; acquisition_source — first-touch source, including unknown for missing attribution; subscription_status — snapshot status; subscription_start? and subscription_end? — current/latest period boundaries; created_at and updated_at — source-profile creation and latest update times, not ingestion times.
 
-**Values/nulls:** Model acquisition values: organic, paid_search, paid_social, creator, referral, other, unknown. Subscription values: never_subscribed, active, cancel_at_period_end, expired, refunded, paused. A never-subscribed user has never_subscribed and NULL start/end. NULL country means unknown; NULL subscription boundary means not applicable or unavailable.
+**Values/nulls:** Model acquisition values: organic, paid_search, paid_social, creator, referral, other, unknown. Subscription values: never_subscribed, active, cancel_at_period_end, expired, refunded. A never-subscribed user has never_subscribed and NULL start/end. NULL country means unknown; NULL subscription boundary means not applicable or unavailable.
 
 **Joins:** user_id is referenced by sessions, content_views, transactions, subscription_history, identity_links and user_events; one user can have many children. A logical marketing-channel match is not a foreign key. **Use:** signups by acquisition source; report unknown.
 
@@ -342,13 +342,15 @@ The checker validates required IDs/columns, allowed type/subtype/method/status c
 | effective_start_at | TEXT | No | UTC inclusive status-interval start. |
 | effective_end_at | TEXT | Yes | UTC exclusive status-interval end; NULL for an open interval. |
 | subscription_status_updated_at | TEXT | No | UTC effective time of a status update; for a status change the model aligns this with its interval start. Semantics for a renewal that preserves the same status need clarification. |
-| status | TEXT | No | active, cancel_at_period_end, cancelled, expired, paused or refunded. The fixture contains active, cancel_at_period_end, expired and refunded. |
+| status | TEXT | No | active, cancel_at_period_end, expired or refunded. |
 | plan_code | TEXT | No | Plan identifier; the current fixture uses monthly_9_99. |
 | source_txn_id | TEXT | Yes | Related charge or refund where applicable. NULL when no payment record is linked to this status interval. |
 | cancelled_at | TEXT | Yes | UTC cancellation-request time when applicable; not necessarily access-end time. |
 | recorded_at | TEXT | No | UTC time the interval was recorded; it is not a complete versioned audit history. |
 
-**Access and status:** active and cancel_at_period_end grant subscription access for the effective interval. A cancellation-at-period-end stops renewal but preserves paid access until the interval's end. expired and refunded are non-access states. The precise cancelled and paused transitions are not fully defined by the fixture. A never-subscribed user has no prior subscription history and an explicit never_subscribed value in the user snapshot; a missing historical interval after subscription is a data gap, not proof of never-subscribed status.
+**Access and status:** active and cancel_at_period_end grant subscription access for the effective interval. A cancellation-at-period-end stops renewal but preserves paid access until the interval's end. expired and refunded are non-access states. Cancellation at period end means turning off the next automatic renewal while retaining access through the existing paid period. A never-subscribed user has no prior subscription history and an explicit never_subscribed value in the user snapshot; a missing historical interval after subscription is a data gap, not proof of never-subscribed status.
+
+**Cancellation example:** A user pays for 1 October 10:00 through 1 November 10:00 UTC and cancels renewal on 10 October. Status changes from active to cancel_at_period_end on 10 October, but access continues until 1 November 10:00. If no new entitlement begins, status then becomes expired. Cancellation is not a refund and does not itself return the payment.
 
 **Joins and fanout:** user_id → users, and nullable source_txn_id → transactions. A transaction source must agree with the period's user and logical subscription; check its payment_status_history for successful-payment timing. For a historical view or event, match user_id plus effective_start_at <= event time < effective_end_at, treating a NULL end as open. Separately aggregate payments, views and periods before joining at user grain. Do not sum transaction amounts after joining them to multiple status intervals. users.subscription_* is a snapshot at dataset_metadata.users_snapshot_at, not a substitute for event-time history.
 
