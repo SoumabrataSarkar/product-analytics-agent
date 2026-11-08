@@ -357,7 +357,7 @@ This comparison does not identify an individual ad exposure or establish campaig
 
 **Columns:** identity_link_id — ID; anonymous_id — installation identity; user_id — linked account; session_id — session; linked_at — login/signup time; link_method — login or signup.
 
-**Joins:** Required FKs to identity, user and session. **Use:** resolve eligible pre-login browsing in that same session. **Limitations/checks:** Do not claim other sessions or ambiguous shared-device behavior. Checker tests preceding link for views; propose conflicting-link and resolution tests.
+**Joins:** Required FKs to identity, user and session. **Use:** resolve eligible pre-login browsing in that same session while retaining the original anonymous identity and raw NULL user ID. **Account switching:** If a different user logs in on the same device, start a new session without waiting for 30 minutes. The same anonymous device ID may link to different users across different sessions; a session has one user. **Limitations/checks:** Do not assign activity in other sessions to the user solely because the anonymous device ID matches. Ambiguous activity stays unresolved. The checker validates observed links against their session identity, user and time, and checks preceding links for views; it cannot detect an unrecorded account switch.
 
 ## 11. subscription_history
 
