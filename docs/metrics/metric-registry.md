@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user; `mau` is in draft. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -35,7 +35,7 @@
 
 ## Metrics
 
-### MAU — Monthly active users        id: mau   version: 1.0   status: draft
+### MAU — Monthly active users        id: mau   version: 1.0   status: approved
 
 1. **Business meaning.** How many distinct people used the product in a UTC calendar month. It answers "how many people are active in a month?", not "how many watched" (see the proposed `monthly_active_viewers`).
 
