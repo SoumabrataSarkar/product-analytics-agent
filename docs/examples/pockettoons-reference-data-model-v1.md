@@ -91,6 +91,8 @@ erDiagram
       text refund_txn_id FK
       text content_id FK
       integer episode_number FK
+      timestamp created_at
+      timestamp updated_at
     }
     CONTENT_EPISODES {
       text content_id PK,FK
@@ -391,6 +393,8 @@ For a historical status using current knowledge, select the latest event effecti
 ### 4.5b `refund_content_attribution`
 
 One row per PPV refund × episode: `refund_allocation_id` (TEXT PK), `refund_txn_id` (required FK → transactions), `content_id` and `episode_number` (required composite FK → content_episodes), `allocated_refund_usd` (required positive amount). The combination (`refund_txn_id`, `content_id`, `episode_number`) is unique. Separate refunds for the same episode and allocations of one refund to different episodes are allowed. The refund's `related_txn_id` points to the original PPV purchase; the episode must match its attribution. Allocate a single-episode refund fully to that episode. An allocation is recorded for each PPV refund transaction whether pending, succeeded, failed or voided; before success it represents the intended allocation, not a completed refund. Allocations sum to the refund transaction amount in every status. Only a succeeded refund, at its success effective time, reduces revenue or counts toward entitlement termination. Partial refunds retain that episode's entitlement; cumulative succeeded refund allocations reaching its original allocation end it at the final refund's success effective time, unless it ended earlier for another reason. Cumulative succeeded allocations cannot exceed the episode allocation or the original charge; pending and failed amounts are not added to this cap. Subscription refunds have no episode allocation. A bundle requires explicit episode allocations; the allocation method is not specified.
+
+`created_at` and `updated_at` are required UTC timestamps for allocation-record creation and its most recent update. Creation is not earlier than the linked refund transaction, and the latest update is not earlier than creation. They indicate timing but do not preserve prior values; reconstructing corrections requires a separate version history. The synthetic fixture creates each allocation at its refund transaction time and models no allocation updates, so both timestamps equal that time; these are synthetic assumptions, not observed production audit events.
 
 ### 4.6 `marketing_spend` — assignment-mandated
 
