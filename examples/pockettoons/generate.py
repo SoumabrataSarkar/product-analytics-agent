@@ -179,6 +179,8 @@ def main():
         db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],end_at,last_start[i] if i in current else cancelled.get(i),f'u{i:05}'))
     seen=set(); sessions=[]; views=[]; view_pairs=[]; events=[]; links=[]; spend=[]
     extra_sessions=[]; extra_views=[]; extra_view_pairs=[]; extra_session_ids=set()
+    episode_duration={(e[0],e[1]):e[3] for e in episodes}
+    binge_views=set()
     zones={'US':'America/New_York','BR':'America/Sao_Paulo','MX':'America/Mexico_City','PH':'Asia/Manila','ID':'Asia/Jakarta','TH':'Asia/Bangkok'}
     # Activity realism uses its own deterministic stream so the original draws, and the
     # payment, refund and conversion journeys derived from them, keep their sequence.
@@ -228,8 +230,17 @@ def main():
                     browse=activity_rng.random()<0.12
                     duration=activity_rng.randint(90,900) if browse else activity_rng.randint(1200,3000)
                     watched=None if browse else activity_rng.randint(240,600)
-                # Some playback is abandoned within the first minute.
+                # Some playback is abandoned within the first minute; some episodes are watched to the end,
+                # sometimes followed by the next episode to the end (binge).
+                cid='c01' if mi>=3 and i%2==0 else f'c{1+i%12:02}'; ep=1+(i+mi+n)%12
                 if not browse and activity_rng.random()<0.2: watched=activity_rng.randint(10,55)
+                elif not browse and activity_rng.random()<0.4:
+                    watched=episode_duration[(cid,ep)]
+                    next_ep=(ep%12)+1
+                    binge=i%2==0 and activity_rng.random()<0.5
+                    needed=60+watched+(60+(episode_duration[(cid,next_ep)] if binge else 480) if i%2==0 else 0)+60
+                    duration=max(duration,needed)
+                    if binge: binge_views.add(f'v{month}_{i:05}{"" if n==0 else f"_{n}"}')
                 second=i in second_device and n>0 and activity_rng.random()<0.55
                 aid=f'b{i:05}' if second else f'a{i:05}'
                 platform=['ios','android','web'][(i+1)%3 if second else i%3]
@@ -250,7 +261,6 @@ def main():
                     browse_at=offset(st,40)
                     events.append((f'browse_only_{sid}',uid,aid,browse_at,'episode_detail_viewed',sid,None,None,None,'c01',1,None,zones[country],country,browse_at))
                     continue
-                cid='c01' if mi>=3 and i%2==0 else f'c{1+i%12:02}'; ep=1+(i+mi+n)%12
                 vt=offset(st,60); ve=offset(vt,watched); vid=f'v{month}_{i:05}{suffix}'
                 first=int((uid,cid,ep) not in seen); seen.add((uid,cid,ep))
                 sub=bool(db.execute("SELECT 1 FROM subscription_history WHERE user_id=? AND status IN ('active','cancel_at_period_end') AND effective_start_at<=? AND effective_end_at>? LIMIT 1",(uid,vt,vt)).fetchone())
@@ -298,6 +308,7 @@ def main():
         v[0]+='_return'; v[3]=s[0]; v[7]=offset(v[7],7200); v[13]=v[14]; v[9]=min(900-v[13],draw.randint(120,300)); v[14]=v[13]+v[9]; v[8]=offset(v[7],v[9]); v[12]=round(v[9]/900,4); v[15]=0; v[16]=0; v[17]=None
         # A subscriber resume is generated only while the subscription still grants access.
         if v[11]=='sub' and not still_subscribed(v[1],v[7]): continue
+        if view[14]>=900: continue
         repeat_sessions.append(tuple(s)); repeat_views.append(tuple(v))
         repeat_links.append(('l_'+s[0],s[2],s[1],s[0],s[4],'login'))
         repeat_events.append(('e_'+s[0],s[1],s[2],s[4],'app_opened',s[0],None,None,None,None,None,None,None,s[9],s[4]))
@@ -312,7 +323,9 @@ def main():
         if int(s[1][1:])%2: continue
         draw=activity_rng if s[0] in extra_session_ids else rng
         w=list(v); w[0]+='_next'; w[5]=(v[5]%12)+1
-        w[7]=offset(v[8],60); w[9]=draw.randint(180,480); w[8]=offset(w[7],w[9])
+        w[7]=offset(v[8],60); w[9]=draw.randint(180,480)
+        if v[0] in binge_views: w[9]=episode_duration[(w[4],w[5])]
+        w[8]=offset(w[7],w[9])
         w[12]=round(w[9]/900,4); w[14]=w[9]
         if w[11]=='sub' and not still_subscribed(w[1],w[7]): continue
         w[15]=int((w[1],w[4],w[5]) not in seen); seen.add((w[1],w[4],w[5]))
@@ -485,6 +498,47 @@ def main():
     blocked=offset(st,1800); blocked_content,blocked_ep=choices[7]
     db.execute('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',
       ('event_quota_block',uid,aid,blocked,'playback_blocked',sid,None,None,None,blocked_content,blocked_ep,'{"reason":"daily_free_quota_exhausted"}',None,country,blocked))
+    # Some heavy free viewers reach the daily free limit: they watch seven more distinct free
+    # episodes of the same title in a later visit, then a ninth attempt is blocked.
+    quota_rng=random.Random(SEED+5507)
+    durations={(c,e):d for c,e,d in db.execute('SELECT content_id,episode_number,episode_duration_sec FROM content_episodes')}
+    candidates=db.execute('''SELECT v.user_id,v.anonymous_id,v.date,v.country_at_event,v.content_id,v.episode_number,v.view_ended_at
+      FROM content_views v WHERE v.view_type='free' AND v.free_quota_sequence=1 AND v.user_id<>?
+        AND NOT EXISTS(SELECT 1 FROM subscription_history h WHERE h.user_id=v.user_id)
+        AND NOT EXISTS(SELECT 1 FROM content_views w WHERE w.user_id=v.user_id AND w.date=v.date AND w.view_id<>v.view_id)
+      ORDER BY v.view_id''',(uid,)).fetchall()
+    by_month={}
+    for row in candidates: by_month.setdefault(row[2][:7],[]).append(row)
+    quota_sessions=[]; quota_links=[]; quota_events=[]; quota_views=[]
+    for month_key in sorted(by_month):
+        for n,(quid,qaid,day,country,cid,watched_ep,first_end) in enumerate(quota_rng.sample(by_month[month_key],min(150,len(by_month[month_key])))):
+            eps=[e for e in list(range(watched_ep+1,13))+list(range(1,watched_ep)) if e!=watched_ep]
+            plan=eps[:7]; blocked_ep=eps[7]
+            span=60+sum(durations[(cid,e)]+60 for e in plan)+120
+            busy=db.execute('SELECT session_started_at,session_ended_at FROM sessions WHERE user_id=? AND date=?',(quid,day)).fetchall()
+            busy+=[(a,b) for _,u,_,d,a,b,*_ in quota_sessions if u==quid and d==day]
+            start=None
+            for hour in [h for h in quota_rng.sample(range(24),24)]:
+                minute=hour*60+quota_rng.randint(0,59)
+                if minute*60+span>86340: continue
+                st=timestamp(int(day[5:7]),int(day[8:10]),minute//60,minute%60)
+                if st<=first_end or any(st<offset(b,1800) and offset(st,span)>offset(a,-1800) for a,b in busy): continue
+                start=st; break
+            if start is None: continue
+            sid=f's_qb_{day}_{n}'; end=offset(start,span); platform=['ios','android','web'][int(quid[1:])%3]
+            quota_sessions.append((sid,quid,qaid,day,start,end,end,span,platform,country))
+            quota_links.append((f'l_qb_{day}_{n}',qaid,quid,sid,start,'login'))
+            quota_events.append((f'open_qb_{day}_{n}',quid,qaid,start,'app_opened',sid,None,None,None,None,None,None,zones[country],country,start))
+            vt=offset(start,60)
+            for seq,e in enumerate(plan,start=2):
+                d=durations[(cid,e)]; ve=offset(vt,d)
+                quota_views.append((f'v_qb_{day}_{n}_{seq}',quid,qaid,sid,cid,e,day,vt,ve,d,900,'free',round(d/900,4),0,d,0,1,seq,zones[country],country))
+                vt=offset(ve,60)
+            quota_events.append((f'event_qb_block_{day}_{n}',quid,qaid,vt,'playback_blocked',sid,None,None,None,cid,blocked_ep,'{"reason":"daily_free_quota_exhausted"}',None,country,vt))
+    db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',quota_sessions)
+    db.executemany('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',quota_links)
+    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',quota_views)
+    db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',quota_events)
     # Some checkout attempts fail; they are not revenue and grant no entitlement.
     failed_txns=[]
     checkouts=db.execute("SELECT event_id,user_id,session_id,event_at,country_at_event FROM user_events WHERE event_name='checkout_started' AND event_id LIKE 'nonbuyer_checkout_%' ORDER BY event_id LIMIT 30").fetchall()
@@ -583,7 +637,8 @@ def main():
         eligible=db.execute(f'''SELECT v.view_id FROM content_views v WHERE v.view_type=? AND v.date {operator} ?
             AND (?!='free' OR v.free_quota_consuming=1)
             AND NOT EXISTS(SELECT 1 FROM content_views r WHERE r.view_id=v.view_id||'_return')
-            AND v.view_id NOT LIKE '%_return' AND v.view_id NOT LIKE 'v_quota_%'
+            AND v.view_id NOT LIKE '%_return' AND v.view_id NOT LIKE 'v_quota_%' AND v.view_id NOT LIKE 'v_qb_%'
+            AND v.watch_duration_sec<960
             ORDER BY v.view_started_at,v.view_id LIMIT 1''',(access,boundary,access)).fetchone()
         if not eligible: raise RuntimeError('missing tier-change demonstration view')
         db.execute("UPDATE content_views SET content_id='c01', episode_number=21 WHERE view_id=?",eligible)
