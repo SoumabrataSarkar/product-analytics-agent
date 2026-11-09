@@ -1,50 +1,45 @@
-# PocketToons analytics agent: write-up
+# Write-up
 
-## What I built and why
+The formatted one-page version is [`submission/write-up.pdf`](../../submission/write-up.pdf), built by [`build_write_up.py`](build_write_up.py). This file mirrors its text.
 
-An **LLM-neutral investigation framework** that a coding agent (Claude Code or Codex) runs against the SQLite database. There is no custom orchestration code: the agent's own reasoning loop is the runtime, and the project supplies what makes it reliable.
+## 01 What I built and why
 
+One investigation runs in six steps: **clarify** (metric, period, population; asks if ambiguous) → **verify the definition** (the metric exists, with its approved definition in the registry and catalog) → **route to a layer** (Gold if it fits, Silver for detail, Bronze for raw audits) → **query with evidence** (read-only, bounded, one log per query) → **test hypotheses** (up to 3 per round, 3 rounds) → **report** (pattern ≠ cause; fixed PDF template, at most 10 pages). Every run, in Claude Code or Codex, reads the same `AGENTS.md`, `SKILL.md`, data catalog and metric registry. The SQLite database holds 8 Gold tables, 10 Silver tables and 20 Bronze views, built in one transaction with 122 reconciliation checks.
 
-- **Shared knowledge:** a data catalog and a **metric registry** with approved, versioned definitions and canonical SQL, so "MAU" or "net revenue" means one thing regardless of model.
+- **Clarifies instead of assuming.** When the metric, period or meaning is open, it asks first, as it did in all four evaluation questions that needed it, and it states every assumption it keeps.
+- **Verifies the metric before computing it.** It checks that the metric exists and reads its approved, versioned definition and SQL in the metric registry, plus grains, joins and known gaps in the data catalog. Unsupported requests are declined, not improvised.
+- **Maps the question to a layer for speed.** Gold answers standard monthly questions in milliseconds and is reconciled; Silver keeps per-user and per-event detail; Bronze is used only to audit raw values.
+- **Evidence for every number.** Each query writes its SQL, layer, metric version and row count to its own log.
+- **LLM-neutral by design.** Definitions, rules and guardrails live in files, not prompts, so Claude Code and Codex behave the same and a failure becomes a rule that every later run reads. Trade-off: no UI; quality depends on the agent following the skill.
 
-- **Layered data:** 20 Bronze views, 10 Silver and 8 Gold tables built in one transaction with 122 reconciliation checks. Gold answers standard questions fast; Silver and Bronze keep the detail for investigations and audits.
+**Tools.** Claude Code (Claude Opus 5.5, medium) built the framework, ran the GM investigation and computed the answer key. Codex (GPT Terra 6.1, medium) ran 17 of 18 evaluation runs. ChatGPT (Terra 5.6, later 6.1, medium) was the independent reviewer.
 
-- **Guardrails as tools:** a read-only query tool (SQLite authorizer, row and time limits), an evidence tool that writes one log per query and never overwrites, and a fixed-template PDF generator that refuses reports over 10 pages.
+## 02 Where it breaks: before and after one improvement round
 
-- **A shared skill** (`SKILL.md`) for the method: clarify, check coverage, choose a layer, test bounded hypotheses, and separate observation from cause.
+| Failure mode | Where | Round 1 | What changed | Round 2 |
+|---|---|---|---|---|
+| Stating a cause the data can't prove; mixed comparison periods | GM report v1 (Q02) | Fail | Skill rules: pattern ≠ cause; exact periods; quantify or say "unknown" | Not seen again in 17 later runs |
+| First month used as a normal baseline (subscriber base starts at zero) | Q07 cohorts | Fail | Rule: check for a start-up period before using it as a baseline | Pass |
+| Same, in a trend description | Q11 funnel | Partial | (same rule) | Partial: rule didn't trigger |
+| Harmless registry-version warning repeated | All runs | 18 of 18 | Change verified as docs-only and recorded | 3 of 4 |
+| **Overall, 18 questions (pass / partial / fail)** | | **15 / 1 / 2** | | **16 / 1 / 1** |
 
-*Why:* definitions and guardrails live in files, not in a prompt, so they work across models, can be reviewed, and improve when a failure becomes a rule. *Trade-off:* no UI, and quality depends on the agent following the skill.
+**Hardest:** comparisons that need context the data doesn't announce, such as a start-up month. **Strongest:** ambiguity and traps. Details: [evaluation results](../evaluations/results.md).
 
-*Tools:* Claude Code (Claude Opus 5.5, medium effort) built the framework, ran the GM investigation and computed the answer key. Codex (GPT Terra 6.1, medium) ran 17 of the 18 evaluation runs, so the agent was tested in a different runtime from the one that built it. ChatGPT (Terra 5.6, later Terra 6.1, medium) acted as an independent reviewer of the GM report and the evaluation decisions.
+## 03 Running it for a 20-person product team
 
-## Where it breaks
+| Question type | Example | Time to answer (observed) |
+|---|---|---|
+| Simple | MAU by month; US subscribers | 2–3 minutes |
+| Normal | Refund impact; funnel drop-off | 5–6 minutes |
+| Complex | MAU up 20% but revenue flat: why? | 10–12 minutes, report included |
 
-18 blind scenarios scored against an answer key computed from source tables only: **15 pass, 1 partial, 2 fail** in round 1; one new rule made it **16 / 1 / 1**, with no regressions ([results](../evaluations/results.md)).
+- **Access and guardrails:** a read-only role on a warehouse replica; the query tool's limits stay on; sensitive columns kept out of the catalog (not built yet).
+- **Cost:** not measured here; log tokens per run before setting a per-question budget.
+- **Quality over time:** the 18 questions become a regression suite, rerun whenever the skill, registry or data model changes; track pass rate, clarification rate and query errors; review a weekly sample of real questions.
 
-- **Overconfidence** (GM report v1, the agent's raw output; v2 is the agent's revision after review feedback): a cause stated from an association, hypotheses rejected too firmly, mixed comparison periods. Fixed with skill rules; it didn't recur in 17 later runs.
+## 04 With more time
 
-- **Missing context the data doesn't announce:** April is a start-up month (the subscriber base starts at zero), and the agent used it as a normal baseline (Q07, Q11). A rule fixed Q07 but not Q11, where the question isn't phrased as a comparison. **This is the hardest question type.**
-
-- **Noise:** every run repeated a harmless registry-hash warning, and simple questions got 5-page reports.
-
-- **Strongest area:** ambiguity. It asked in all four scenarios that needed it, declined the unanswerable question, and caught both planted data traps.
-
-## Running it for a 20-person product team
-
-- **Access:** read-only role on a warehouse replica; the query tool's limits stay on; PII columns excluded from the catalog (not implemented yet).
-
-- **Latency (measured):** 2–5 minutes for simple questions, about 11 minutes question-to-report for the multi-step GM question; each query took under 2 seconds.
-
-- **Cost:** not measured in this project. Needs token logging per run before setting a budget per question.
-
-- **Quality over time:** keep the 18 scenarios as a regression suite, rerun on every change to the skill, registry or data model, and track pass rate, clarification rate and query errors. Sample real questions each week for human review: failure → general rule → rerun, the loop demonstrated here.
-
-- **Errors:** evidence logs make every number traceable; a failed or truncated query is reported, never treated as zero.
-
-## With more time
-
-1. Rephrase the start-up rule so it also covers trend descriptions (Q11), and verify definitions by comparing SQL rather than file hashes.
-2. Run the same questions in both runtimes to compare Claude and Codex directly, and add held-out questions.
-3. Measure tokens and cost per run; add a short-answer mode for simple questions.
-4. Rerun the GM question on the improved agent; a machine-readable catalog; a simple UI.
-
+- Make the start-up check apply whenever the first month looks unusual, not only when choosing a baseline (the remaining Q11 issue).
+- Run the same questions in both runtimes for a direct Claude vs Codex comparison; add held-out questions.
+- Measure cost per run; a short-answer mode for simple questions; a machine-readable catalog; a simple UI.
