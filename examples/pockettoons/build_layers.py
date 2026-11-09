@@ -55,6 +55,8 @@ REQUIRED_COLUMNS = {
     'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec',
                           'position_start_sec', 'position_end_sec'},
     'content_episodes': {'content_id', 'episode_number', 'episode_duration_sec'},
+    'user_events': {'event_id', 'user_id', 'event_at', 'event_name', 'session_id', 'content_id', 'episode_number',
+                    'event_properties_json', 'triggering_paywall_event_id'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
                              'effective_end_at', 'cancelled_at', 'source_txn_id', 'plan_code'},
 }
@@ -933,6 +935,107 @@ def reconcile_user_episodes(db):
                               'WHERE exception_reason IS NOT NULL GROUP BY 1').fetchall())
     return checks, {'rows': source, 'exceptions': exceptions, 'reasons': reasons}
 
+# ---------------------------------------------------------------- silver_paywall_funnel
+
+PAYWALL_PRODUCTS = ('subscription', 'ppv')
+
+PAYWALL_FUNNEL_SQL = """
+CREATE TABLE silver_paywall_funnel(
+  paywall_event_id TEXT PRIMARY KEY, event_at TEXT NOT NULL, event_month TEXT NOT NULL, session_id TEXT, user_id TEXT,
+  product TEXT, content_id TEXT, episode_number INTEGER,
+  checkouts_started INTEGER NOT NULL, first_checkout_event_id TEXT, first_checkout_at TEXT,
+  purchase_txn_id TEXT, purchased_at TEXT, purchase_revenue_cents INTEGER,
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL);
+INSERT INTO silver_paywall_funnel
+WITH paywalls AS (
+  SELECT e.event_id, e.event_at, e.session_id, COALESCE(e.user_id, r.resolved_user_id) AS user_id,
+         json_extract(e.event_properties_json, '$.product') AS product, e.content_id, e.episode_number
+  FROM user_events e LEFT JOIN silver_resolved_sessions r ON r.session_id = e.session_id
+  WHERE e.event_name = 'paywall_viewed'
+),
+checkouts AS (
+  SELECT event_id, event_at, triggering_paywall_event_id AS paywall_id,
+         ROW_NUMBER() OVER (PARTITION BY triggering_paywall_event_id ORDER BY event_at, event_id) AS n
+  FROM user_events WHERE event_name = 'checkout_started' AND triggering_paywall_event_id IS NOT NULL
+),
+purchases AS (
+  SELECT c.paywall_id, a.txn_id, a.succeeded_at, a.revenue_cents,
+         ROW_NUMBER() OVER (PARTITION BY c.paywall_id ORDER BY a.succeeded_at, a.txn_id) AS n
+  FROM checkouts c
+  JOIN transactions t ON t.checkout_event_id = c.event_id
+  JOIN silver_payment_attempts a ON a.txn_id = t.txn_id AND a.revenue_cents > 0
+),
+base AS (
+  SELECT p.*, (SELECT COUNT(*) FROM checkouts c WHERE c.paywall_id = p.event_id) AS checkout_count,
+         fc.event_id AS checkout_id, fc.event_at AS checkout_at,
+         pu.txn_id, pu.succeeded_at, pu.revenue_cents,
+         p.user_id IS NULL AS unidentified, COALESCE(p.product NOT IN PAYWALL_PRODUCTS, 1) AS bad_product,
+         COALESCE(fc.event_at < p.event_at, 0) AS checkout_first
+  FROM paywalls p
+  LEFT JOIN checkouts fc ON fc.paywall_id = p.event_id AND fc.n = 1
+  LEFT JOIN purchases pu ON pu.paywall_id = p.event_id AND pu.n = 1
+)
+SELECT event_id, event_at, substr(event_at, 1, 7), session_id, user_id, product, content_id, episode_number,
+       checkout_count, checkout_id, checkout_at, txn_id, succeeded_at, revenue_cents,
+       CASE WHEN unidentified OR bad_product OR checkout_first THEN 'suspicious_usable' ELSE 'ok' END,
+       NULLIF(rtrim((CASE WHEN unidentified THEN 'unidentified_viewer,' ELSE '' END)
+                    || (CASE WHEN bad_product THEN 'unrecognised_product,' ELSE '' END)
+                    || (CASE WHEN checkout_first THEN 'checkout_before_paywall,' ELSE '' END), ','), ''),
+       :build_id
+FROM base;
+CREATE INDEX ix_silver_paywall_funnel_time ON silver_paywall_funnel(event_at);
+CREATE INDEX ix_silver_paywall_funnel_user_time ON silver_paywall_funnel(user_id, event_at)
+""".replace('PAYWALL_PRODUCTS', "(" + ",".join(f"'{v}'" for v in PAYWALL_PRODUCTS) + ")", 1)
+
+
+def independent_paywall_recount(db):
+    """Checkouts and first valid purchase per paywall, recomputed in Python from the source."""
+    successes = {}
+    for txn_id, effective_at in db.execute("SELECT txn_id, effective_at FROM payment_status_history WHERE status='succeeded'"):
+        successes.setdefault(txn_id, []).append(effective_at)
+    charges = {}
+    for txn_id, kind, amount, checkout in db.execute(
+            'SELECT txn_id, type, amount_usd, checkout_event_id FROM transactions WHERE checkout_event_id IS NOT NULL'):
+        times = successes.get(txn_id, [])
+        cents = exact_cents(amount)
+        if kind != 'refund' and len(times) == 1 and cents is not None and cents > 0:
+            charges.setdefault(checkout, []).append((times[0], txn_id))
+    counts, purchase = {}, {}
+    for event_id, paywall in db.execute(
+            "SELECT event_id, triggering_paywall_event_id FROM user_events "
+            "WHERE event_name='checkout_started' AND triggering_paywall_event_id IS NOT NULL"):
+        counts[paywall] = counts.get(paywall, 0) + 1
+        for found in charges.get(event_id, []):
+            if paywall not in purchase or found < purchase[paywall]:
+                purchase[paywall] = found
+    return counts, {k: v[1] for k, v in purchase.items()}
+
+
+def reconcile_paywall_funnel(db):
+    checks = {}
+    source = db.execute("SELECT COUNT(*) FROM user_events WHERE event_name='paywall_viewed'").fetchone()[0]
+    checks['row_count_equals_source_paywalls'] = db.execute('SELECT COUNT(*) FROM silver_paywall_funnel').fetchone()[0] == source
+    counts, purchases = independent_paywall_recount(db)
+    silver = {k: (c, t) for k, c, t in db.execute(
+        'SELECT paywall_event_id, checkouts_started, purchase_txn_id FROM silver_paywall_funnel')}
+    checks['independent_checkout_recount'] = all(silver[k][0] == counts.get(k, 0) for k in silver) and set(counts) <= set(silver)
+    checks['independent_purchase_recount'] = {k: t for k, (_, t) in silver.items() if t is not None} == purchases
+    window = "event_at >= :coverage_start AND event_at < :coverage_end"
+    funnel = db.execute(
+        f"SELECT event_month, product, COUNT(*), SUM(checkouts_started > 0), SUM(purchase_txn_id IS NOT NULL) "
+        f"FROM silver_paywall_funnel WHERE {window} GROUP BY 1, 2 ORDER BY 1, 2", COVERAGE).fetchall()
+    checks['funnel_matches_registry_on_source'] = funnel == [
+        tuple(r[:5]) for r in db.execute(load_sql('paywall_funnel_monthly'), COVERAGE)]
+    exposure = db.execute(
+        "WITH m AS (SELECT substr(period_start, 1, 7) AS month FROM (" + load_sql('periods_month') + ")) "
+        "SELECT m.month, COUNT(DISTINCT f.user_id) FROM m LEFT JOIN silver_paywall_funnel f ON f.event_month = m.month "
+        "GROUP BY 1 ORDER BY 1", COVERAGE).fetchall()
+    checks['exposure_matches_registry_on_source'] = exposure == [
+        tuple(r[:2]) for r in db.execute(load_sql('paywall_exposure_monthly'), COVERAGE)]
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_paywall_funnel GROUP BY 1').fetchall())
+    return checks, {'rows': source, 'exceptions': exceptions}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -949,6 +1052,8 @@ SILVER = [
     ('silver_user_day_title_watch', USER_DAY_TITLE_WATCH_SQL,
      ['ix_silver_user_day_title_watch_date_title'], reconcile_user_day_title_watch),
     ('silver_user_episodes', USER_EPISODES_SQL, ['ix_silver_user_episodes_start'], reconcile_user_episodes),
+    ('silver_paywall_funnel', PAYWALL_FUNNEL_SQL,
+     ['ix_silver_paywall_funnel_time', 'ix_silver_paywall_funnel_user_time'], reconcile_paywall_funnel),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
