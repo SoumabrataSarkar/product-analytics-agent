@@ -1722,6 +1722,227 @@ def reconcile_revenue_monthly(db):
     checks['net_equals_gross_minus_refunds'] = all(v[2] == v[0] - v[1] for v in rows.values())
     return checks, {'rows': len(rows)}
 
+# ---------------------------------------------------------------- gold_funnel_monthly
+
+FUNNEL_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in ('engagement_group', 'mau')}, sort_keys=True)
+
+FUNNEL_MONTHLY_SQL = """
+CREATE TABLE gold_funnel_monthly(
+  month TEXT NOT NULL, product TEXT NOT NULL,
+  paywalls INTEGER NOT NULL, paywalls_with_checkout INTEGER NOT NULL, paywalls_with_purchase INTEGER NOT NULL,
+  paywall_to_checkout_rate REAL, checkout_to_purchase_rate REAL, paywall_to_purchase_rate REAL,
+  exposed_users INTEGER NOT NULL, mau INTEGER, exposure_rate REAL,
+  checkouts_without_paywall_link INTEGER NOT NULL, in_app_purchases INTEGER NOT NULL,
+  in_app_purchases_without_checkout_link INTEGER NOT NULL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(month, product));
+INSERT INTO gold_funnel_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+walls AS (
+  SELECT m.month, COALESCE(f.product, 'unknown') AS product, f.paywall_event_id, f.user_id,
+         f.checkouts_started > 0 AS checked_out, f.purchase_txn_id IS NOT NULL AS purchased
+  FROM months m JOIN silver_paywall_funnel f ON f.event_at >= m.period_start AND f.event_at < m.period_end
+),
+-- Checkouts without a paywall link are not in Silver (its grain is the paywall view): read the Bronze event view.
+orphan_checkouts AS (
+  SELECT m.month, COALESCE(json_extract(e.event_properties_json, '$.product'), 'unknown') AS product, COUNT(*) AS n
+  FROM months m JOIN bronze_user_events e ON e.event_name = 'checkout_started' AND e.triggering_paywall_event_id IS NULL
+   AND e.event_at >= m.period_start AND e.event_at < m.period_end
+  GROUP BY 1, 2
+),
+in_app AS (
+  SELECT m.month, a.type AS product, COUNT(*) AS n, SUM(a.checkout_event_id IS NULL) AS unlinked
+  FROM months m JOIN silver_payment_attempts a ON a.revenue_cents > 0 AND a.session_id IS NOT NULL
+   AND a.succeeded_at >= m.period_start AND a.succeeded_at < m.period_end
+  GROUP BY 1, 2
+),
+keys AS (
+  SELECT month, product FROM walls UNION SELECT month, product FROM orphan_checkouts UNION SELECT month, product FROM in_app
+  UNION SELECT month, 'all' FROM months
+),
+counts AS (
+  SELECT k.month, k.product,
+         (SELECT COUNT(*) FROM walls w WHERE w.month = k.month AND (k.product = 'all' OR w.product = k.product)) AS paywalls,
+         (SELECT COALESCE(SUM(w.checked_out), 0) FROM walls w WHERE w.month = k.month AND (k.product = 'all' OR w.product = k.product)) AS chk,
+         (SELECT COALESCE(SUM(w.purchased), 0) FROM walls w WHERE w.month = k.month AND (k.product = 'all' OR w.product = k.product)) AS buy,
+         (SELECT COUNT(DISTINCT w.user_id) FROM walls w WHERE w.month = k.month AND (k.product = 'all' OR w.product = k.product)) AS exposed,
+         (SELECT COALESCE(SUM(o.n), 0) FROM orphan_checkouts o WHERE o.month = k.month AND (k.product = 'all' OR o.product = k.product)) AS orphans,
+         (SELECT COALESCE(SUM(i.n), 0) FROM in_app i WHERE i.month = k.month AND (k.product = 'all' OR i.product = k.product)) AS in_app,
+         (SELECT COALESCE(SUM(i.unlinked), 0) FROM in_app i WHERE i.month = k.month AND (k.product = 'all' OR i.product = k.product)) AS unlinked
+  FROM keys k
+)
+SELECT c.month, c.product, c.paywalls, c.chk, c.buy, c.chk * 1.0 / NULLIF(c.paywalls, 0), c.buy * 1.0 / NULLIF(c.chk, 0),
+       c.buy * 1.0 / NULLIF(c.paywalls, 0), c.exposed,
+       CASE WHEN c.product = 'all' THEN k.mau END, CASE WHEN c.product = 'all' THEN c.exposed * 1.0 / NULLIF(k.mau, 0) END,
+       c.orphans, c.in_app, c.unlinked, :funnel_definitions, :build_id
+FROM counts c JOIN gold_kpi_monthly k ON k.month = c.month
+"""
+
+
+def reconcile_funnel_monthly(db):
+    checks = {}
+    rows = {(m, p): r for m, p, *r in db.execute(
+        'SELECT month, product, paywalls, paywalls_with_checkout, paywalls_with_purchase, exposed_users, mau, '
+        'checkouts_without_paywall_link, in_app_purchases, in_app_purchases_without_checkout_link FROM gold_funnel_monthly')}
+    registry = {(m, p if p is not None else 'unknown'): (a, b, c) for m, p, a, b, c, *_ in
+                db.execute(load_sql('paywall_funnel_monthly'), COVERAGE)}
+    checks['funnel_matches_registry'] = {k: tuple(v[:3]) for k, v in rows.items()
+                                         if k[1] != 'all' and v[0]} == registry
+    exposure = {m: (e, n) for m, e, n, _ in db.execute(load_sql('paywall_exposure_monthly'), COVERAGE)}
+    checks['exposure_matches_registry'] = all(
+        (rows[(m, 'all')][3], rows[(m, 'all')][4]) == v for m, v in exposure.items())
+    products = {}
+    for (m, p), v in rows.items():
+        if p != 'all':
+            products[m] = tuple(a + b for a, b in zip(products.get(m, (0,) * 3 + (0,) * 3), v[:3] + v[5:8]))
+    checks['products_add_to_all'] = all(products.get(m, (0,) * 6) == tuple(v[:3] + v[5:8])
+                                        for (m, p), v in rows.items() if p == 'all')
+    orphans = db.execute("SELECT COUNT(*) FROM user_events WHERE event_name='checkout_started' "
+                         "AND triggering_paywall_event_id IS NULL AND event_at >= :coverage_start "
+                         "AND event_at < :coverage_end", COVERAGE).fetchone()[0]
+    checks['unlinked_checkouts_equal_source'] = sum(v[5] for (m, p), v in rows.items() if p == 'all') == orphans
+    return checks, {'rows': len(rows)}
+
+# ---------------------------------------------------------------- gold_content_monthly
+
+CONTENT_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in ('engagement_group',)}, sort_keys=True)
+
+CONTENT_MONTHLY_SQL = """
+CREATE TABLE gold_content_monthly(
+  month TEXT NOT NULL, content_id TEXT NOT NULL, viewers INTEGER NOT NULL, views INTEGER NOT NULL,
+  watch_seconds REAL NOT NULL, watch_hours REAL NOT NULL,
+  user_episodes_started INTEGER NOT NULL, user_episodes_completed INTEGER NOT NULL, episode_completion_rate REAL,
+  completed_with_next_episode INTEGER NOT NULL, continued INTEGER NOT NULL, series_continuation_rate REAL,
+  free_viewer_days INTEGER, quota_hit_days INTEGER, free_quota_hit_rate REAL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(month, content_id));
+INSERT INTO gold_content_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+watch AS (
+  SELECT m.month, t.content_id, t.user_id, t.views_started, t.watch_seconds
+  FROM months m JOIN silver_user_day_title_watch t ON t.activity_month = m.month
+),
+episodes AS (
+  SELECT m.month, e.content_id, e.covered_sec >= 0.9 * e.episode_duration_sec AS completed, e.has_next_episode,
+         e.started_next_episode_in_window
+  FROM months m JOIN silver_user_episodes e ON e.first_start_at >= m.period_start AND e.first_start_at < m.period_end
+   AND e.window_complete = 1 AND e.episode_duration_sec IS NOT NULL
+),
+quota AS (
+  SELECT activity_month AS month, COUNT(*) AS free_days, SUM(free_quota_slots_used = 8) AS hits
+  FROM silver_user_day_activity WHERE free_quota_slots_used > 0 GROUP BY 1
+),
+by_title_watch AS (
+  SELECT month, content_id, COUNT(DISTINCT CASE WHEN views_started > 0 THEN user_id END) AS viewers,
+         SUM(views_started) AS views, SUM(watch_seconds) AS seconds FROM watch GROUP BY 1, 2
+  UNION ALL
+  SELECT month, 'all', COUNT(DISTINCT CASE WHEN views_started > 0 THEN user_id END), SUM(views_started), SUM(watch_seconds)
+  FROM watch GROUP BY 1
+),
+by_title_episodes AS (
+  SELECT month, content_id, COUNT(*) AS started, SUM(completed) AS completed,
+         SUM(completed AND has_next_episode = 1) AS with_next,
+         SUM(CASE WHEN completed AND has_next_episode = 1 THEN started_next_episode_in_window ELSE 0 END) AS continued
+  FROM episodes GROUP BY 1, 2
+  UNION ALL
+  SELECT month, 'all', COUNT(*), SUM(completed), SUM(completed AND has_next_episode = 1),
+         SUM(CASE WHEN completed AND has_next_episode = 1 THEN started_next_episode_in_window ELSE 0 END)
+  FROM episodes GROUP BY 1
+),
+keys AS (SELECT month, content_id FROM by_title_watch UNION SELECT month, content_id FROM by_title_episodes
+         UNION SELECT month, 'all' FROM months),
+counts AS (
+  SELECT k.month, k.content_id, COALESCE(w.viewers, 0) AS viewers, COALESCE(w.views, 0) AS views,
+         COALESCE(w.seconds, 0.0) AS seconds, COALESCE(e.started, 0) AS started, COALESCE(e.completed, 0) AS completed,
+         COALESCE(e.with_next, 0) AS with_next, COALESCE(e.continued, 0) AS continued
+  FROM keys k
+  LEFT JOIN by_title_watch w ON w.month = k.month AND w.content_id = k.content_id
+  LEFT JOIN by_title_episodes e ON e.month = k.month AND e.content_id = k.content_id
+)
+SELECT c.month, c.content_id, c.viewers, c.views, c.seconds, c.seconds / 3600.0,
+       c.started, c.completed, c.completed * 1.0 / NULLIF(c.started, 0),
+       c.with_next, c.continued, c.continued * 1.0 / NULLIF(c.with_next, 0),
+       CASE WHEN c.content_id = 'all' THEN COALESCE(q.free_days, 0) END,
+       CASE WHEN c.content_id = 'all' THEN COALESCE(q.hits, 0) END,
+       CASE WHEN c.content_id = 'all' THEN q.hits * 1.0 / NULLIF(q.free_days, 0) END,
+       :content_definitions, :build_id
+FROM counts c LEFT JOIN quota q ON q.month = c.month
+"""
+
+
+def reconcile_content_monthly(db):
+    checks = {}
+    rows = {(m, c): r for m, c, *r in db.execute(
+        'SELECT month, content_id, viewers, views, watch_seconds, user_episodes_started, user_episodes_completed, '
+        'completed_with_next_episode, continued, free_viewer_days, quota_hit_days FROM gold_content_monthly')}
+    alls = {m: v for (m, c), v in rows.items() if c == 'all'}
+    reach = {(m, c): n for m, c, n in db.execute(load_sql('title_reach_monthly'), COVERAGE)}
+    checks['title_reach_matches_registry'] = {k: v[0] for k, v in rows.items() if k[1] != 'all' and v[0]} == reach
+    views = {m: (v, u) for m, v, u, _ in db.execute(load_sql('views_per_viewer_monthly'), COVERAGE)}
+    checks['views_and_viewers_match_registry'] = all((alls[m][1], alls[m][0]) == v for m, v in views.items())
+    watch = {m: s for m, s, *_ in db.execute(load_sql('watch_time_monthly'), COVERAGE)}
+    checks['watch_time_matches_registry'] = all(abs(alls[m][2] - s) <= 1e-6 * max(1, s) for m, s in watch.items())
+    completion = {m: (s, c) for m, s, c, _ in db.execute(load_sql('episode_completion_monthly'), COVERAGE)}
+    checks['completion_matches_registry'] = all(tuple(alls[m][3:5]) == v for m, v in completion.items())
+    continuation = {m: (w, c) for m, w, c, _ in db.execute(load_sql('series_continuation_monthly'), COVERAGE)}
+    checks['continuation_matches_registry'] = all(tuple(alls[m][5:7]) == v for m, v in continuation.items())
+    quota = {m: (d, h) for m, d, h, _ in db.execute(load_sql('free_quota_hit_monthly'), COVERAGE)}
+    checks['free_quota_matches_registry'] = all(tuple(alls[m][7:9]) == v for m, v in quota.items())
+    titles = {}
+    for (m, c), v in rows.items():
+        if c != 'all':
+            titles[m] = [a + b for a, b in zip(titles.get(m, [0] * 6), v[1:7])]
+    checks['titles_add_to_all'] = all(
+        abs(titles.get(m, [0] * 6)[1] - v[2]) <= 1e-6 * max(1, v[2]) and
+        [titles.get(m, [0] * 6)[0]] + titles.get(m, [0] * 6)[2:] == [v[1]] + list(v[3:7]) for m, v in alls.items())
+    checks['quota_only_on_all_rows'] = all((v[7] is None) == (c != 'all') for (m, c), v in rows.items())
+    return checks, {'rows': len(rows)}
+
+# ---------------------------------------------------------------- gold_marketing_monthly
+
+MARKETING_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in ('supporting_metrics',)}, sort_keys=True)
+
+MARKETING_MONTHLY_SQL = """
+CREATE TABLE gold_marketing_monthly(
+  month TEXT NOT NULL, channel TEXT NOT NULL, spend_days INTEGER NOT NULL, excluded_spend_days INTEGER NOT NULL,
+  spend_cents INTEGER, impressions INTEGER, clicks INTEGER, ctr REAL, cpc_usd REAL,
+  signups INTEGER NOT NULL, new_paying_users INTEGER NOT NULL, cost_per_signup_usd REAL, cac_usd REAL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(month, channel));
+INSERT INTO gold_marketing_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+agg AS (
+  SELECT d.month, d.channel, SUM(d.has_spend_row) AS spend_days, SUM(d.exception_status = 'excluded') AS excluded_days,
+         CASE WHEN SUM(d.has_spend_row) > 0 THEN SUM(d.spend_cents) END AS spend,
+         CASE WHEN SUM(d.has_spend_row) > 0 THEN SUM(d.impressions) END AS impressions,
+         CASE WHEN SUM(d.has_spend_row) > 0 THEN SUM(d.clicks) END AS clicks,
+         SUM(d.signups) AS signups, SUM(d.new_paying_users) AS payers
+  FROM months m JOIN silver_marketing_daily d ON d.month = m.month
+  GROUP BY 1, 2
+)
+SELECT month, channel, spend_days, excluded_days, spend, impressions, clicks, clicks * 1.0 / NULLIF(impressions, 0),
+       CASE WHEN excluded_days = 0 THEN spend / 100.0 / NULLIF(clicks, 0) END, signups, payers,
+       CASE WHEN excluded_days = 0 THEN spend / 100.0 / NULLIF(signups, 0) END,
+       CASE WHEN excluded_days = 0 THEN spend / 100.0 / NULLIF(payers, 0) END, :marketing_definitions, :build_id
+FROM agg
+"""
+
+
+def reconcile_marketing_monthly(db):
+    checks = {}
+    rows = {(m, c): r for m, c, *r in db.execute(
+        'SELECT month, channel, spend_cents, impressions, clicks, signups, new_paying_users, excluded_spend_days '
+        'FROM gold_marketing_monthly')}
+    ctr = {(m, c): (k, i) for m, c, k, i, _ in db.execute(load_sql('marketing_ctr_monthly'), COVERAGE) if c != 'all'}
+    checks['ctr_matches_registry'] = {k: (v[2], v[1]) for k, v in rows.items() if v[1] is not None} == ctr
+    efficiency = {(m, c): (s, k, g, p) for m, c, s, k, g, p, *_ in db.execute(load_sql('marketing_efficiency_monthly'), COVERAGE)}
+    checks['efficiency_matches_registry'] = all(
+        (rows[k][2], rows[k][3], rows[k][4]) == v[1:] and (rows[k][0] == v[0] or rows[k][5] > 0)
+        for k, v in efficiency.items())
+    kpi = dict(db.execute('SELECT month, signups FROM gold_kpi_monthly'))
+    totals = {}
+    for (m, _), v in rows.items():
+        totals[m] = totals.get(m, 0) + v[3]
+    checks['channel_signups_add_to_kpi'] = all(totals.get(m, 0) == n for m, n in kpi.items())
+    return checks, {'rows': len(rows)}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -1753,12 +1974,16 @@ GOLD = [
     ('gold_growth_accounting_monthly', GROWTH_ACCOUNTING_SQL, [], reconcile_growth_accounting),
     ('gold_cohorts', COHORTS_SQL, [], reconcile_cohorts),
     ('gold_revenue_monthly', REVENUE_MONTHLY_SQL, [], reconcile_revenue_monthly),
+    ('gold_funnel_monthly', FUNNEL_MONTHLY_SQL, [], reconcile_funnel_monthly),
+    ('gold_content_monthly', CONTENT_MONTHLY_SQL, [], reconcile_content_monthly),
+    ('gold_marketing_monthly', MARKETING_MONTHLY_SQL, [], reconcile_marketing_monthly),
 ]
 
 # Named parameters available to every layer script, besides :build_id and the coverage window.
 SCRIPT_PARAMS = {'kpi_definitions': KPI_DEFINITIONS, 'segment_definitions': SEGMENT_DEFINITIONS,
                  'growth_definitions': GROWTH_DEFINITIONS, 'cohort_definitions': COHORT_DEFINITIONS,
-                 'revenue_definitions': REVENUE_DEFINITIONS}
+                 'revenue_definitions': REVENUE_DEFINITIONS, 'funnel_definitions': FUNNEL_DEFINITIONS,
+                 'content_definitions': CONTENT_DEFINITIONS, 'marketing_definitions': MARKETING_DEFINITIONS}
 
 # Objects owned by this builder. Only these are dropped and recreated.
 LAYERS = SILVER + GOLD
