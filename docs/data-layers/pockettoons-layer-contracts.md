@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch` and `silver_user_episodes` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes` and `silver_paywall_funnel` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -162,3 +162,20 @@
 | Does not support | Watch time (`silver_user_day_title_watch`); completion for a later rewatch window (only the first 7 days are measured) |
 | Reconciliation | Rows equal distinct user-episodes in `content_views`; an independent Python interval merge reproduces `covered_sec` for every row; monthly completion equals `episode_completion_monthly` and continuation equals `series_continuation_monthly` on the source |
 | Tests | Completed episode with the next started, rewind overlap, view after the window, no segments, last episode, window past the coverage end, episode not in the catalog, coverage longer than the episode |
+
+## silver_paywall_funnel
+
+| Part | Contract |
+|---|---|
+| Purpose | Paywall → checkout → purchase conversion and paywall exposure |
+| Grain | One row per `paywall_viewed` event |
+| Key and indexes | `paywall_event_id` primary key; indexes on `event_at` and (`user_id`, `event_at`) |
+| Columns | `paywall_event_id`; `event_at`; `event_month`; `session_id`; `user_id` (the event's user, else the resolved session user); `product` (from `event_properties_json`); `content_id`; `episode_number`; `checkouts_started`; `first_checkout_event_id`; `first_checkout_at`; `purchase_txn_id`; `purchased_at`; `purchase_revenue_cents`; `exception_status`; `exception_reason`; `build_id` |
+| Rules | A checkout belongs to the paywall named in its `triggering_paywall_event_id`. A paywall is purchased when any of its checkouts has a transaction with positive `revenue_cents` in `silver_payment_attempts` (a successful, valid, non-refund charge); the earliest such charge is stored. A purchase is credited only through that link: no time-window attribution. A later refund does not remove the purchase. |
+| Time | UTC; month by `event_at` |
+| Lineage | `user_events` (paywalls and checkouts); `transactions.checkout_event_id`; `silver_payment_attempts`; `silver_resolved_sessions` |
+| Exceptions | `suspicious_usable` with reasons `unidentified_viewer`, `unrecognised_product` or `checkout_before_paywall` |
+| Supports | Paywall-to-checkout, checkout-to-purchase and paywall-to-purchase rates by product, title or episode; paywall exposure rate; revenue from paywall purchases |
+| Does not support | Purchases without a checkout link; marketing attribution (`silver_marketing_daily`, planned) |
+| Reconciliation | Rows equal source paywall views; an independent Python recount reproduces checkouts and the first valid purchase per paywall; monthly paywalls, checkouts and purchases by product equal `paywall_funnel_monthly` and exposed users equal `paywall_exposure_monthly` on the source |
+| Tests | Paywall with a purchase and a failed retry, viewer from the resolved session, unidentified viewer, unrecognised product, checkout before the paywall, non-paywall events excluded |
