@@ -437,6 +437,12 @@ else:
     conversion_ok=registry_cohorts=={name:(users,payers) for name,users,payers in cohorts}
     print(('PASS' if conversion_ok else 'FAIL'),'registry 30-day subscription conversion reconciles to cohort comparison')
     failed+=not conversion_ok
+payers_ok=[(m,n) for m,n,_,_ in db.execute(load_sql('paying_users_monthly'),coverage)]==[(m,n) for m,_,n,_ in db.execute(load_sql('arppu'),coverage)]
+snapshots=db.execute(load_sql('active_subscribers_monthly'),coverage).fetchall()
+churn_rows=db.execute(load_sql('subscriber_churn_monthly'),coverage).fetchall()
+subscribers_ok=payers_ok and [r[1] for r in snapshots]==[r[1] for r in churn_rows] and all(snapshots[k][2]==snapshots[k+1][1] for k in range(len(snapshots)-1))
+print(('PASS' if subscribers_ok else 'FAIL'),'paying users and subscriber snapshots reconcile across registry metrics')
+failed+=not subscribers_ok
 watch_months=db.execute(load_sql('watch_time_monthly'),coverage).fetchall()
 segment_total=db.execute('SELECT sum(watch_duration_sec) FROM playback_segments WHERE segment_started_at>=? AND segment_ended_at<=?',(coverage['coverage_start'],coverage['coverage_end'])).fetchone()[0]
 watch_ok=len(watch_months)==6 and abs(sum(w[1] for w in watch_months)-segment_total)<0.01
