@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel` and `silver_marketing_daily` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete; Gold is not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -196,3 +196,19 @@
 | Does not support | Click- or campaign-level attribution; cohort CAC or payback by signup month (use `silver_user_profile` with spend) |
 | Reconciliation | Spend rows equal the source; an independent Decimal recount reproduces total spend cents; signups and new payers add up to `silver_user_profile`; monthly clicks and impressions equal `marketing_ctr_monthly`; monthly spend, clicks, signups and new paying users equal `marketing_efficiency_monthly` on the source (where a channel-month has invalid spend, the registry rounds it and only spend is not compared) |
 | Tests | Valid spend with a signup, invalid spend kept blank and excluded, clicks above impressions, unpaid channel without spend, first payment on another channel, NULL source as `unknown` |
+
+## silver_quality_exceptions
+
+| Part | Contract |
+|---|---|
+| Purpose | One place to answer "what is wrong with the data, and how much?" and to check before trusting a figure |
+| Grain | One row per flagged Silver row and exception reason; a row with two reasons appears twice |
+| Key and indexes | (`table_name`, `row_key`, `exception_reason`) primary key; index on (`exception_reason`, `table_name`) |
+| Columns | `table_name`; `row_key` (the row's primary key as text, parts joined with `|`); `exception_status` (`excluded` or `suspicious_usable`); `exception_reason`; `build_id` |
+| Rules | Built last, from every Silver table with exception columns. From `silver_resolved_sessions`, ambiguous identity links (`ambiguous_identity_link`) and links naming a different user (`link_user_mismatch`) are listed as `suspicious_usable`; anonymous sessions without a link are normal browsing and are not listed. A flagged row without a reason is listed as `unspecified`. |
+| Lineage | All other Silver tables |
+| Supports | Exception counts by table, reason and status; the rows behind any flagged figure, by joining `row_key` back to its table |
+| Does not support | Faults no Silver rule detects |
+| Reconciliation | Counts per table, status and reason equal each table's own flagged rows split by reason; every flagged row is listed exactly once per reason |
+| Tests | Multiple reasons split into rows, composite keys, session-resolution problems, anonymous sessions excluded, `excluded` status carried |
+| Current data | The PocketToons source currently has no flagged rows. A small, documented set of realistic faults is planned for the final rebuild. |
