@@ -14,6 +14,8 @@ This file is the common project entrypoint. Architecture v1.0 is a **frozen desi
 10. Do not publicly expose confidential assignment text, proprietary data or keys.
 11. Documentation must state final requirements, decisions, results and limitations directly and consistently. Do not narrate the sequence of edits, add unsolicited interview coaching, or contrast obsolete drafts with the current design. For issue logs, use a factual issue → analytical impact → resolution/limitation format. Keep established rules in the relevant model or contract so they are applied to future generation.
 
+For user-authorized product analytics investigations, read and follow the shared [product analytics investigation skill](skills/product-analytics-investigation/SKILL.md). The skill is common to Codex and Claude Code; its first implementation has not yet been independently evaluated end to end.
+
 ## Current repository layout and scope
 
 - `docs/project-status.md` records project-wide progress and links to contribution history.
