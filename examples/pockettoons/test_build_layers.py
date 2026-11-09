@@ -441,6 +441,23 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(len(gold), 13)
         self.assertTrue(all(gold.values()))
 
+    def test_gold_cohorts_and_revenue_monthly(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        cohorts = {r[:2]: r[2:] for r in self.query('''SELECT signup_month, months_since_signup, cohort_users,
+            retained_users, activation_eligible, activated_users FROM gold_cohorts''')}
+        self.assertEqual(cohorts[('2026-04', 0)][:2], (6, None))       # month 0 carries cohort values, no retention
+        self.assertEqual(cohorts[('2026-04', 0)][2:], cohorts[('2026-04', 2)][2:])   # cohort values repeat per row
+        revenue = {r[:2]: r[2:] for r in self.query('''SELECT month, revenue_type, gross_charges_cents, refunds_cents,
+            net_revenue_cents, attempts, failed_attempts FROM gold_revenue_monthly''')}
+        self.assertEqual(len(revenue), 18)                             # 6 months x 3 types, empty types included
+        self.assertEqual(revenue[('2026-04', 'unattributed')][:3], (0, 199 + 199, -398))   # two unattributed refunds
+        self.assertEqual(revenue[('2026-04', 'ppv')][:3], (199, 0, 199))   # p1 only: t_late books in May, invalid excluded
+        checks = json.loads(result['reconciliation'])['checks']
+        gold = {k: v for k, v in checks.items() if k.startswith(('gold_cohorts', 'gold_revenue_monthly'))}
+        self.assertEqual(len(gold), 11)
+        self.assertTrue(all(gold.values()))
+
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
         build_layers.build(self.path)
