@@ -7,9 +7,8 @@ query and evidence tools, and produces an evidence-backed answer.
 
 The shared investigation skill is in
 [`skills/product-analytics-investigation/SKILL.md`](../skills/product-analytics-investigation/SKILL.md).
-Its instructions and query command have targeted tests, but they have not yet
-been independently evaluated in a full investigation. The repository does
-not yet provide a verified turnkey investigation experience.
+The skill and query commands have targeted tests. One independent-mode
+investigation has been reviewed; broader evaluation is underway.
 
 ## Existing tools
 
@@ -20,9 +19,6 @@ not yet provide a verified turnkey investigation experience.
   it is not automatically verified.
 - `evidence_query.py` invokes both tools for a single query from JSON on
   standard input and creates a new local evidence log for that query.
-- `investigation.py` is an experimental, model-neutral Python loop exercised
-  with scripted callbacks in tests. It is not the Codex or Claude Code skill,
-  and it does not provide a ready-to-use model connection.
 
 Run the tests from the repository root:
 
