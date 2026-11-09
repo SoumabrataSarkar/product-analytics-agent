@@ -1,8 +1,6 @@
-# Visual architecture explorer — planned
+# Visual architecture explorer
 
-This folder will hold a browser-based, Finder/Windows Explorer-inspired view of the repository's folders and documentation.
-
-**Proposed documentation tabs:** Repository explorer; architecture/versions; Bronze–Silver–Gold data flow; Metric Registry; How RCA works; evaluations.
+`index.html` is a static, browser-based view of the project: the repository explorer, architecture and versions, the Bronze–Silver–Gold data flow, the metric registry, how an investigation works, and evaluations. It reflects the repository's documented status; it does not read the database or run the agent.
 
 **Future interactive tab:** Ask AI, inspect generated SQL and evidence, choose configured model runtime. This is **not implemented yet**. A static HTML page can visualize documents, but live database/LLM queries and private GitHub synchronization require appropriately authorized services or a trusted local backend. Never put API keys or private-repository tokens in browser assets.
 
