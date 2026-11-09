@@ -2,9 +2,32 @@
 
 **Last updated:** 2026-11-09 (Asia/Kolkata).  
 **Repository:** `SoumabrataSarkar/product-analytics-agent` (private).  
-**Current focus:** Continue the shared Metric Registry across product metrics and business questions.
+**Current focus:** Continue the PocketToons reference Metric Registry across product metrics and business questions.
 
-This is a progress and handoff record. The data catalog, reference data model and frozen architecture remain the authoritative sources for their respective contracts.
+This is the common project progress and handoff record. The frozen architecture describes the intended reusable framework; the current catalog, data model, metric definitions and executable SQL describe the **PocketToons reference dataset**. They are shared between supported agents, not automatically valid for every product or data source.
+
+## At a glance
+
+Dates use Asia/Kolkata. The user guides and approves project decisions. Where the AI model cannot be established from the available evidence, it is marked unverified.
+
+| Step | Status | In short | Contributor and date |
+|---|---|---|---|
+| Agent architecture | Design frozen | Defines the model-neutral investigation workflow and safeguards; it is not an implemented agent. | AI-assisted; model unverified. Frozen 2026-11-07. |
+| PocketToons model and synthetic data | Available | Defines and generates the example's journeys, tables and intentional source issues. | AI-assisted; per-change model attribution partly unverified. Available by 2026-11-08. |
+| PocketToons data catalog | Reviewed for this stage | Describes the example's 20 tables, relationships, checks and limitations. | User review with Codex and Claude contributions; work through 2026-11-09. See contribution record. |
+| PocketToons metric registry | In progress | Records individually approved definitions and SQL for the current example; not a universal registry. | User and Claude; verified Claude Opus 5.5 contribution on 2026-11-09. |
+| Investigation and evaluation paths | Design draft | Connects candidate business questions to investigation checks, data and safeguards. It is not a working agent or evaluation suite. | Codex, 2026-11-09. |
+| Static documentation explorer | Available as prototype | Explains the project; it does not run the agent or connect to a model. | AI-assisted; recent Codex updates on 2026-11-09. |
+| Data layers, agent and evaluation | Pending | Implement transformations, shared tools, investigation workflow and independent tests. | Not yet implemented. |
+
+The detailed record below retains the source links, known limitations and verified contribution evidence.
+
+## Scope and current file placement
+
+- **Common project:** This file, [Architecture v1](architecture/v1.md) and the architecture decision records describe project-wide status or the intended framework. An ADR is an Architecture Decision Record: a document explaining an important design choice and its trade-offs.
+- **PocketToons-specific:** The [reference data model](examples/pockettoons-reference-data-model-v1.md), [data catalog](examples/pockettoons-data-catalog.md), [metric registry](metrics/metric-registry.md) and `examples/pockettoons/` code describe or use this example's data and business decisions. The registry is shared across agent runtimes; its current SQL and approved definitions must not be assumed valid for a different product.
+- **Current placement:** These links reflect the repository as it exists. The catalog already lives under `docs/examples/`; the metric registry currently lives under `docs/metrics/` even though its current definitions use the PocketToons fixture. A future per-project organization can make that distinction more explicit. No folder migration or new paths are decided here.
+- **Authority:** The catalog and reference model govern their documented dataset; approved metric definitions are in the registry. A different dataset needs its own reviewed definitions, mappings, limitations and source contracts.
 
 ## Completed and accepted for this stage
 
@@ -16,16 +39,22 @@ This is a progress and handoff record. The data catalog, reference data model an
 6. **Marketing and identities:** Marketing uses UTC reporting days, valid non-negative spend/counts, a fanout-safe day/channel comparison and separately seeded daily variation. Shared-device account switches start new sessions; identity lifetime and observed link/session checks are documented and tested.
 7. **Static visual explorer:** `web/index.html` is a documentation prototype, not a connected AI frontend or working agent.
 
-The full fixture checker and targeted tests passed against the latest local database after the recent checks. Synthetic data does not establish causal relationships, and some edge cases are represented only in isolated tests.
+The full fixture checker and targeted tests passed on the local fixture snapshots tested during this work. The current generator may be newer than those snapshots; regenerate and validate the exact version used. Synthetic data does not establish causal relationships, and some edge cases are represented only in isolated tests.
 
 ## Pending work
 
-1. **Metric Registry — in progress.** The [registry](metrics/metric-registry.md) template, variant rule and MAU (`mau` v1.0) are approved; MAU's canonical SQL is run by the fixture checker and isolated tests. The activity family (DAU, WAU, DEU, WEU, MEU), stickiness, engagement rate and monthly growth accounting are approved. The revenue group (net, subscription and PPV net revenue, ARPU, ARPPU) is approved. Define the remaining metrics with the user one at a time. For each definition cover business meaning, population, numerator/denominator where applicable, grain, timestamps/timezone, eligible data, source tables and layers, canonical calculation/SQL, filters, nulls, payment/refund/status rules, aggregation safety, quality checks, version and caveats. Do not assume an unresolved definition.
+1. **PocketToons Metric Registry — in progress.** As recorded in this handoff, the [registry](metrics/metric-registry.md) template, variant rule and MAU (`mau` v1.0) are approved; MAU's canonical SQL is run by the fixture checker and isolated tests. The activity family (DAU, WAU, DEU, WEU, MEU), stickiness, engagement rate and monthly growth accounting are approved. The revenue group (net, subscription and PPV net revenue, ARPU, ARPPU) is approved. Check the registry itself for the latest status. Define the remaining metrics with the user one at a time. For each definition cover business meaning, population, numerator/denominator where applicable, grain, timestamps/timezone, eligible data, source tables and layers, canonical calculation/SQL, filters, nulls, payment/refund/status rules, aggregation safety, quality checks, version and caveats. Do not assume an unresolved definition.
 2. **Data layers.** Design and implement actual Bronze/Silver/Gold transformations, lineage, quality handling, refresh and reconciliations. The catalog's layer assignments are planned; the existing SQLite fixture is not proof that the full layers exist.
 3. **Shared agent tools and workflow.** Implement bounded read-only SQL access, evidence logging, layer selection, clarification handling and the shared evidence-led investigation skill.
-4. **Evaluation.** Define and run at least 15 questions, expected results, quality traps, ambiguity and failure scenarios; compare supported runtimes on a fixed dataset. Keep expected synthetic findings out of the agent's independent investigation context.
+4. **Evaluation.** The [investigation paths](evaluations/investigation-paths.md) document contains a draft decision graph and 16 scenarios. Implement and run independent evaluations, including expected results, quality traps, ambiguity and failure cases; compare supported runtimes on a fixed dataset. Keep expected synthetic findings out of the agent's independent investigation context.
 5. **Outputs and optional UI.** Implement the evidence-backed report; pursue connected web or other UI work only when requested and with a secure backend.
 6. **Catalog follow-through.** Integrate the reviewed catalog with the agent and choose a machine-readable representation if needed. Preserve documented limitations, including incomplete historical review versions, source coverage, unsupported bundle cases and attribution uncertainty.
+
+### Future idea: project-specific knowledge-base updater
+
+This is an idea for later discussion, not an implemented or approved architecture change. When connecting another data source, a future updater could inspect the available schema and ask the user about business definitions, joins, time rules, exceptions and data-quality expectations. It could then propose a project-specific catalog, metric registry and mappings for the user to review and approve.
+
+Definitions from one project should not silently overwrite or become assumptions for another. Generated changes would need validation, versioning and user approval, with access and sensitive-data safeguards. The updater's architecture and the eventual folder structure remain to be designed.
 
 The order of dependent work may be refined with the user; do not represent planned components as implemented.
 
