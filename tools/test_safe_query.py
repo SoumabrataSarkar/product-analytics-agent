@@ -24,6 +24,7 @@ class SafeQueryTests(unittest.TestCase):
         self.assertEqual(result["rows"], [("b",)])
         self.assertEqual(result["evidence"]["question"], "Example")
         self.assertEqual(result["evidence"]["snapshot_id"], "fixture-v1")
+        self.assertEqual(result["evidence"]["timeout_seconds"], 30.0)
         self.assertFalse(result["evidence"]["truncated"])
         self.assertIn("duration_ms", result["evidence"])
 
