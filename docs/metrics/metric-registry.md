@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate` and `growth_accounting_monthly`. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate` and `growth_accounting_monthly`. Draft: the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`). The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -384,6 +384,107 @@ SELECT month, new_users, retained_users, resurrected_users, churned_users,
        (new_users + resurrected_users) * 1.0 / NULLIF(churned_users, 0) AS quick_ratio
 FROM buckets
 ORDER BY period_start
+```
+
+### Revenue group: net revenue, subscription and PPV net revenue, ARPU, ARPPU        version: 1.0   status: draft
+
+| id | Name | Formula (per complete UTC month) |
+|---|---|---|
+| `net_revenue` | Net revenue | Successful subscription and PPV charges − successful refunds; reported with gross charges and refunds |
+| `subscription_net_revenue` | Subscription net revenue | `net_revenue` restricted to subscription charges and refunds of subscription charges |
+| `ppv_net_revenue` | PPV net revenue | `net_revenue` restricted to PPV charges and refunds of PPV charges |
+| `arpu` | Average revenue per user | `net_revenue` ÷ `mau` for the same month |
+| `arppu` | Average revenue per paying user | `net_revenue` ÷ paying users in the same month |
+
+1. **Business meaning.** Money the product earned in a month after refunds, how it splits between subscriptions and PPV, and how much it earned per active and per paying user.
+2. **Population.** Transactions in `transactions`. A *paying user* is a user with at least one successful subscription or PPV charge in the month, whether or not it is later refunded. ARPU uses the `mau` population.
+3. **Qualifying rule.** A transaction counts only if it has a `succeeded` event in `payment_status_history`, and it counts at that event's `effective_at`, not at creation time and not by the current `transactions.status`. Failed attempts count for nothing. Refunds are stored as positive amounts and subtracted. A refund counts in the month it succeeds, not in its original charge's month. A refund is assigned to the type of the charge it refunds through `related_txn_id`.
+4. **Formula.** Net = Σ successful charges − Σ successful refunds, computed in exact integer cents from the curated `amount_usd`. ARPU and ARPPU divide net revenue in USD by a distinct user count; a zero denominator reports NULL.
+5. **Grain and time.** Bookings basis: a payment counts in full when it succeeds; a subscription payment is not spread across the days it covers. One value per complete UTC month inside the coverage window. Quarter revenue is the sum of its three complete months.
+6. **Sources and layers.** Current fixture: `transactions`, `payment_status_history`; ARPU also uses the `mau` sources. Planned (not implemented): a Silver successful-transaction table and a Gold monthly revenue mart.
+7. **Canonical SQL.** Below. Parameters are the same coverage window as `mau`. Money columns are integer cents.
+8. **Filters and dimensions.** Revenue is additive: subscription and PPV net revenue add to net revenue, and slices by `transactions.country_at_event`, payment method or user-level fixed dimensions add to the total. A refund is sliced by its own transaction's attributes, except revenue type, which comes from the refunded charge. Per-episode PPV revenue uses the attribution tables as described in the catalog, never repeated transaction amounts.
+9. **Null, status and refund rules.** As in the qualifying rule. Raw provider amounts in `raw_payment_source` are never used; reviewed corrections are already reflected in `amount_usd`.
+10. **Aggregation safety.** Net, gross and refund amounts are additive across months and slices. ARPU and ARPPU are ratios: never sum or average them across months as if additive; a quarter value is reported only on explicit request and labelled as an average of monthly ratios.
+11. **Quality checks.** Implemented and tested: isolated tests cover success-time booking, failed and pending attempts, refunds in a later month, refund type assignment, exact cents, quarter sums, ARPU and ARPPU denominators and zero denominators; the fixture checker reconciles `net_revenue` with its independent cent calculation and the type split with the total. Existing catalog checks validate exact-cent amounts, status histories and refund linkage.
+12. **Caveats.** "Net" is net of refunds only: payment-provider fees, app-store commission and taxes are not in the data. All fixture amounts are USD without discounts. Recognised (ratable) revenue is a different metric. In the fixture no refund falls in a later month than its charge.
+
+```sql
+-- metric: succeeded_transactions
+SELECT t.txn_id, t.user_id, t.type, p.effective_at AS succeeded_at,
+       CASE WHEN t.type = 'refund' THEN o.type ELSE t.type END AS revenue_type,
+       CAST(ROUND(t.amount_usd * 100) AS INTEGER) AS amount_cents,
+       t.country_at_event
+FROM transactions t
+JOIN payment_status_history p ON p.txn_id = t.txn_id AND p.status = 'succeeded'
+LEFT JOIN transactions o ON o.txn_id = t.related_txn_id
+```
+
+```sql
+-- metric: net_revenue_monthly
+-- requires: periods=periods_month, succeeded_transactions
+SELECT p.period AS month,
+       COALESCE(SUM(CASE WHEN s.type <> 'refund' THEN s.amount_cents END), 0) AS gross_charges_cents,
+       COALESCE(SUM(CASE WHEN s.type = 'refund' THEN s.amount_cents END), 0) AS refunds_cents,
+       COALESCE(SUM(CASE WHEN s.type = 'refund' THEN -s.amount_cents ELSE s.amount_cents END), 0) AS net_revenue_cents
+FROM periods p
+LEFT JOIN succeeded_transactions s
+  ON s.succeeded_at >= p.period_start AND s.succeeded_at < p.period_end
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: net_revenue_by_type_monthly
+-- requires: periods=periods_month, succeeded_transactions
+SELECT p.period AS month, t.revenue_type,
+       COALESCE(SUM(CASE WHEN s.type <> 'refund' THEN s.amount_cents END), 0) AS gross_charges_cents,
+       COALESCE(SUM(CASE WHEN s.type = 'refund' THEN s.amount_cents END), 0) AS refunds_cents,
+       COALESCE(SUM(CASE WHEN s.type = 'refund' THEN -s.amount_cents ELSE s.amount_cents END), 0) AS net_revenue_cents
+FROM periods p
+CROSS JOIN (SELECT 'subscription' AS revenue_type UNION ALL SELECT 'ppv') t
+LEFT JOIN succeeded_transactions s
+  ON s.revenue_type = t.revenue_type
+ AND s.succeeded_at >= p.period_start AND s.succeeded_at < p.period_end
+GROUP BY p.period_start, t.revenue_type
+ORDER BY p.period_start, t.revenue_type
+```
+
+`subscription_net_revenue` and `ppv_net_revenue` are the `subscription` and `ppv` rows of `net_revenue_by_type_monthly`.
+
+```sql
+-- metric: net_revenue_quarterly
+-- requires: monthly=net_revenue_monthly
+SELECT substr(month, 1, 4) || '-Q' || ((CAST(substr(month, 6, 2) AS INTEGER) + 2) / 3) AS quarter,
+       SUM(gross_charges_cents) AS gross_charges_cents,
+       SUM(refunds_cents) AS refunds_cents,
+       SUM(net_revenue_cents) AS net_revenue_cents
+FROM monthly
+GROUP BY quarter
+HAVING COUNT(*) = 3
+ORDER BY quarter
+```
+
+```sql
+-- metric: arpu
+-- requires: revenue=net_revenue_monthly, active=mau_monthly
+SELECT r.month, r.net_revenue_cents, a.mau,
+       r.net_revenue_cents / 100.0 / NULLIF(a.mau, 0) AS arpu_usd
+FROM revenue r JOIN active a ON a.month = r.month
+ORDER BY r.month
+```
+
+```sql
+-- metric: arppu
+-- requires: periods=periods_month, succeeded_transactions, revenue=net_revenue_monthly
+SELECT r.month, r.net_revenue_cents, COUNT(DISTINCT s.user_id) AS paying_users,
+       r.net_revenue_cents / 100.0 / NULLIF(COUNT(DISTINCT s.user_id), 0) AS arppu_usd
+FROM revenue r
+JOIN periods p ON p.period = r.month
+LEFT JOIN succeeded_transactions s
+  ON s.type <> 'refund' AND s.succeeded_at >= p.period_start AND s.succeeded_at < p.period_end
+GROUP BY r.month
+ORDER BY r.month
 ```
 
 ## Proposed metrics
