@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions` and `silver_payment_attempts` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts` and `silver_subscription_access` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -72,3 +72,21 @@
 | Does not support | Raw provider values (`bronze_raw_payment_source`); entitlement and per-episode PPV revenue (attribution bridges) |
 | Reconciliation | Row count equals source transactions; outcome counts add up to the total; an independent Python `Decimal` recount of monthly charge and refund cents matches; monthly net revenue from this table equals the registry `net_revenue_monthly` on the source |
 | Tests | Valid and invalid amounts (non-exact cents, non-numeric), success later than creation, failure before a retry, double success, refund of a failed or missing charge, refund type assignment |
+
+## silver_subscription_access
+
+| Part | Contract |
+|---|---|
+| Purpose | Whether a user was a subscriber at any instant, and where each continuous run of subscriber access starts and ends |
+| Grain | One row per source subscription period, all statuses; `expired` and `refunded` periods are retained with `grants_access` 0 |
+| Key and indexes | `subscription_period_id` primary key; index on (`user_id`, `effective_start_at`) |
+| Columns | `subscription_period_id`; `subscription_id`; `user_id`; `status`; `grants_access` (1 for `active` or `cancel_at_period_end`); `effective_start_at`; `effective_end_at` (NULL is open); `cancelled_at`; `source_txn_id`; `plan_code`; `price_cents` (validated list price of the source charge; NULL when invalid or no access); `starts_access_spell`; `ends_access_spell`; `access_spell_number` (1st, 2nd … run of the user's access; NULL without access); `exception_status`; `exception_reason`; `build_id` |
+| Rules | Subscriber at instant t: an access period with `effective_start_at` ≤ t and `effective_end_at` NULL or > t (lifecycle group). Access periods that overlap or touch, where one ends exactly when the next begins, form one continuous run, so renewals and cancellation notices are not losses. |
+| Access loss | `ends_access_spell` is 1 only when a run ends at or before `dataset_metadata.users_snapshot_at`. An end after the snapshot is a scheduled end whose renewal is not yet known and is not a loss. |
+| Time | UTC; half-open periods |
+| Lineage | `subscription_history` one-to-one; source charge and list price from `transactions`; charge success from `payment_status_history`; snapshot instant from `dataset_metadata` |
+| Exceptions | `suspicious_usable` with reasons `overlapping_access`, `source_charge_not_successful` or `invalid_list_price` (several are listed comma-separated). An invalid price is excluded from MRR; the period still grants access. |
+| Supports | Subscribers at any instant, net adds, churn, MRR, cancellation-request rate, 60-day resubscription, subscriber-status slices of activity, status history |
+| Does not support | Payments (`silver_payment_attempts`) |
+| Reconciliation | Row count equals source periods; access and no-access counts add to the total; an independent Python merge of each user's access intervals reproduces run starts and known losses; subscribers at each month start equal the registry churn denominator on the source; month-end subscribers and MRR equal the registry `mrr_monthly` on the source |
+| Tests | Renewal continuity, cancellation notice, lapse and return, scheduled end after the snapshot, expired and refunded periods, overlap, unsuccessful source charge, invalid price |
