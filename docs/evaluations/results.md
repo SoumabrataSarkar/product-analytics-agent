@@ -1,6 +1,6 @@
 # Evaluation results
 
-**Status:** Complete for this stage (2026-11-09). 18 scenarios run blind, scored against an answer key written beforehand; one improvement round. Scenario definitions: [investigation-paths.md](investigation-paths.md). Method: [evaluation-process.md](evaluation-process.md).
+**Status:** Complete for this stage (2026-11-09). PDF version: [`submission/eval-results.pdf`](../../submission/eval-results.pdf), built by [`build_results_pdf.py`](build_results_pdf.py). 18 scenarios run blind, scored against an answer key written beforehand; one improvement round. Scenario definitions: [investigation-paths.md](investigation-paths.md). Method: [evaluation-process.md](evaluation-process.md).
 
 ## Summary
 
