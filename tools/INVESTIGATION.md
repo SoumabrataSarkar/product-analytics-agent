@@ -7,10 +7,8 @@ query and evidence tools, and produces an evidence-backed answer.
 
 The shared investigation skill is in
 [`skills/product-analytics-investigation/SKILL.md`](../skills/product-analytics-investigation/SKILL.md).
-Its instructions and query command have targeted tests. One independent-mode
-investigation has been reviewed; broader evaluation is still underway. The
-intended workflow uses the user's own Codex or Claude Code runtime and model;
-a separate standalone model service or custom API is not required.
+The skill and query commands have targeted tests. One independent-mode
+investigation has been reviewed; broader evaluation is underway.
 
 ## Existing tools
 
@@ -25,8 +23,6 @@ a separate standalone model service or custom API is not required.
   file with one fixed template and refuses reports over 10 pages. It needs
   `reportlab` and `matplotlib`; the format is shown in
   `docs/deliverables/report-content-example.json`.
-- `investigation.py` is experimental code exercised with scripted callbacks;
-  it is not needed for the intended Codex or Claude Code workflow.
 
 Run the tests from the repository root:
 
