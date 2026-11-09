@@ -37,7 +37,7 @@ Decide, per table, whether Bronze is a view or a copy.
 
 Never rename or alter source tables to fit the layer naming; required source tables and columns stay as they are.
 
-### 3. Write each Silver contract
+### 3. Write each Silver contract *(PocketToons: done)*
 
 Use this format for every layer table:
 
@@ -110,3 +110,5 @@ Add every layer table to the data catalog with its contract, record the build in
 | An interrupted build leaves mixed old and new layers | Queries see an inconsistent state | One transaction per build; the build record is written only on success |
 | Important local databases | A faulty build damages reviewed data | Build and verify on a copy first; keep a backup before applying |
 | Several contributors change shared definitions | Layers drift from definitions | Record definition versions in the build record; rebuild after definition changes |
+| Reconciliation can cost more than the build | Re-running registry queries or joining two large Silver tables in SQL takes minutes | Time each table's build and checks separately; compare large tables as keyed dictionaries in Python; where a registry query is too slow, check that grain with an independent recount and keep registry checks for coarser grains |
+| Clean synthetic data leaves exception paths untested | Quality rules never fire, so the agent cannot be evaluated on them | Cover every exception reason in the test fixture, and inject a small, documented set of realistic faults into the source |
