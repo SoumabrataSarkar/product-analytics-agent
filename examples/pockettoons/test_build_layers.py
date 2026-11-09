@@ -100,25 +100,36 @@ class BuilderTests(unittest.TestCase):
           date TEXT, view_started_at TEXT, view_type TEXT, is_first_view_of_episode INTEGER,
           free_quota_consuming INTEGER, free_quota_sequence INTEGER);
         CREATE TABLE playback_segments(segment_id TEXT PRIMARY KEY, view_id TEXT, segment_started_at TEXT,
-          segment_ended_at TEXT, watch_duration_sec INTEGER);
+          segment_ended_at TEXT, watch_duration_sec INTEGER, position_start_sec INTEGER, position_end_sec INTEGER);
+        CREATE TABLE content_episodes(content_id TEXT, episode_number INTEGER, episode_duration_sec INTEGER,
+          PRIMARY KEY(content_id, episode_number));
+        INSERT INTO content_episodes VALUES('c1',1,100), ('c1',2,100), ('c2',1,20),
+          ('c3',1,100), ('c3',2,100), ('c3',3,100), ('c3',4,100), ('c3',5,100), ('c3',6,100), ('c3',7,100), ('c3',8,100);
         INSERT INTO content_views VALUES
           ('v_u1','u1','c1',1,'2026-04-09','2026-04-09T23:58:00Z','free',1,1,1),
           ('v_u2','u2','c1',1,'2026-04-11','2026-04-11T10:00:00Z','free',1,1,1),
           ('v_u2b','u2','c2',1,'2026-04-11','2026-04-11T11:00:00Z','sub',1,0,NULL),
           ('v_u2c','u2','c1',2,'2026-04-11','2026-04-11T12:00:00Z','sub',1,0,NULL),
           ('v_u2d','u2','c1',2,'2026-04-11','2026-04-11T12:30:00Z','sub',0,0,NULL),
-          ('v_u5','u5','c2',1,'2026-04-14','2026-04-14T10:00:00Z','free',1,1,3);
+          ('v_u5','u5','c2',1,'2026-04-14','2026-04-14T10:00:00Z','free',1,1,3),
+          ('v_u1_late','u1','c1',1,'2026-04-20','2026-04-20T10:00:00Z','free',0,0,NULL),
+          ('v_u1_sep','u1','c2',1,'2026-09-28','2026-09-28T10:00:00Z','sub',1,0,NULL),
+          ('v_u1_lost','u1','c9',1,'2026-05-01','2026-05-01T10:00:00Z','sub',1,0,NULL);
         INSERT INTO playback_segments VALUES
-          ('g_midnight','v_u1','2026-04-09T23:58:00Z','2026-04-10T00:01:00Z',180),
-          ('g_u2','v_u2','2026-04-11T10:00:00Z','2026-04-11T10:01:30Z',90),
-          ('g_short','v_u5','2026-04-14T10:00:00Z','2026-04-14T10:00:30Z',30);
+          ('g_midnight','v_u1','2026-04-09T23:58:00Z','2026-04-10T00:01:00Z',180,0,40),
+          ('g_u2','v_u2','2026-04-11T10:00:00Z','2026-04-11T10:01:30Z',90,0,95),
+          ('g_short','v_u5','2026-04-14T10:00:00Z','2026-04-14T10:00:30Z',30,0,30),
+          ('g_u2c','v_u2c','2026-04-11T12:00:00Z','2026-04-11T12:00:50Z',50,0,50),
+          ('g_u2d','v_u2d','2026-04-11T12:30:00Z','2026-04-11T12:30:40Z',40,30,70),
+          ('g_late','v_u1_late','2026-04-20T10:00:00Z','2026-04-20T10:01:00Z',60,40,100);
         ''')
         for n in range(1, 9):  # p1 uses all eight free slots on one day
             db.execute("INSERT INTO content_views VALUES(?,?,?,?,?,?,?,?,?,?)",
                        (f'v_q{n}', 'p1', 'c3', n, '2026-04-22', f'2026-04-22T1{n}:00:00Z', 'free', 1, 1, n))
         for table in build_layers.SOURCE_ROLES:
             if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
-                             'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments'):
+                             'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments',
+                             'content_episodes'):
                 db.execute(f'CREATE TABLE "{table}"(id TEXT)')
         db.commit()
         db.close()
@@ -278,7 +289,7 @@ class BuilderTests(unittest.TestCase):
             episodes_started, first_views_of_episode, watch_seconds, exception_status FROM silver_user_day_title_watch''')}
         self.assertEqual(rows[('u2', '2026-04-11', 'c1', 'free')][:3], (1, 1, 1))
         self.assertAlmostEqual(rows[('u2', '2026-04-11', 'c1', 'free')][3], 90)
-        self.assertEqual(rows[('u2', '2026-04-11', 'c1', 'sub')][:4], (2, 1, 1, 0.0))  # rewatch is not a first view
+        self.assertEqual(rows[('u2', '2026-04-11', 'c1', 'sub')][:4], (2, 1, 1, 90.0))  # rewatch is not a first view
         self.assertEqual(rows[('u2', '2026-04-11', 'c2', 'sub')][:2], (1, 1))         # second title same day
         self.assertAlmostEqual(rows[('u1', '2026-04-09', 'c1', 'free')][3], 120)      # split across midnight
         self.assertAlmostEqual(rows[('u1', '2026-04-10', 'c1', 'free')][3], 60)
@@ -289,6 +300,25 @@ class BuilderTests(unittest.TestCase):
         title = {k: v for k, v in checks.items() if k.startswith('silver_user_day_title_watch')}
         self.assertEqual(len(title), 6)
         self.assertTrue(all(title.values()))
+
+    def test_user_episodes_coverage_window_and_continuation(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[:3]: r[3:] for r in self.query('''SELECT user_id, content_id, episode_number, first_view_type,
+            views_in_window, covered_sec, episode_duration_sec, has_next_episode, started_next_episode_in_window,
+            window_complete, exception_status, exception_reason FROM silver_user_episodes''')}
+        self.assertEqual(rows[('u2', 'c1', 1)][:6], ('free', 1, 95, 100, 1, 1))   # completed, next started in window
+        self.assertEqual(rows[('u2', 'c1', 2)][:5], ('sub', 2, 70, 100, 0))        # rewind not double-counted; last episode
+        self.assertEqual(rows[('u1', 'c1', 1)][1:3], (1, 40))                      # view after 7 days is outside the window
+        self.assertEqual(rows[('p1', 'c3', 8)][2:5], (0, 100, 0))                  # no segments; last episode
+        self.assertEqual(rows[('u1', 'c2', 1)][6], 0)                              # window ends after coverage
+        self.assertEqual(rows[('u2', 'c1', 1)][6:], (1, 'ok', None))
+        self.assertEqual(rows[('u1', 'c9', 1)][7:], ('suspicious_usable', 'episode_not_in_catalog'))
+        self.assertEqual(rows[('u5', 'c2', 1)][7:], ('suspicious_usable', 'coverage_exceeds_duration'))
+        checks = json.loads(result['reconciliation'])['checks']
+        episodes = {k: v for k, v in checks.items() if k.startswith('silver_user_episodes')}
+        self.assertEqual(len(episodes), 4)
+        self.assertTrue(all(episodes.values()))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
