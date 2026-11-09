@@ -92,7 +92,7 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** Exactly 100 subscribers left in every month, an implausibly constant churn count.
 
-**Resolution:** Monthly departures vary (91, 108, 96, 113 and 92 from May to September; 500 in total). Paying counts per month keep their targets, so monthly subscription revenue is unchanged; replacement subscribers absorb the variation, which slightly changes the 30-day conversion counts.
+**Resolution:** Monthly departures vary (91, 108, 96, 113 and 92 from May to September; 500 in total). Cancellation requests precede each departure in the month before it; 95 subscribers also request cancellation in September and keep access until their October renewal date, after the data ends, so September has cancellation requests without additional September churn. Paying counts per month keep their targets, so monthly subscription revenue is unchanged; replacement subscribers absorb the variation, which slightly changes the 30-day conversion counts.
 
 ### Payment retries, returning subscribers and failure timing
 
