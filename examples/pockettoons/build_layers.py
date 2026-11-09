@@ -1115,6 +1115,76 @@ def reconcile_marketing_daily(db):
     channels = dict(db.execute('SELECT channel, COUNT(*) FROM silver_marketing_daily GROUP BY 1').fetchall())
     return checks, {'rows': rows, 'channels': channels, 'exceptions': exceptions}
 
+# ---------------------------------------------------------------- silver_quality_exceptions
+
+# Silver tables with exception_status/exception_reason, and the expression that renders each row's key as text.
+EXCEPTION_SOURCES = [
+    ('silver_payment_attempts', 'txn_id'),
+    ('silver_subscription_access', 'subscription_period_id'),
+    ('silver_user_profile', 'user_id'),
+    ('silver_user_day_activity', "user_id || '|' || activity_date"),
+    ('silver_user_day_title_watch', "user_id || '|' || activity_date || '|' || content_id || '|' || view_type"),
+    ('silver_user_episodes', "user_id || '|' || content_id || '|' || episode_number"),
+    ('silver_paywall_funnel', 'paywall_event_id'),
+    ('silver_marketing_daily', "date || '|' || channel"),
+]
+
+# Session-resolution problems: ambiguous links and a link naming a different user. Anonymous sessions are not faults.
+SESSION_EXCEPTIONS_SQL = """
+SELECT 'silver_resolved_sessions', session_id, 'suspicious_usable', 'ambiguous_identity_link,'
+FROM silver_resolved_sessions WHERE resolution_method = 'unresolved_ambiguous'
+UNION ALL
+SELECT 'silver_resolved_sessions', session_id, 'suspicious_usable', 'link_user_mismatch,'
+FROM silver_resolved_sessions WHERE link_user_mismatch = 1"""
+
+QUALITY_EXCEPTIONS_SQL = """
+CREATE TABLE silver_quality_exceptions(
+  table_name TEXT NOT NULL, row_key TEXT NOT NULL,
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('excluded','suspicious_usable')),
+  exception_reason TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(table_name, row_key, exception_reason));
+INSERT INTO silver_quality_exceptions
+WITH RECURSIVE flagged(table_name, row_key, status, rest) AS (
+""" + "\nUNION ALL\n".join(
+    f"SELECT '{table}', {key}, exception_status, COALESCE(exception_reason, 'unspecified') || ',' "
+    f"FROM {table} WHERE exception_status <> 'ok'" for table, key in EXCEPTION_SOURCES) + """
+UNION ALL""" + SESSION_EXCEPTIONS_SQL + """
+),
+split(table_name, row_key, status, reason, rest) AS (
+  SELECT table_name, row_key, status, substr(rest, 1, instr(rest, ',') - 1), substr(rest, instr(rest, ',') + 1) FROM flagged
+  UNION ALL
+  SELECT table_name, row_key, status, substr(rest, 1, instr(rest, ',') - 1), substr(rest, instr(rest, ',') + 1)
+  FROM split WHERE rest <> ''
+)
+SELECT DISTINCT table_name, row_key, status, reason, :build_id FROM split;
+CREATE INDEX ix_silver_quality_exceptions_reason ON silver_quality_exceptions(exception_reason, table_name)
+"""
+
+
+def reconcile_quality_exceptions(db):
+    checks = {}
+    expected = {}
+    for table, _ in EXCEPTION_SOURCES:
+        for status, reason, n in db.execute(
+                f"SELECT exception_status, exception_reason, COUNT(*) FROM {table} WHERE exception_status <> 'ok' GROUP BY 1, 2"):
+            for part in (reason or 'unspecified').split(','):
+                expected[(table, status, part)] = expected.get((table, status, part), 0) + n
+    for reason, sql in (('ambiguous_identity_link', "resolution_method = 'unresolved_ambiguous'"),
+                        ('link_user_mismatch', 'link_user_mismatch = 1')):
+        n = db.execute(f'SELECT COUNT(*) FROM silver_resolved_sessions WHERE {sql}').fetchone()[0]
+        if n:
+            expected[('silver_resolved_sessions', 'suspicious_usable', reason)] = n
+    actual = {(t, s, r): n for t, s, r, n in db.execute(
+        'SELECT table_name, exception_status, exception_reason, COUNT(*) FROM silver_quality_exceptions GROUP BY 1, 2, 3')}
+    checks['counts_equal_each_table'] = actual == expected
+    checks['every_flagged_row_listed'] = db.execute(
+        'SELECT COUNT(DISTINCT table_name || char(31) || row_key) FROM silver_quality_exceptions').fetchone()[0] == sum(
+        db.execute(f"SELECT COUNT(*) FROM {table} WHERE exception_status <> 'ok'").fetchone()[0]
+        for table, _ in EXCEPTION_SOURCES) + db.execute(
+        "SELECT COUNT(*) FROM silver_resolved_sessions WHERE resolution_method = 'unresolved_ambiguous' "
+        "OR link_user_mismatch = 1").fetchone()[0]
+    summary = {f'{t}.{r}': n for (t, s, r), n in sorted(actual.items())}
+    return checks, {'rows': sum(actual.values()), 'by_table_reason': summary}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -1135,6 +1205,8 @@ SILVER = [
      ['ix_silver_paywall_funnel_time', 'ix_silver_paywall_funnel_user_time'], reconcile_paywall_funnel),
     ('silver_marketing_daily', MARKETING_DAILY_SQL,
      ['ix_silver_marketing_daily_channel_date'], reconcile_marketing_daily),
+    ('silver_quality_exceptions', QUALITY_EXCEPTIONS_SQL,          # last: reads every other Silver table
+     ['ix_silver_quality_exceptions_reason'], reconcile_quality_exceptions),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
