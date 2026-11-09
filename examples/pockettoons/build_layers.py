@@ -22,7 +22,7 @@ from metric_registry import REGISTRY, load_sql
 HERE = Path(__file__).resolve()
 # Coverage window documented in the dataset contract (README and data model).
 COVERAGE = {'coverage_start': '2026-04-01T00:00:00Z', 'coverage_end': '2026-10-01T00:00:00Z'}
-DEFINITIONS = {'mau': '1.1', 'revenue_group': '1.1'}
+DEFINITIONS = {'mau': '1.1', 'revenue_group': '1.1', 'funnel_and_lifecycle_group': '1.0', 'supporting_metrics': '1.1'}
 
 # Source tables exposed in Bronze, with their role (see the layer contracts).
 SOURCE_ROLES = {
@@ -47,6 +47,9 @@ REQUIRED_COLUMNS = {
                      'transaction_at', 'session_id', 'related_txn_id', 'subscription_id', 'list_price_usd',
                      'country_at_event', 'checkout_event_id'},
     'payment_status_history': {'payment_status_event_id', 'txn_id', 'status', 'effective_at', 'recorded_at'},
+    'dataset_metadata': {'metadata_key', 'metadata_value'},
+    'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
+                             'effective_end_at', 'cancelled_at', 'source_txn_id', 'plan_code'},
 }
 
 BUILD_LOG_DDL = '''CREATE TABLE IF NOT EXISTS layer_build_log(
@@ -260,6 +263,120 @@ def reconcile_payment_attempts(db):
     exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_payment_attempts GROUP BY 1').fetchall())
     return checks, {'source_rows': source_rows, 'outcomes': outcomes, 'exceptions': exceptions}
 
+# ---------------------------------------------------------------- silver_subscription_access
+
+SUBSCRIPTION_ACCESS_SQL = """
+CREATE TABLE silver_subscription_access(
+  subscription_period_id TEXT PRIMARY KEY, subscription_id TEXT, user_id TEXT NOT NULL, status TEXT NOT NULL,
+  grants_access INTEGER NOT NULL CHECK(grants_access IN (0,1)), effective_start_at TEXT NOT NULL, effective_end_at TEXT,
+  cancelled_at TEXT, source_txn_id TEXT, plan_code TEXT, price_cents INTEGER,
+  starts_access_spell INTEGER NOT NULL CHECK(starts_access_spell IN (0,1)),
+  ends_access_spell INTEGER NOT NULL CHECK(ends_access_spell IN (0,1)), access_spell_number INTEGER,
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL);
+WITH periods AS (
+  SELECT h.*, h.status IN ('active', 'cancel_at_period_end') AS access FROM subscription_history h
+),
+flags AS (
+  SELECT p.*,
+    p.access AND NOT EXISTS (SELECT 1 FROM periods q WHERE q.user_id = p.user_id AND q.access
+        AND q.subscription_period_id <> p.subscription_period_id AND q.effective_start_at < p.effective_start_at
+        AND (q.effective_end_at IS NULL OR q.effective_end_at >= p.effective_start_at)) AS starts_spell,
+    p.access AND p.effective_end_at IS NOT NULL
+        AND p.effective_end_at <= (SELECT metadata_value FROM dataset_metadata WHERE metadata_key = 'users_snapshot_at')
+        AND NOT EXISTS (SELECT 1 FROM periods q WHERE q.user_id = p.user_id
+        AND q.access AND q.subscription_period_id <> p.subscription_period_id
+        AND q.effective_start_at <= p.effective_end_at
+        AND (q.effective_end_at IS NULL OR q.effective_end_at > p.effective_end_at)) AS ends_spell,
+    p.access AND EXISTS (SELECT 1 FROM periods q WHERE q.user_id = p.user_id AND q.access
+        AND q.subscription_period_id <> p.subscription_period_id
+        AND q.effective_start_at < COALESCE(p.effective_end_at, '9999')
+        AND p.effective_start_at < COALESCE(q.effective_end_at, '9999')) AS overlapping,
+    p.access AND NOT EXISTS (SELECT 1 FROM payment_status_history s
+        WHERE s.txn_id = p.source_txn_id AND s.status = 'succeeded') AS unpaid,
+    t.list_price_usd AS list_price
+  FROM periods p LEFT JOIN transactions t ON t.txn_id = p.source_txn_id
+),
+priced AS (
+  SELECT f.*,
+    CASE WHEN typeof(list_price) IN ('integer', 'real') AND list_price > 0
+          AND abs(list_price * 100 - ROUND(list_price * 100)) < 0.000001
+         THEN CAST(ROUND(list_price * 100) AS INTEGER) END AS price,
+    CASE WHEN access THEN SUM(starts_spell) OVER (PARTITION BY user_id ORDER BY effective_start_at, subscription_period_id
+                                                  ROWS UNBOUNDED PRECEDING) END AS spell
+  FROM flags f
+)
+INSERT INTO silver_subscription_access
+SELECT subscription_period_id, subscription_id, user_id, status, access, effective_start_at, effective_end_at,
+       cancelled_at, source_txn_id, plan_code, CASE WHEN access THEN price END, starts_spell, ends_spell, spell,
+       CASE WHEN overlapping OR unpaid OR (access AND price IS NULL) THEN 'suspicious_usable' ELSE 'ok' END,
+       NULLIF(rtrim((CASE WHEN overlapping THEN 'overlapping_access,' ELSE '' END)
+                    || (CASE WHEN unpaid THEN 'source_charge_not_successful,' ELSE '' END)
+                    || (CASE WHEN access AND price IS NULL THEN 'invalid_list_price,' ELSE '' END), ','), ''),
+       :build_id
+FROM priced;
+CREATE INDEX ix_silver_subscription_access_user_start ON silver_subscription_access(user_id, effective_start_at)
+"""
+
+SILVER_SUBSCRIBERS = """
+WITH RECURSIVE months(month_start) AS (
+  SELECT :coverage_start UNION ALL
+  SELECT strftime('%Y-%m-%dT%H:%M:%SZ', month_start, '+1 month') FROM months
+  WHERE strftime('%Y-%m-%dT%H:%M:%SZ', month_start, '+1 month') < :coverage_end),
+bounds AS (SELECT month_start, strftime('%Y-%m-%dT%H:%M:%SZ', month_start, '+1 month') AS month_end FROM months)
+SELECT substr(b.month_start, 1, 7),
+  (SELECT COUNT(DISTINCT a.user_id) FROM silver_subscription_access a WHERE a.grants_access = 1
+     AND a.effective_start_at <= b.month_start AND (a.effective_end_at IS NULL OR a.effective_end_at > b.month_start)),
+  (SELECT COUNT(DISTINCT a.user_id) FROM silver_subscription_access a WHERE a.grants_access = 1
+     AND a.effective_start_at <= b.month_end AND (a.effective_end_at IS NULL OR a.effective_end_at > b.month_end)),
+  (SELECT COALESCE(SUM(price), 0) FROM (SELECT a.user_id, MAX(a.price_cents) AS price FROM silver_subscription_access a
+     WHERE a.grants_access = 1 AND a.effective_start_at <= b.month_end
+       AND (a.effective_end_at IS NULL OR a.effective_end_at > b.month_end) GROUP BY a.user_id))
+FROM bounds b ORDER BY b.month_start"""
+
+
+def independent_spell_recount(db):
+    """Merge each user's access intervals in Python; touching intervals are one continuous spell.
+    A spell end counts as an access loss only when it is known by the users snapshot."""
+    snapshot = db.execute("SELECT metadata_value FROM dataset_metadata WHERE metadata_key='users_snapshot_at'").fetchone()[0]
+    intervals = {}
+    for user, start, end in db.execute("""SELECT user_id, effective_start_at, effective_end_at FROM subscription_history
+                                          WHERE status IN ('active','cancel_at_period_end')"""):
+        intervals.setdefault(user, []).append((start, end or '9999'))
+    starts = losses = 0
+    for spans in intervals.values():
+        spans.sort()
+        merged = [list(spans[0])]
+        for start, end in spans[1:]:
+            if start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        starts += len(merged)
+        losses += sum(1 for _, end in merged if end != '9999' and end <= snapshot)
+    return starts, losses
+
+
+def reconcile_subscription_access(db):
+    checks = {}
+    source_rows = db.execute('SELECT COUNT(*) FROM subscription_history').fetchone()[0]
+    silver_rows = db.execute('SELECT COUNT(*) FROM silver_subscription_access').fetchone()[0]
+    checks['row_count_equals_source'] = silver_rows == source_rows
+    access = dict(db.execute('SELECT grants_access, COUNT(*) FROM silver_subscription_access GROUP BY 1').fetchall())
+    checks['access_counts_add_to_total'] = sum(access.values()) == silver_rows
+    starts, losses = independent_spell_recount(db)
+    checks['independent_spell_start_recount'] = db.execute(
+        'SELECT COUNT(*) FROM silver_subscription_access WHERE starts_access_spell = 1').fetchone()[0] == starts
+    checks['independent_access_loss_recount'] = db.execute(
+        'SELECT COUNT(*) FROM silver_subscription_access WHERE ends_access_spell = 1').fetchone()[0] == losses
+    silver = db.execute(SILVER_SUBSCRIBERS, COVERAGE).fetchall()
+    churn = db.execute(load_sql('subscriber_churn_monthly'), COVERAGE).fetchall()
+    mrr = db.execute(load_sql('mrr_monthly'), COVERAGE).fetchall()
+    checks['subscribers_at_start_match_registry'] = [r[1] for r in silver] == [r[1] for r in churn]
+    checks['mrr_matches_registry_on_source'] = [(r[0], r[2], r[3]) for r in silver] == [tuple(r) for r in mrr]
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_subscription_access GROUP BY 1').fetchall())
+    return checks, {'source_rows': source_rows, 'spell_starts': starts, 'access_losses': losses, 'exceptions': exceptions}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -267,6 +384,8 @@ SILVER = [
      ['ix_silver_resolved_sessions_user_time', 'ix_silver_resolved_sessions_time'], reconcile_resolved_sessions),
     ('silver_payment_attempts', PAYMENT_ATTEMPTS_SQL,
      ['ix_silver_payment_attempts_success', 'ix_silver_payment_attempts_user_success'], reconcile_payment_attempts),
+    ('silver_subscription_access', SUBSCRIPTION_ACCESS_SQL,
+     ['ix_silver_subscription_access_user_start'], reconcile_subscription_access),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
