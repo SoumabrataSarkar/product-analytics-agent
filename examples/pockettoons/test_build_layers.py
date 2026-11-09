@@ -30,6 +30,10 @@ class BuilderTests(unittest.TestCase):
           ('l1','s_user','u1'), ('l2','s_link','u2'), ('l3','s_later','u3'),
           ('l4','s_two','u5'), ('l5','s_two','u6'), ('l6','s_mismatch','u9');
         ''')
+        for table in build_layers.SOURCE_ROLES:
+            if table not in ('sessions', 'identity_links'):
+                db.execute(f'CREATE TABLE "{table}"(id TEXT)')
+        db.execute("INSERT INTO users VALUES('u1')")
         db.commit()
         db.close()
 
@@ -54,6 +58,31 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(rows['s_mismatch'][4:], (1, 61))
         checks = json.loads(result['reconciliation'])['checks']
         self.assertTrue(all(checks.values()))
+
+    def test_bronze_views_cover_every_source_table(self):
+        build_layers.build(self.path)
+        views = {r[0] for r in self.query("SELECT name FROM sqlite_master WHERE type='view'")}
+        self.assertEqual(views, {f'bronze_{t}' for t in build_layers.SOURCE_ROLES})
+        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_sessions'), [(6,)])
+        self.assertEqual(self.query('SELECT id FROM bronze_users'), [('u1',)])
+
+    def test_later_source_change_is_detectable_from_the_build_fingerprint(self):
+        result = build_layers.build(self.path)
+        db = sqlite3.connect(self.path)
+        db.execute("INSERT INTO users VALUES('u_new')")
+        db.commit()
+        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_users'), [(2,)])  # a view shows current source
+        recorded = json.loads(result['source_fingerprint'])['users']
+        self.assertNotEqual(build_layers.fingerprint(db)['users'], recorded)
+        db.close()
+
+    def test_missing_source_table_stops_the_build(self):
+        db = sqlite3.connect(self.path)
+        db.execute('DROP TABLE marketing_spend')
+        db.commit()
+        db.close()
+        with self.assertRaisesRegex(ValueError, 'missing table marketing_spend'):
+            build_layers.build(self.path)
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
