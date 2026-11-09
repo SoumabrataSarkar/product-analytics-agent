@@ -87,12 +87,16 @@ def main():
     cohort_ends=[]
     for size in cohort_sizes: cohort_ends.append((cohort_ends[-1] if cohort_ends else 0)+size)
     countries=['US','US','US','BR','MX','PH','ID','TH']
+    # Realistic, uneven country mix from its own stream; the original draw is still consumed.
+    country_rng=random.Random(SEED+8801)
+    country_weights={'US':30,'BR':19,'MX':16,'PH':15,'ID':12,'TH':8}
     for i in range(24000):
         cohort=next(k for k,end in enumerate(cohort_ends) if i<end)
         month=3+cohort
         day=1+(i%27)
         t=f'2026-{month:02d}-{day:02d}T00:00:00Z'
         country=rng.choice(countries)
+        country=country_rng.choices(list(country_weights),weights=list(country_weights.values()))[0]
         source=rng.choices(['organic','paid_search','paid_social'],weights=([50,27,23] if cohort<4 else [18,17,65]))[0]
         visible='unknown' if i%101==0 else source
         users.append((f'u{i:05}',t[:10],t,country,country,country,visible,'never_subscribed',None,None,t,t))
@@ -103,6 +107,13 @@ def main():
     # Some users also use a second installation on another platform.
     device_rng=random.Random(SEED+3301)
     second_device={i for i in range(len(users)) if device_rng.random()<0.45}
+    platform_rng=random.Random(SEED+8803); platform_weights={'android':45,'ios':35,'web':20}
+    primary_platform=[]; second_platform=[]
+    for _ in users:
+        first=platform_rng.choices(list(platform_weights),weights=list(platform_weights.values()))[0]
+        others=[p for p in platform_weights if p!=first]
+        primary_platform.append(first)
+        second_platform.append(platform_rng.choices(others,weights=[platform_weights[p] for p in others])[0])
     db.executemany('INSERT INTO anonymous_identities VALUES (?,?,?)',[(f'b{i:05}',users[i][2],None) for i in sorted(second_device)])
     start='2026-03-01T00:00:00Z'
     catalogs=[]; episodes=[]; availability=[]; tier_history=[]
@@ -217,6 +228,8 @@ def main():
     # Activity realism uses its own deterministic stream so the original draws, and the
     # payment, refund and conversion journeys derived from them, keep their sequence.
     activity_rng=random.Random(SEED+4409)
+    swap_rng=random.Random(SEED+8804); browser_rng=random.Random(SEED+8805); signup_rng=random.Random(SEED+8806)
+    signup_time={}; muted_sessions=set()
     utc_offset_hours={'US':-4,'BR':-3,'MX':-6,'PH':8,'ID':7,'TH':7}
     # Relative local-hour weights: light overnight use, a midday rise and an evening peak.
     local_hour_weights=[2,1,0.5,0.3,0.3,0.5,1,2,2.5,2.5,2.5,3,4,3.5,3,3,3.5,4.5,6,8,10,10,8,5]
@@ -243,12 +256,23 @@ def main():
         eligible=list(range(cohort_ends[mi+1]))
         # Monthly snapshots begin after signup; all payers are guaranteed active.
         chosen=set(payers[mi]); chosen.update(rng.sample([i for i in eligible if i not in chosen],targets[mi]-len(chosen)))
+        # Everyone who signs up this month is active this month (the signup is a visit). To keep
+        # monthly active users at their targets, the same number of earlier non-paying users sit out.
+        newcomers=set(range(cohort_ends[mi],cohort_ends[mi+1]))
+        missing=sorted(newcomers-chosen)
+        if missing:
+            removable=sorted(c for c in chosen if c<cohort_ends[mi] and c not in payers[mi])
+            chosen=(chosen-set(swap_rng.sample(removable,len(missing))))|set(missing)
         month_days=calendar.monthrange(2026,month)[1]
         for i in sorted(chosen):
             uid=f'u{i:05}'
             first_day=int(users[i][2][8:10]) if users[i][2][5:7]==f'{month:02}' else 1
             # Original draws are consumed in their original order for the user's first visit.
             day=rng.randint(first_day,month_days)
+            signing_up=users[i][2][5:7]==f'{month:02}'
+            if signing_up: day=first_day   # the first visit is the signup visit
+            # Some non-paying users only browse in a month: they visit but watch nothing.
+            browsing_month=i not in payers[mi] and browser_rng.random()<0.42
             rng.randint(8,18); rng.randint(0,59); duration=rng.randint(1200,2280)
             first_browse=rng.random()<0.09
             first_watched=None if first_browse else rng.randint(240,600)
@@ -277,7 +301,7 @@ def main():
                     if binge: binge_views.add(f'v{month}_{i:05}{"" if n==0 else f"_{n}"}')
                 second=i in second_device and n>0 and activity_rng.random()<0.55
                 aid=f'b{i:05}' if second else f'a{i:05}'
-                platform=['ios','android','web'][(i+1)%3 if second else i%3]
+                platform=second_platform[i] if second else primary_platform[i]
                 span=duration+(7200 if i%5==0 and not browse else 0)
                 blocked=[]
                 for paid in initial_paid_at.get(uid,[]):
@@ -285,12 +309,18 @@ def main():
                 st=pick_start(country,month,d,span,blocked); end=offset(st,duration)
                 suffix='' if n==0 else f'_{n}'
                 sid=f's{month}_{i:05}{suffix}'
+                if n==0 and signing_up: signup_time[i]=st
                 session=(sid,uid,aid,st[:10],st,end,end,duration,platform,country)
                 (sessions if n==0 else extra_sessions).append(session)
                 if n: extra_session_ids.add(sid)
-                links.append((f'l{month}_{i:05}{suffix}',aid,uid,sid,st,'login'))
+                links.append((f'l{month}_{i:05}{suffix}',aid,uid,sid,st,'signup' if n==0 and signing_up else 'login'))
                 events.append((f'e{month}_{i:05}{suffix}',uid,aid,st,'app_opened',sid,None,None,None,None,None,None,None,country,st))
                 # A real app visit can stop at browsing, without any playback.
+                if browsing_month and not browse:
+                    # Draws for the view are already consumed; record browsing instead of playback.
+                    muted_sessions.add(sid)
+                    browse_at=offset(st,40)
+                    events.append((f'browse_only_{sid}',uid,aid,browse_at,'episode_detail_viewed',sid,None,None,None,'c01',1,None,zones[country],country,browse_at))
                 if browse:
                     browse_at=offset(st,40)
                     events.append((f'browse_only_{sid}',uid,aid,browse_at,'episode_detail_viewed',sid,None,None,None,'c01',1,None,zones[country],country,browse_at))
@@ -305,9 +335,22 @@ def main():
             for channel in ('paid_social','paid_search'):
                 amount, impressions, clicks = marketing_metrics(marketing_rng, month, channel)
                 spend.append((f'2026-{month:02}-{day:02}',channel,amount,impressions,clicks,timestamp(month,day,23)))
+    # Signup times: the signup visit's start for users who joined in the window; a local-hour
+    # time of day for earlier users. Device creation follows the signup time.
+    for i,u in enumerate(users):
+        if i not in signup_time:
+            hour=signup_rng.choices(range(24),weights=local_hour_weights)[0]
+            minute=(hour-utc_offset_hours[u[3]])*60%1440+signup_rng.randint(0,59)
+            signup_time[i]=f'{u[1]}T{minute//60:02}:{minute%60:02}:{signup_rng.randint(0,59):02}Z'
+        assert signup_time[i][:10]==u[1]
+    db.executemany('UPDATE users SET signup_at=?, created_at=?, updated_at=CASE WHEN updated_at=? THEN ? ELSE updated_at END WHERE user_id=?',
+                   [(signup_time[i],signup_time[i],u[2],signup_time[i],u[0]) for i,u in enumerate(users)])
+    db.executemany('UPDATE anonymous_identities SET created_at=? WHERE anonymous_id IN (?,?)',
+                   [(signup_time[i],f'a{i:05}',f'b{i:05}') for i in range(len(users))])
+    users=[(u[0],u[1],signup_time[i])+u[3:10]+(signup_time[i],signup_time[i] if u[11]==u[2] else u[11]) for i,u in enumerate(users)]
     db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',sessions+extra_sessions)
     db.executemany('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',links)
-    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',views+extra_views)
+    db.executemany('INSERT INTO content_views VALUES ('+','.join('?'*20)+')',[v for v in views+extra_views if v[3] not in muted_sessions])
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',events)
     db.executemany('INSERT INTO marketing_spend VALUES (?,?,?,?,?,?)',spend)
     checkout_paywall_links=[]; checkout_transaction_links=[]
@@ -318,7 +361,7 @@ def main():
         tid,uid,paid_at=row[0],row[1],row[8]
         aid='a'+uid[1:]; country=row[18]; start_session=offset(paid_at,-120); end=offset(paid_at,1080)
         sid='s_'+tid; vid='v_'+tid; period=f'h_{int(paid_at[5:7])}_{uid}'
-        db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,start_session[:10],start_session,end,end,1200,'android',country))
+        db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',(sid,uid,aid,start_session[:10],start_session,end,end,1200,primary_platform[int(uid[1:])],country))
         db.execute('INSERT INTO identity_links VALUES (?,?,?,?,?,?)',('l_'+sid,aid,uid,sid,start_session,'login'))
         db.execute('UPDATE transactions SET session_id=? WHERE txn_id=?',(sid,tid))
         for name,when in [('app_opened',start_session),('paywall_viewed',offset(paid_at,-90)),('checkout_started',offset(paid_at,-30)),('subscription_started',paid_at)]:
@@ -341,6 +384,7 @@ def main():
         s=list(session); v=list(view); s[0]+='_return'; s[4]=offset(s[4],7200); s[5]=offset(s[5],7200); s[6]=offset(s[6],7200)
         v[0]+='_return'; v[3]=s[0]; v[7]=offset(v[7],7200); v[13]=v[14]; v[9]=min(900-v[13],draw.randint(120,300)); v[14]=v[13]+v[9]; v[8]=offset(v[7],v[9]); v[12]=round(v[9]/900,4); v[15]=0; v[16]=0; v[17]=None
         # A subscriber resume is generated only while the subscription still grants access.
+        if session[0] in muted_sessions: continue
         if v[11]=='sub' and not still_subscribed(v[1],v[7]): continue
         if view[14]>=900: continue
         repeat_sessions.append(tuple(s)); repeat_views.append(tuple(v))
@@ -361,6 +405,7 @@ def main():
         if v[0] in binge_views: w[9]=episode_duration[(w[4],w[5])]
         w[8]=offset(w[7],w[9])
         w[12]=round(w[9]/900,4); w[14]=w[9]
+        if s[0] in muted_sessions: continue
         if w[11]=='sub' and not still_subscribed(w[1],w[7]): continue
         w[15]=int((w[1],w[4],w[5]) not in seen); seen.add((w[1],w[4],w[5]))
         w[16]=0 if w[11]=='sub' else 1; w[17]=None if w[11]=='sub' else 2
@@ -369,6 +414,8 @@ def main():
     # Purchase and refund volumes vary each month, preserving near-flat quarterly net revenue.
     purchase_targets=[43,46,37,43,38,43]
     refund_targets=[6,9,8,7,8,6]
+    # Purchases that keep their refund (about 3% of PPV purchases); ppv_5_3 also carries a raw-review record.
+    kept_refunds={4:{0},5:{0,3},6:{0},7:{0},8:{0},9:{0}}
     ppv=[]; ppv_status=[]; attrs=[]; refund_attrs=[]; ppv_sessions=[]; ppv_views=[]; ppv_links=[]; ppv_events=[]; ppv_refund_events=[]
     for month_index,(_,month) in enumerate(MONTHS):
         candidates=db.execute("""SELECT DISTINCT s.user_id FROM sessions s JOIN users u USING(user_id)
@@ -398,6 +445,7 @@ def main():
                 t=timestamp(month,rng.randint(2,24),rng.randint(8,20),rng.randint(0,35))
                 rt=offset(t,rng.randint(1,4)*86400)
             if month==4 and j==39: cid,ep='c12',20
+            if j<refund_targets[month_index] and j not in kept_refunds[month]: continue
             # Most buyers watch the paid episode to the end; one in five stops after 600s.
             # Deterministic by purchase index so no random draw shifts later streams.
             watched=episode_duration[(cid,ep)] if j%5!=4 else 600
@@ -405,7 +453,7 @@ def main():
             end=max(offset(t,1200),offset(ve,60))
             span=int((dt.datetime.fromisoformat(end[:-1])-dt.datetime.fromisoformat(start_session[:-1])).total_seconds())
             country=users[i][3]; wall=offset(t,-90); checkout=offset(t,-30)
-            ppv_sessions.append((sid,uid,aid,t[:10],start_session,end,end,span,['ios','android','web'][i%3],country))
+            ppv_sessions.append((sid,uid,aid,t[:10],start_session,end,end,span,primary_platform[i],country))
             ppv_links.append((f'l_{sid}',aid,uid,sid,start_session,'login'))
             ppv_views.append((vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,watched,900,'ppv',round(watched/900,4),0,watched,1,0,None,zones[country],country))
             ppv_events.append((f'open_{sid}',uid,aid,start_session,'app_opened',sid,None,None,None,None,None,None,zones[country],country,start_session))
@@ -668,7 +716,8 @@ def main():
         device=f'v{n:05}'; n+=1
         base=visitor_rng.choice(starts)
         session_count=visitor_rng.choice([1,1,1,2,2,3])
-        platform=visitor_rng.choice(['ios','android','web','web']); country=visitor_rng.choice(list(zones))
+        platform=visitor_rng.choices(list(platform_weights),weights=[45,30,25])[0]
+        country=visitor_rng.choices(list(country_weights),weights=list(country_weights.values()))[0]
         first=None
         for k in range(session_count):
             day=dt.datetime.fromisoformat(base[:-1])+dt.timedelta(days=4*k+visitor_rng.randint(0,3),minutes=visitor_rng.randint(-50,50))
