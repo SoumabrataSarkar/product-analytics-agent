@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes` and `silver_paywall_funnel` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel` and `silver_marketing_daily` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -176,6 +176,23 @@
 | Lineage | `user_events` (paywalls and checkouts); `transactions.checkout_event_id`; `silver_payment_attempts`; `silver_resolved_sessions` |
 | Exceptions | `suspicious_usable` with reasons `unidentified_viewer`, `unrecognised_product` or `checkout_before_paywall` |
 | Supports | Paywall-to-checkout, checkout-to-purchase and paywall-to-purchase rates by product, title or episode; paywall exposure rate; revenue from paywall purchases |
-| Does not support | Purchases without a checkout link; marketing attribution (`silver_marketing_daily`, planned) |
+| Does not support | Purchases without a checkout link; marketing attribution (`silver_marketing_daily`) |
 | Reconciliation | Rows equal source paywall views; an independent Python recount reproduces checkouts and the first valid purchase per paywall; monthly paywalls, checkouts and purchases by product equal `paywall_funnel_monthly` and exposed users equal `paywall_exposure_monthly` on the source |
 | Tests | Paywall with a purchase and a failed retry, viewer from the resolved session, unidentified viewer, unrecognised product, checkout before the paywall, non-paywall events excluded |
+
+## silver_marketing_daily
+
+| Part | Contract |
+|---|---|
+| Purpose | CTR, cost per click, cost per signup and CAC by channel, and paid versus unpaid acquisition, from one table |
+| Grain | One row per UTC `date` and `channel` that has a spend row, a signup or a first payment; channels are `marketing_spend.channel` and the users' acquisition sources, including `organic` and `unknown` |
+| Key and indexes | (`date`, `channel`) primary key; index on (`channel`, `date`) |
+| Columns | `date`; `month`; `channel`; `has_spend_row`; `spend_cents` (NULL without a spend row or when invalid); `impressions`; `clicks`; `signups` (users of that acquisition source who signed up that day); `new_paying_users` (users of that source whose first successful charge, from `silver_user_profile`, fell that day); `loaded_at`; `exception_status`; `exception_reason`; `build_id` |
+| Rules | Spend is exact cents, never rounded: a value that is not a non-negative number with at most two decimals is stored as NULL and the row is `excluded`. Attribution is the user's `acquisition_source` only; there is no click-level link. New paying users count on their first-payment day, not their signup day, so a month's CAC is that month's spend ÷ that month's new payers from the channel, not a cohort CAC. |
+| Time | UTC dates; all dates kept |
+| Lineage | `marketing_spend` one-to-one for spend rows; `silver_user_profile` for signups and first payments |
+| Exceptions | `excluded` with reason `invalid_spend`; `suspicious_usable` with reasons `negative_count` or `clicks_exceed_impressions` |
+| Supports | Spend, impressions, clicks, CTR, CPC, cost per signup and CAC by channel and period; signups and new paying users by acquisition source, paid and unpaid |
+| Does not support | Click- or campaign-level attribution; cohort CAC or payback by signup month (use `silver_user_profile` with spend) |
+| Reconciliation | Spend rows equal the source; an independent Decimal recount reproduces total spend cents; signups and new payers add up to `silver_user_profile`; monthly clicks and impressions equal `marketing_ctr_monthly`; monthly spend, clicks, signups and new paying users equal `marketing_efficiency_monthly` on the source (where a channel-month has invalid spend, the registry rounds it and only spend is not compared) |
+| Tests | Valid spend with a signup, invalid spend kept blank and excluded, clicks above impressions, unpaid channel without spend, first payment on another channel, NULL source as `unknown` |
