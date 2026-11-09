@@ -56,6 +56,7 @@ REQUIRED_COLUMNS = {
                           'position_start_sec', 'position_end_sec'},
     'content_episodes': {'content_id', 'episode_number', 'episode_duration_sec'},
     'marketing_spend': {'date', 'channel', 'spend_usd', 'impressions', 'clicks', 'loaded_at'},
+    'payment_quality_review': {'txn_id'},
     'user_events': {'event_id', 'user_id', 'event_at', 'event_name', 'session_id', 'content_id', 'episode_number',
                     'event_properties_json', 'triggering_paywall_event_id'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
@@ -1130,12 +1131,16 @@ EXCEPTION_SOURCES = [
 ]
 
 # Session-resolution problems: ambiguous links and a link naming a different user. Anonymous sessions are not faults.
+# Payments whose raw source amount was corrected on review: usable at the curated amount, with the review time unknown.
 SESSION_EXCEPTIONS_SQL = """
 SELECT 'silver_resolved_sessions', session_id, 'suspicious_usable', 'ambiguous_identity_link,'
 FROM silver_resolved_sessions WHERE resolution_method = 'unresolved_ambiguous'
 UNION ALL
 SELECT 'silver_resolved_sessions', session_id, 'suspicious_usable', 'link_user_mismatch,'
-FROM silver_resolved_sessions WHERE link_user_mismatch = 1"""
+FROM silver_resolved_sessions WHERE link_user_mismatch = 1
+UNION ALL
+SELECT 'silver_payment_attempts', txn_id, 'suspicious_usable', 'source_amount_corrected_on_review,'
+FROM payment_quality_review"""
 
 QUALITY_EXCEPTIONS_SQL = """
 CREATE TABLE silver_quality_exceptions(
@@ -1168,20 +1173,28 @@ def reconcile_quality_exceptions(db):
                 f"SELECT exception_status, exception_reason, COUNT(*) FROM {table} WHERE exception_status <> 'ok' GROUP BY 1, 2"):
             for part in (reason or 'unspecified').split(','):
                 expected[(table, status, part)] = expected.get((table, status, part), 0) + n
-    for reason, sql in (('ambiguous_identity_link', "resolution_method = 'unresolved_ambiguous'"),
-                        ('link_user_mismatch', 'link_user_mismatch = 1')):
+    session_rules = (('ambiguous_identity_link', "resolution_method = 'unresolved_ambiguous'"),
+                     ('link_user_mismatch', 'link_user_mismatch = 1'))
+    for reason, sql in session_rules:
         n = db.execute(f'SELECT COUNT(*) FROM silver_resolved_sessions WHERE {sql}').fetchone()[0]
         if n:
             expected[('silver_resolved_sessions', 'suspicious_usable', reason)] = n
+    reviewed = db.execute('SELECT COUNT(*) FROM payment_quality_review').fetchone()[0]
+    if reviewed:
+        key = ('silver_payment_attempts', 'suspicious_usable', 'source_amount_corrected_on_review')
+        expected[key] = expected.get(key, 0) + reviewed
     actual = {(t, s, r): n for t, s, r, n in db.execute(
         'SELECT table_name, exception_status, exception_reason, COUNT(*) FROM silver_quality_exceptions GROUP BY 1, 2, 3')}
     checks['counts_equal_each_table'] = actual == expected
-    checks['every_flagged_row_listed'] = db.execute(
-        'SELECT COUNT(DISTINCT table_name || char(31) || row_key) FROM silver_quality_exceptions').fetchone()[0] == sum(
-        db.execute(f"SELECT COUNT(*) FROM {table} WHERE exception_status <> 'ok'").fetchone()[0]
-        for table, _ in EXCEPTION_SOURCES) + db.execute(
-        "SELECT COUNT(*) FROM silver_resolved_sessions WHERE resolution_method = 'unresolved_ambiguous' "
-        "OR link_user_mismatch = 1").fetchone()[0]
+    flagged = set()
+    for table, key in EXCEPTION_SOURCES:
+        flagged |= {(table, k) for (k,) in db.execute(f"SELECT {key} FROM {table} WHERE exception_status <> 'ok'")}
+    for _, sql in session_rules:
+        flagged |= {('silver_resolved_sessions', k) for (k,) in db.execute(
+            f'SELECT session_id FROM silver_resolved_sessions WHERE {sql}')}
+    flagged |= {('silver_payment_attempts', k) for (k,) in db.execute('SELECT txn_id FROM payment_quality_review')}
+    checks['every_flagged_row_listed'] = flagged == set(db.execute(
+        'SELECT DISTINCT table_name, row_key FROM silver_quality_exceptions'))
     summary = {f'{t}.{r}': n for (t, s, r), n in sorted(actual.items())}
     return checks, {'rows': sum(actual.values()), 'by_table_reason': summary}
 
