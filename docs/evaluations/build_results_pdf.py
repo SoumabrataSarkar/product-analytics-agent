@@ -45,7 +45,7 @@ TESTS = [
      "F", "S", ["Q02/run-001", "Q02/run-002-blind"]),
     ("Q03", "Decomposition; vague period", "Codex",
      "Which acquisition sources contributed most to the change in active users?",
-     "Ask for or state the period. For the weeks chosen when asked (27 Jul–2 Aug vs 17–23 Aug): WAU 5,914 → 5,831; organic "
+     "Ask for or state the period. For the weeks the evaluator chose when asked (27 Jul–2 Aug vs 17–23 Aug; values computed after the run): WAU 5,914 → 5,831; organic "
      "−213, paid social +182, paid search −52, unknown 67 → 67 shown separately; no causal claim.",
      "Asked daily, weekly or monthly, then full Monday–Sunday weeks. Every figure exact; unknown kept separate; warned the "
      "weeks aren't adjacent; \"arithmetic contributions, not evidence of cause\".", "S", None, ["Q03/codex-run-001"]),
@@ -175,7 +175,7 @@ def header(c, doc):
 def build(out):
     S = []
     S += [Paragraph(f'<font color="{T.RED}">Evaluation results</font>', st("t", fontName="B", fontSize=17, leading=19)),
-          Paragraph("18 test questions run blind against an answer key written beforehand, with one improvement round.",
+          Paragraph("18 test questions run blind and scored against an answer key computed from the raw tables, with one improvement round.",
                     st("sub", fontSize=8.6, leading=11, textColor=C(T.INK2))), Spacer(1, 1 * mm)]
 
     S += [WU.h2("01", "Summary"), Spacer(1, 2 * mm), WU.scorecard(), Spacer(1, 2.5 * mm)]
@@ -185,7 +185,7 @@ def build(out):
                                                    "Q01 and Q09 rerun to check nothing broke; other results carry over."],
         ["Fixed", "Q02, Q07", "Overstated certainty and mixed periods (Q02); the start-up month used as a normal baseline (Q07)."],
         ["Still open", "Q11", "The start-up rule didn't trigger for a trend description; recorded as the next fix."],
-        ["Strongest", "Ambiguity and traps", "Asked when it should have (Q03, Q10, Q15, Q18), declined the unanswerable question (Q16) "
+        ["Strongest", "Ambiguity and traps", "Asked or stated a clear choice when the question was open (Q03, Q10, Q15, Q18), declined the unanswerable question (Q16) "
                                             "and caught both planted data issues (Q12, Q13)."],
     ], [W * 0.13, W * 0.25, W * 0.62]))
     S += [Spacer(1, 2 * mm), WU.type_table()]
@@ -196,7 +196,11 @@ def build(out):
         "cohorts, ambiguous and unanswerable questions, data-quality traps and a multi-step investigation "
         f'(<a href="{BLOB}/docs/evaluations/investigation-paths.md" color="#1f4e8c">investigation-paths.md</a>).',
         "<b>Answer key first:</b> expected values were computed with the metric registry's SQL on the <b>raw source tables only</b>, never "
-        "on the Silver and Gold tables the agent uses, and approved before any agent run. The reference queries are kept as evidence logs.",
+        "on the Silver and Gold tables the agent uses, and approved before any agent run. One exception: in Q03 the agent asked which period to use and the evaluator chose two weeks "
+        "the key didn't cover, so those two values were computed afterwards with the same method. The reference queries are kept as "
+        "evidence logs.",
+        "<b>Who scored:</b> Claude Code scored every run against the key. The GM report (Q02 v1) was also reviewed independently with "
+        "ChatGPT, and the project owner decided the borderline calls.",
         "<b>Blind runs:</b> one fresh session per question with the same prompt; the agent was told not to read evaluation files, earlier "
         "reports or the data generator's notes. When it asked a question, the reply named a choice only (e.g. \"Monthly, Q2 vs Q3 2026\").",
         "<b>Scoring:</b> exact counts and cents; rates within 0.1 point. Behaviour counts too: a conclusion firmer than the evidence, a "
@@ -215,7 +219,7 @@ def build(out):
     S.append(kv_table([
         ["Conclusions firmer than the evidence: a cause stated from an association; two hypotheses rejected too firmly; data-quality "
          "impact called \"none\"", "Q02 v1", "Skill rules: separate pattern from cause; quantify data-quality scope and impact or say "
-         "\"unknown\"; keep unexplained anomalies open", "Not seen again in 17 later runs; blind Q02 rerun passed (minor wording issues)"],
+         "\"unknown\"; keep unexplained anomalies open", "Not seen in the 17 Codex runs; the blind Q02 rerun passed but still worded two data-quality impacts a little too firmly"],
         ["Comparison periods mislabelled; a monthly amount compared with quarterly revenue", "Q02 v1",
          "Skill rule: exact periods, the same time basis, explicit start and end boundaries", "Not seen again"],
         ["The first month of data used as a normal baseline (the subscriber base starts at zero in April)", "Q07, Q11",
@@ -223,7 +227,7 @@ def build(out):
          "correctly; Q11 unchanged because the question isn't phrased as a comparison"],
         ["A harmless registry-version warning repeated in every report", "All runs",
          "Verified the change since the build is documentation only (all 56 SQL definitions identical) and recorded it",
-         "Still raised in 3 of 4 round-2 runs; agents compare file hashes themselves"],
+         "Still raised in 3 of 4 Codex round-2 runs; the blind Q02 run read the note and handled it correctly"],
     ], [W * 0.31, W * 0.10, W * 0.32, W * 0.27], head=["Failure", "Where", "What changed", "Result"]))
     S += [Spacer(1, 2 * mm), Paragraph(
         "<b>Hardest question type:</b> comparisons that need context the data doesn't announce, such as a start-up month. The agent "
@@ -237,7 +241,7 @@ def build(out):
                    "word for word."],
         ["v2", "The agent's revision after that review: every point addressed and confirmed by five extra checks (17–21). This is the "
                "board report in the submission."],
-        ["Blind rerun", "A fresh Claude Code agent with no access to the review or answer key, on the updated skill: numbers exact, "
+        ["Blind rerun", "A fresh Claude Code agent on the updated skill, given only the standard prompt and a clean repository copy (no review, answer key or earlier reports; told not to read anything else): numbers exact, "
                         "material review points fixed, start-up month handled; two data-quality statements and one rejected "
                         "hypothesis still a little too firm. Pass with minor issues."],
     ], [W * 0.15, W * 0.85]))
@@ -247,7 +251,7 @@ def build(out):
                     "To get a local copy: <font name=\"R\">git clone " + REPO + ".git</font>", BODY), Spacer(1, 1.5 * mm)]
     loc = [
         ("submission/", "Start here: board report (v2), the agent's raw v1, one-page write-up and this file"),
-        ("docs/evaluations/results.md", "The same results as a web page in the repository"),
+        ("docs/evaluations/results.md", "The same results as a page in the repository"),
         ("docs/evaluations/investigation-paths.md", "The 18 scenarios and what success requires"),
         ("evaluation-results/answer-key/", "Expected values and scoring rules (batches 1–4) and the reference query logs"),
         ("evaluation-results/QNN/codex-run-001/", "Round 1 run for question NN: scoring record, the agent's output, evidence zip"),

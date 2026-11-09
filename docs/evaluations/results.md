@@ -13,7 +13,7 @@
 
 - **Runtimes:** Q02 in Claude Code (Claude Opus 5.5); all others in Codex, one fresh session per question, independent mode (no evaluation docs, answer keys or previous reports in context).
 - **Snapshot:** `pockettoons.sqlite` SHA-256 `8d39e78b…790b`, build `3a0dbed2` (122/122 layer checks). Coverage April–September 2026, complete UTC months.
-- **Answer key:** computed with the metric registry's canonical SQL on the **source tables only**, never on the Silver/Gold tables the agent uses, and approved before any run. Exact counts and cents; ±0.1 point on rates. Correct numbers are not enough: unsupported certainty, a silent choice of period or definition, or a missing required caveat fails.
+- **Answer key:** computed with the metric registry's canonical SQL on the **source tables only**, never on the Silver/Gold tables the agent uses, and approved before any run. One exception: in Q03 the agent asked which period to use and the evaluator chose two weeks the key didn't cover, so those values were computed afterwards with the same method (`oracle-b5`). Exact counts and cents; ±0.1 point on rates. Correct numbers are not enough: unsupported certainty, a silent choice of period or definition, or a missing required caveat fails.
 - **Agent versions:** round 1 = `main` after PR #1 (certainty, time-window and anomaly rules from the Q02 review). Round 2 = `cb3918d` (PR #4: start-up baseline rule).
 
 ## Results by scenario
@@ -45,7 +45,7 @@ Assignment coverage: simple aggregates Q01, Q08; filtered queries Q05, Q17, Q18;
 
 v1 is the agent's raw output (Claude Code, independent mode), scored in round 1: **Fail**. A reviewer checked it against the evidence and source data; the agent produced v2 from that feedback, and the reasoning lessons became skill rules. v2 is the round-2 result: **Pass**, every point below addressed, verified by five extra checks (17–21). v2 is the agent's revision after review feedback, written alongside the skill rules that came from that review; it is not a fresh blind run. v2 is the board-ready report; the brief allows showing both.
 
-**Blind rerun on the updated skill: Pass (minor issues).** A fresh Claude Code agent with no access to the review, the answer key or earlier reports ran the GM question on `main` @ `0b9a143`, with the standard prompt only (10 minutes, 18 queries). Every number matches the key, and the material review points are fixed: patterns labelled as associations, Q2 vs Q3 and May-based cohort trends with the April start-up stated, both bounds on the 30-day window, no monthly/quarterly mix-up. It also found that paywall-to-purchase conversion is flat from May and added marketing cost per new payer. Minor: two data-quality impacts and one rejected hypothesis are stated a little too firmly. Record: [`evaluation-results/Q02/run-002-blind/`](../../evaluation-results/Q02/run-002-blind/evaluation-record.md).
+**Blind rerun on the updated skill: Pass (minor issues).** A fresh Claude Code agent, given only the standard prompt and a clean repository copy without the review, answer key or earlier reports (and told not to read anything else), ran the GM question on `main` @ `0b9a143`, with the standard prompt only (10 minutes, 18 queries). Every number matches the key, and the material review points are fixed: patterns labelled as associations, Q2 vs Q3 and May-based cohort trends with the April start-up stated, both bounds on the 30-day window, no monthly/quarterly mix-up. It also found that paywall-to-purchase conversion is flat from May and added marketing cost per new payer. Minor: two data-quality impacts and one rejected hypothesis are stated a little too firmly. Record: [`evaluation-results/Q02/run-002-blind/`](../../evaluation-results/Q02/run-002-blind/evaluation-record.md).
 
 | Feedback on v1 | v2 |
 |---|---|
@@ -70,7 +70,7 @@ The three reasoning lessons became skill rules (PR #1) before the other 17 scena
 | Noise: every run reported the registry file hash differing from build time | All | Longer reports; a non-issue presented as a risk | Verified the change is docs-only (56 SQL blocks identical) and recorded it in project status | Still raised in 3 of 4 round-2 runs; agents compute the hashes and don't read the note |
 
 **Hardest question types:** comparisons that need context the data doesn't announce (a start-up month, a fair baseline). The agent computes correctly but doesn't ask whether the comparison is fair unless a rule names the situation.
-**Strongest:** behaviour under ambiguity. It asked in all four scenarios that needed it, declined the unanswerable one, and caught both planted data traps.
+**Strongest:** behaviour under ambiguity. It asked or stated a clear choice in every scenario that needed one (asked in Q03, Q15 and Q18; stated both meanings in Q10), declined the unanswerable one, and caught both planted data traps.
 
 ## Evidence
 

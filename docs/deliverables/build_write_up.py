@@ -147,7 +147,7 @@ def scorecard():
 def type_table():
     rows = [
         ("S", "Simple numbers and filters", "Q01 Q05 Q08 Q17 Q18", "All pass", "Exact to the user and the cent"),
-        ("S", "Vague questions", "Q03 Q10 Q15 Q18", "All pass", "Asked before choosing a metric, period or meaning"),
+        ("S", "Vague questions", "Q03 Q10 Q15 Q18", "All pass", "Asked, or stated a clear choice, before picking a metric, period or meaning"),
         ("S", "Unanswerable question", "Q16", "Pass", "Declined and named the data that's missing"),
         ("S", "Data-quality traps", "Q12 Q13 Q14", "All pass", "Caught both planted issues; didn't claim to have detected a reviewed one"),
         ("S", "Comparisons and lifecycle", "Q04 Q06 Q09", "All pass", "Right time basis; groups reconcile to the total"),
@@ -199,7 +199,7 @@ def build(out):
 
     story += [h2("02", "How it performed: 18 blind test questions, two rounds"), Spacer(1, 2 * mm), scorecard(), Spacer(1, 2 * mm),
               type_table(), Spacer(1, 1.2 * mm),
-              Paragraph("Scored against values computed beforehand from the raw tables. Correct numbers alone don't pass: a silent choice of "
+              Paragraph("Scored against expected values computed from the raw tables, not the agent's layers. Correct numbers alone don't pass: a silent choice of "
                         "definition, a missing caveat or an overstated conclusion fails. Round 2: Q02 was revised after review and rerun blind; Q07 and Q11 were rerun, "
                         "with Q01 and Q09 to check nothing broke; other results carry over. "
                         "<b>Hardest:</b> comparisons that need context the data doesn't announce, such as a start-up month.", SMALL)]
