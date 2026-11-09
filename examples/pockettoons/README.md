@@ -13,7 +13,7 @@ The generator refuses to overwrite an existing database. The main random seed is
 
 This section contains expected synthetic findings. Exclude it from the agent's investigation context when evaluating independent discovery.
 
-Users are active on a varying number of days each month; monthly stickiness (average DAU ÷ MAU) is about 12%. Session starts follow each country's local daily pattern with an evening peak, some users use a second installation on another platform, about 15% of views end within the first minute, and about a quarter of views watch the episode to the end, sometimes followed by the next episode.
+Users are active on a varying number of days each month; monthly stickiness (average DAU ÷ MAU) is about 12%. Session starts follow each country's local daily pattern with an evening peak, some users use a second installation on another platform, about 12% of views end within the first minute, and about a quarter of views watch the episode to the end, sometimes followed by the next episode.
 
 Quarter MAU is the average of monthly distinct active users, where activity is a session. Monthly MAU is 7,937, 9,134, 9,976, 10,138, 10,871, and 11,447, an approximately 20% increase in quarter-average MAU. Revenue is succeeded subscription and PPV charges less succeeded refunds, before fees/tax, measured at success time. All charges and refunds are stored as positive amounts; subtract refunds explicitly with `CASE WHEN type='refund' THEN -amount_usd ELSE amount_usd END`. Monthly net revenue is $9,863.83, $10,293.40, $9,987.77, $10,171.53, $9,819.93, and $10,175.51 respectively. The monthly values are controlled synthetic targets.
 
