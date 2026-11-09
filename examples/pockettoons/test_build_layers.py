@@ -381,6 +381,25 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(len(marketing), 6)
         self.assertTrue(all(marketing.values()))
 
+    def test_quality_exceptions_list_every_flagged_row_per_reason(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = self.query('SELECT table_name, row_key, exception_status, exception_reason FROM silver_quality_exceptions')
+        listed = {(t, k, r) for t, k, _, r in rows}
+        self.assertIn(('silver_paywall_funnel', 'pw_odd', 'unidentified_viewer'), listed)   # two reasons, two rows
+        self.assertIn(('silver_paywall_funnel', 'pw_odd', 'unrecognised_product'), listed)
+        self.assertIn(('silver_user_episodes', 'u1|c9|1', 'episode_not_in_catalog'), listed)  # composite key as text
+        self.assertIn(('silver_resolved_sessions', 's_two', 'ambiguous_identity_link'), listed)
+        self.assertIn(('silver_resolved_sessions', 's_mismatch', 'link_user_mismatch'), listed)
+        self.assertNotIn('s_none', {k for t, k, _, _ in rows})                                 # anonymous is not a fault
+        statuses = {(t, k): s for t, k, s, _ in rows}
+        self.assertEqual(statuses[('silver_marketing_daily', '2026-04-11|paid_search')], 'excluded')
+        self.assertEqual(self.query('SELECT COUNT(DISTINCT build_id) FROM silver_quality_exceptions'), [(1,)])
+        checks = json.loads(result['reconciliation'])['checks']
+        quality = {k: v for k, v in checks.items() if k.startswith('silver_quality_exceptions')}
+        self.assertEqual(len(quality), 2)
+        self.assertTrue(all(quality.values()))
+
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
         build_layers.build(self.path)
