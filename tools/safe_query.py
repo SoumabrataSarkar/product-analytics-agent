@@ -32,7 +32,7 @@ def execute_read_only(
     metric_version: str = "unspecified",
     snapshot_id: str = "unspecified",
     max_rows: int = 100,
-    timeout_seconds: float = 5.0,
+    timeout_seconds: float = 30.0,
 ) -> dict[str, Any]:
     """Run one read-only statement with SQLite authorization and limits.
 
@@ -102,7 +102,7 @@ def main() -> int:
     parser.add_argument("--metric-version", default="unspecified")
     parser.add_argument("--snapshot-id", default="unspecified")
     parser.add_argument("--max-rows", type=int, default=100)
-    parser.add_argument("--timeout", type=float, default=5.0)
+    parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
     try:
         result = execute_read_only(args.database, args.sql, question=args.question,
