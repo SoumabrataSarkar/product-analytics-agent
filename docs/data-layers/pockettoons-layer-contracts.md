@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile` and `silver_user_day_activity` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity` and `silver_user_day_title_watch` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -116,13 +116,31 @@
 | Purpose | Daily, weekly and monthly active and engaged users, stickiness, active days and retention from one table instead of raw sessions and segments |
 | Grain | One row per resolved user and UTC day with any session, watch time or view start; days without activity have no row and read as inactive |
 | Key and indexes | (`user_id`, `activity_date`) primary key; index on (`activity_date`, `user_id`) |
-| Columns | `user_id`; `activity_date`; `activity_month`; `sessions_touching` (sessions whose span touches the day); `sessions_started`; `started_session_span_sec` (span of sessions started that day); `watch_seconds` (REAL); `views_started`; `subscriber_at_day_start`; `exception_status`; `exception_reason`; `build_id` |
-| Rules | Active on a day: `sessions_touching` > 0. A session touches every day from its start to its `last_activity_at`, both inclusive, so a session crossing midnight counts on both days and one whose last activity is exactly midnight touches the later day (activity family rule). Watch seconds are split across days by wall-clock share; a zero-length segment counts on its day. Engagement is not stored: engaged in a period is `SUM(watch_seconds)` ≥ 60 over the period's days, so the threshold can change without a rebuild. `subscriber_at_day_start` uses `silver_subscription_access` at 00:00:00Z. |
+| Columns | `user_id`; `activity_date`; `activity_month`; `sessions_touching` (sessions whose span touches the day); `sessions_started`; `started_session_span_sec` (span of sessions started that day); `watch_seconds` (REAL); `views_started`; `free_quota_slots_used` (highest `free_quota_sequence` that UTC day, 0–8); `subscriber_at_day_start`; `exception_status`; `exception_reason`; `build_id` |
+| Rules | Active on a day: `sessions_touching` > 0. A session touches every day from its start to its `last_activity_at`, both inclusive, so a session crossing midnight counts on both days and one whose last activity is exactly midnight touches the later day (activity family rule). Watch seconds are split across days by wall-clock share; a zero-length segment counts on its day. Engagement is not stored: engaged in a period is `SUM(watch_seconds)` ≥ 60 over the period's days, so the threshold can change without a rebuild. `subscriber_at_day_start` uses `silver_subscription_access` at 00:00:00Z. The free quota is per user and UTC day across all titles: a quota hit is `free_quota_slots_used` = 8. |
 | Aggregation | Distinct-user counts over several days are recounted from rows, never summed from daily counts. Days align with week and month boundaries, so watch seconds sum exactly into any day-aligned period. |
 | Time | UTC days; all days are kept, not only the coverage window |
 | Lineage | `silver_resolved_sessions` (resolved users only); `playback_segments` and `content_views`; `silver_subscription_access`; `users` for exceptions |
-| Exceptions | `suspicious_usable` with reasons `user_not_in_users` or `activity_before_signup` (comma-separated when both apply) |
+| Exceptions | `suspicious_usable` with reasons `user_not_in_users`, `activity_before_signup` or `free_quota_sequence_gap` (the highest slot differs from the number of quota-consuming views) |
 | Supports | DAU, WAU, MAU, DEU, WEU, MEU, stickiness, engagement rate, active-days distribution, day-N and monthly retention, sessions and views per active user, subscriber versus non-subscriber activity |
-| Does not support | Platform or country slices (a user can have several in a day: use `silver_resolved_sessions`); title-level watching (`silver_user_day_title_watch`, planned) |
-| Reconciliation | An independent Python recount reproduces every session-active user-day and daily DAU; an exact-fraction Python recount reproduces daily engaged users (differences allowed only within 10⁻⁶ s of the threshold); total watch seconds equal the segments; started sessions and views equal the source; WAU, WEU, MAU and MEU equal the registry and the active-days distribution equals `active_days_distribution_monthly` on the source. Daily registry DAU and DEU are not re-run in the build because their range joins take about three minutes. |
-| Tests | Midnight-crossing session, last activity exactly at midnight, watch-only day, segment split across midnight, view start, subscriber at day start, ambiguous session excluded, activity before signup, user not in `users` |
+| Does not support | Platform or country slices (a user can have several in a day: use `silver_resolved_sessions`); title-level watching (`silver_user_day_title_watch`) |
+| Reconciliation | An independent Python recount reproduces every session-active user-day and daily DAU; an exact-fraction Python recount reproduces daily engaged users (differences allowed only within 10⁻⁶ s of the threshold); total watch seconds equal the segments; started sessions and views equal the source; WAU, WEU, MAU and MEU equal the registry the active-days distribution equals `active_days_distribution_monthly` and free-viewer days and quota hits equal `free_quota_hit_monthly` on the source. Daily registry DAU and DEU are not re-run in the build because their range joins take about three minutes. |
+| Tests | Midnight-crossing session, last activity exactly at midnight, watch-only day, segment split across midnight, view start, subscriber at day start, ambiguous session excluded, activity before signup, user not in `users`, quota hit, subscription views using no slot, quota sequence gap |
+
+## silver_user_day_title_watch
+
+| Part | Contract |
+|---|---|
+| Purpose | Watch time, reach and views by title and entitlement: title reach, views per viewer, free versus subscription versus PPV watching |
+| Grain | One row per resolved user, UTC day, `content_id` and `view_type` with a view start or watch time |
+| Key and indexes | (`user_id`, `activity_date`, `content_id`, `view_type`) primary key; index on (`activity_date`, `content_id`) |
+| Columns | `user_id`; `activity_date`; `activity_month`; `content_id`; `view_type` (`free`, `sub` or `ppv`: the entitlement at view start); `views_started`; `episodes_started` (distinct episodes among views started); `first_views_of_episode`; `watch_seconds` (REAL); `exception_status`; `exception_reason`; `build_id` |
+| Rules | Views, episodes and first views count on the UTC day the view starts (registry rule). Watch seconds are split across days by wall-clock share, as in `silver_user_day_activity`, so a view that crosses midnight can give a row with watch time but no view start. |
+| Aggregation | Viewers of a title over several days are recounted from rows; `episodes_started` is distinct within a row and is not summed across days as distinct episodes. |
+| Time | UTC days; all days kept |
+| Lineage | `content_views` and `playback_segments`; `users` for exceptions |
+| Exceptions | `suspicious_usable` with reasons `user_not_in_users` or `unrecognised_view_type` |
+| Supports | Title reach, watch time by title and by entitlement, views per viewer, first views of an episode, PPV and subscription watching |
+| Does not support | Episode completion and series continuation (`silver_user_episodes`, planned); free-quota use (`silver_user_day_activity`) |
+| Reconciliation | Per user-day, watch seconds and views equal `silver_user_day_activity`; views equal the source; monthly title reach equals `title_reach_monthly`, views and viewers equal `views_per_viewer_monthly` and watch seconds equal `watch_time_monthly` on the source |
+| Tests | Two titles on one day, one title under two view types, rewatch that is not a first view, split across midnight, watch-only day for a title, eight-slot free day |
