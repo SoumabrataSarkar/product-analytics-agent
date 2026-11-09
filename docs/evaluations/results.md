@@ -6,7 +6,7 @@
 
 | | Round 1 | Round 2 (after the skill updates) |
 |---|---|---|
-| Scenarios | 18 | Q02 v2, plus 4 Codex reruns (Q07, Q11 and Q01, Q09 as regression checks) |
+| Scenarios | 18 | Q02 (v2 after review, and a blind rerun), plus 4 Codex reruns (Q07, Q11 and Q01, Q09 as regression checks) |
 | Pass | 15 | 17 of 18 overall |
 | Partial | 1 (Q11) | 1 (Q11, unchanged) |
 | Fail | 2 (Q02 v1, Q07) | 0 |
@@ -21,7 +21,7 @@
 | ID | Type | Question | Expected (key points) | Agent result | R1 | R2 |
 |---|---|---|---|---|---|---|
 | Q01 | Simple aggregate, time | How did MAU change across the months? | 7,937 → 11,447 (+44.2%); unidentified sessions excluded, not people | Exact; Silver recount matched | Pass | Pass |
-| Q02 | Multi-step | Why did MAU grow 20% while revenue stayed flat? | Premise verified; growth from new users; association, not cause | Numbers exact; cause overstated; mislabelled periods; quality caveats too certain | **Fail** | **Pass** (v2, see below) |
+| Q02 | Multi-step | Why did MAU grow 20% while revenue stayed flat? | Premise verified; growth from new users; association, not cause | Numbers exact; cause overstated; mislabelled periods; quality caveats too certain | **Fail** | **Pass** (v2 and blind rerun, see below) |
 | Q03 | Ambiguous period, decomposition | Which sources contributed most to the change in active users? | Ask or state the period; unknown shown separately; no causal claim | **Asked** daily/weekly/monthly; exact for the chosen weeks | Pass | |
 | Q04 | Comparison of metrics | Did engaged users grow with active users? | MEU +38.2% vs MAU +44.2%; 60-second rule | Exact | Pass | |
 | Q05 | Filter, overlapping slices | Did the platform mix change? | No material change; platforms overlap (~28%) and can't be added | Exact; overlap explained | Pass | |
@@ -44,6 +44,8 @@ Assignment coverage: simple aggregates Q01, Q08; filtered queries Q05, Q17, Q18;
 ## Q02: the GM question, v1 → feedback → v2
 
 v1 is the agent's raw output (Claude Code, independent mode), scored in round 1: **Fail**. A reviewer checked it against the evidence and source data; the agent produced v2 from that feedback, and the reasoning lessons became skill rules. v2 is the round-2 result: **Pass**, every point below addressed, verified by five extra checks (17–21). v2 is the agent's revision after review feedback, written alongside the skill rules that came from that review; it is not a fresh blind run. v2 is the board-ready report; the brief allows showing both.
+
+**Blind rerun on the updated skill: Pass (minor issues).** A fresh Claude Code agent with no access to the review, the answer key or earlier reports ran the GM question on `main` @ `0b9a143`, with the standard prompt only (10 minutes, 18 queries). Every number matches the key, and the material review points are fixed: patterns labelled as associations, Q2 vs Q3 and May-based cohort trends with the April start-up stated, both bounds on the 30-day window, no monthly/quarterly mix-up. It also found that paywall-to-purchase conversion is flat from May and added marketing cost per new payer. Minor: two data-quality impacts and one rejected hypothesis are stated a little too firmly. Record: [`evaluation-results/Q02/run-002-blind/`](../../evaluation-results/Q02/run-002-blind/evaluation-record.md).
 
 | Feedback on v1 | v2 |
 |---|---|

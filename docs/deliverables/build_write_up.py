@@ -156,7 +156,7 @@ def type_table():
         ("P", "Funnel drop-off", "Q11", "Partial", "Right answer and gaps, but read April's start-up as a funnel decline; "
          "the new rule didn't trigger here"),
         ("F", "GM investigation", "Q02", "Fail → Pass", "v1: headline numbers and story right, but some conclusions stated more firmly than the "
-         "evidence allowed. After review, three certainty rules joined the skill and the agent's v2 passed; the issue didn't recur in 17 later runs"),
+         "evidence allowed. After review, three certainty rules joined the skill; v2 and a blind rerun on the updated skill both passed"),
     ]
     head = ["Question type", "Questions", "Result", "What happened"]
     data = [[Paragraph(c, HEAD) for c in head]]
@@ -202,7 +202,7 @@ def build(out):
     story += [h2("02", "How it performed: 18 blind test questions, two rounds"), Spacer(1, 2 * mm), scorecard(), Spacer(1, 2 * mm),
               type_table(), Spacer(1, 1.2 * mm),
               Paragraph("Scored against values computed beforehand from the raw tables. Correct numbers alone don't pass: a silent choice of "
-                        "definition, a missing caveat or an overstated conclusion fails. Round 2: Q02 is the agent's v2 after review; Q07 and Q11 were rerun, "
+                        "definition, a missing caveat or an overstated conclusion fails. Round 2: Q02 was revised after review and rerun blind; Q07 and Q11 were rerun, "
                         "with Q01 and Q09 to check nothing broke; other results carry over. "
                         "<b>Hardest:</b> comparisons that need context the data doesn't announce, such as a start-up month.", SMALL)]
 

@@ -11,6 +11,7 @@ The material behind [the evaluation results](../docs/evaluations/results.md): th
   - `codex-run-001/`: round 1. `codex-run-002/`: round 2 (Q01, Q07, Q09, Q11 only).
   - Each run has `evaluation-record.md` (expected vs actual and the outcome), `v1-report.pdf` or `.md` (the agent's output, unedited), `v1-content.json` where the agent used the PDF generator, and `evidence.zip` (one evidence log per query, the query requests and the run note).
 - `Q02/run-001/`: the GM question, run in Claude Code. It holds `v1-report.pdf` (the agent's raw output, scored), `feedback.md` (the review, word for word), `v2-report.pdf` (the agent's revision after that review), `v1-vs-v2-changes.md` and `evidence.zip`.
+- `Q02/run-002-blind/`: a blind rerun of the GM question on the updated skill (fresh Claude Code agent, clean repo copy): Pass with minor issues.
 - `TRACKER.md`: status of every scenario in both rounds.
 
 The scoring rules are at the top of each answer-key batch: exact counts and cents, ±0.1 point on rates, and a fail for unsupported certainty, a silently chosen period or definition, or a missing required caveat.

@@ -14,7 +14,7 @@ One investigation runs in six steps: **clarify** (metric, period, population; as
 
 ## 02 How it performed: 18 blind test questions, two rounds
 
-Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after the skill updates; Q07 and Q11 rerun; Q01 and Q09 as regression checks): 17 pass, 1 partial, 0 fail.
+Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after review plus a blind rerun on the updated skill; Q07 and Q11 rerun; Q01 and Q09 as regression checks): 17 pass, 1 partial, 0 fail.
 
 | Question type | Questions | Result | What happened |
 |---|---|---|---|
@@ -25,7 +25,7 @@ Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after the skill updates; Q0
 | Comparisons and lifecycle | Q04 Q06 Q09 | All pass | Right time basis; groups reconcile to the total |
 | Cohort conversion | Q07 | Fail → Pass | Used April, the month the subscriber base forms, as a normal baseline; a new skill rule fixed it |
 | Funnel drop-off | Q11 | Partial | Right answer and gaps, but read April's start-up as a funnel decline; the new rule didn't trigger here |
-| GM investigation | Q02 | Fail → Pass | v1: headline numbers and story right, but some conclusions stated more firmly than the evidence allowed. After review the skill gained three certainty rules and the agent's v2 passed; the issue didn't recur in 17 later runs |
+| GM investigation | Q02 | Fail → Pass | v1: headline numbers and story right, but some conclusions stated more firmly than the evidence allowed. After review the skill gained three certainty rules; v2 and a blind rerun on the updated skill both passed |
 
 **Hardest:** comparisons that need context the data doesn't announce, such as a start-up month. Details: [evaluation results](../evaluations/results.md).
 
