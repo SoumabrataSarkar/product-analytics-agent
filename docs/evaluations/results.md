@@ -4,12 +4,12 @@
 
 ## Summary
 
-| | Round 1 | Round 2 (after one skill rule) |
+| | Round 1 | Round 2 (after the skill updates) |
 |---|---|---|
-| Scenarios | 18 | 4 rerun (2 failures + 2 regression checks) |
-| Pass | 15 | 16 of 18 overall |
+| Scenarios | 18 | Q02 v2, plus 4 Codex reruns (Q07, Q11 and Q01, Q09 as regression checks) |
+| Pass | 15 | 17 of 18 overall |
 | Partial | 1 (Q11) | 1 (Q11, unchanged) |
-| Fail | 2 (Q02 v1, Q07) | 1 (Q02 v1, run before the rules; not rerun) |
+| Fail | 2 (Q02 v1, Q07) | 0 |
 
 - **Runtimes:** Q02 in Claude Code (Claude Opus 5.5); all others in Codex, one fresh session per question, independent mode (no evaluation docs, answer keys or previous reports in context).
 - **Snapshot:** `pockettoons.sqlite` SHA-256 `8d39e78b…790b`, build `3a0dbed2` (122/122 layer checks). Coverage April–September 2026, complete UTC months.
@@ -21,7 +21,7 @@
 | ID | Type | Question | Expected (key points) | Agent result | R1 | R2 |
 |---|---|---|---|---|---|---|
 | Q01 | Simple aggregate, time | How did MAU change across the months? | 7,937 → 11,447 (+44.2%); unidentified sessions excluded, not people | Exact; Silver recount matched | Pass | Pass |
-| Q02 | Multi-step | Why did MAU grow 20% while revenue stayed flat? | Premise verified; growth from new users; association, not cause | Numbers exact; cause overstated; mislabelled periods; quality caveats too certain | **Fail** | v2: agent revision after review (see below) |
+| Q02 | Multi-step | Why did MAU grow 20% while revenue stayed flat? | Premise verified; growth from new users; association, not cause | Numbers exact; cause overstated; mislabelled periods; quality caveats too certain | **Fail** | **Pass** (v2, see below) |
 | Q03 | Ambiguous period, decomposition | Which sources contributed most to the change in active users? | Ask or state the period; unknown shown separately; no causal claim | **Asked** daily/weekly/monthly; exact for the chosen weeks | Pass | |
 | Q04 | Comparison of metrics | Did engaged users grow with active users? | MEU +38.2% vs MAU +44.2%; 60-second rule | Exact | Pass | |
 | Q05 | Filter, overlapping slices | Did the platform mix change? | No material change; platforms overlap (~28%) and can't be added | Exact; overlap explained | Pass | |
@@ -43,7 +43,7 @@ Assignment coverage: simple aggregates Q01, Q08; filtered queries Q05, Q17, Q18;
 
 ## Q02: the GM question, v1 → feedback → v2
 
-v1 is the agent's raw output (Claude Code, independent mode) and is the version scored. A reviewer then checked it against the evidence and source data, and the agent produced v2 from that feedback. The brief allows showing both; v2 is the board-ready report.
+v1 is the agent's raw output (Claude Code, independent mode), scored in round 1: **Fail**. A reviewer checked it against the evidence and source data; the agent produced v2 from that feedback, and the reasoning lessons became skill rules. v2 is the round-2 result: **Pass**, every point below addressed, verified by five extra checks (17–21). v2 is the agent's revision after review feedback, written alongside the skill rules that came from that review; it is not a fresh blind run. v2 is the board-ready report; the brief allows showing both.
 
 | Feedback on v1 | v2 |
 |---|---|

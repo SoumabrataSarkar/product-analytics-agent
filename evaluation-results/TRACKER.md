@@ -7,7 +7,7 @@ Status of all 18 scenarios (IDs from `docs/evaluations/investigation-paths.md`).
 | ID | Question (short) | Answer key | Claude Code run | Codex run | Outcome |
 |---|---|---|---|---|---|
 | Q01 | How did MAU change across the months? | Batch 1, approved | n/a (Codex only) | Run 001, 2026-11-09 (`Q01/codex-run-001/`) | **Pass** |
-| **Q02** | **Why did MAU grow while revenue stayed flat?** | **Not needed (scored against reviewer's source-level check)** | **Run 001, 2026-11-09** (`Q02/run-001/`) | **n/a (Claude Code only)** | **Fail (v1); v2 awaits verification** |
+| **Q02** | **Why did MAU grow while revenue stayed flat?** | **Not needed (scored against reviewer's source-level check)** | **Run 001, 2026-11-09** (`Q02/run-001/`) | **n/a (Claude Code only)** | **Fail (v1) → Pass (v2, after review and skill update)** |
 | Q03 | Which acquisition sources drove the MAU change? | Batch 1, approved; extended for clarified weekly scope (o41–o42) | n/a (Codex only) | Run 001, 2026-11-09 (`Q03/codex-run-001/`); asked to clarify, evaluator chose 2 weeks | **Pass** (clarified variant) |
 | Q04 | Did engaged users grow with active users? | Batch 1, approved | n/a (Codex only) | Run 001, 2026-11-09 (`Q04/codex-run-001/`) | **Pass** |
 | Q05 | Did the platform mix change? | Batch 1, approved | n/a (Codex only) | Run 001, 2026-11-09 (`Q05/codex-run-001/`) | **Pass** |
@@ -76,4 +76,4 @@ Done: answer key complete for all 16 scenarios (batches 1–3 approved). PR #1 (
 | Q01 | Regression check (round-1 pass) | `agent-runs/codex/round2/Q01/` → `Q01/codex-run-002/` | **Pass** (no regression) |
 | Q09 | Regression check (round-1 pass) | `agent-runs/codex/round2/Q09/` | **Pass** (no regression; rule also applied correctly) |
 
-**Round 2 result:** Q07 fixed (Fail → Pass); Q11 unchanged (Partial); no regressions. Final round-2 standing over 18 scenarios: 16 Pass, 1 Partial, 1 Fail (Q02 v1, pre-rules; not rerun). The registry-hash note still appears in 3 of 4 runs: agents compute the hashes themselves and don't use the project-status note.
+**Round 2 result:** Q07 fixed (Fail → Pass); Q11 unchanged (Partial); no regressions. Final round-2 standing over 18 scenarios: 17 Pass, 1 Partial (Q11), 0 Fail. Q02's round 2 is v2, the agent's revision after review feedback (not a fresh blind run). The registry-hash note still appears in 3 of 4 runs: agents compute the hashes themselves and don't use the project-status note.

@@ -68,12 +68,12 @@ See `v1-vs-v2-changes.md` for every feedback point mapped to its change.
 
 - **v1 (raw agent output, scored):** `v1-report.pdf`, the PDF export of the Claude Doc "PocketToons: why MAU grew 20% QoQ while revenue stayed flat". Not edited. Before the feedback, v1 was also briefly turned into a quick PDF in chat; same content, not a separate version.
 - **Feedback:** `feedback.md`, word for word (A format, B substance review, C decision).
-- **v2 (corrected after peer review):** `v2-report.pdf` (9 pages; one page spare) and `v2-content.json`. Build line reads "20 Bronze views and 18 Silver/Gold tables". **v2 awaits evaluator verification** before it is treated as the final report.
+- **v2 (corrected after peer review):** `v2-report.pdf` (9 pages; one page spare) and `v2-content.json`. Build line reads "20 Bronze views and 18 Silver/Gold tables". **v2: Pass (round 2).** Every review point is addressed (see `v1-vs-v2-changes.md`), confirmed by checks 17–21. v2 is the agent's revision after review feedback, written alongside the skill rules that came from that review; it is not a fresh blind run.
 - **Evidence:** `evidence.zip`: q01–q16 (original run) and q17–q21 (review follow-up), with an index.
 
 ## Aggregate (this run only)
 
-- Executed: 1 (Q02); pass: 0; partial: 0; fail: 1; not run: 0. The full suite (16 scenarios) has not been run yet.
+- Round 1 (v1): Fail. Round 2 (v2): Pass.
 - Main failure pattern: **certainty beyond the evidence** (F1, F4, F5, F7) plus **labelling and time-basis precision** (F2, F3).
 - Done: outcome decided; all 8 failure types now have a skill rule or tool guard in PR #1 (merged).
-- Next: verify v2 against checks 17–21; run the remaining scenarios in fresh sessions with this folder kept out of the agent's context.
+- v2 verified against checks 17–21. The other 17 scenarios were run in fresh Codex sessions (see `../../TRACKER.md`).

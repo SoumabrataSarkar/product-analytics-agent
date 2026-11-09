@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-11-09 UTC (2026-11-09 IST).  
 **Repository:** `SoumabrataSarkar/product-analytics-agent` (private).  
-**Current focus:** Evaluation complete: 18 blind scenarios, 16 pass, 1 partial, 1 fail after one improvement round ([results](evaluations/results.md)). Submission deliverables are in [`submission/`](../submission/README.md).
+**Current focus:** Evaluation complete: 18 blind scenarios, 17 pass, 1 partial, 0 fail after one improvement round ([results](evaluations/results.md)). Submission deliverables are in [`submission/`](../submission/README.md).
 
 This is the common project progress and handoff record. The frozen architecture describes the intended reusable framework; the current catalog, data model, metric definitions, layer contracts and executable SQL describe the **PocketToons reference dataset**. They are shared between supported agents, not automatically valid for every product or data source.
 
