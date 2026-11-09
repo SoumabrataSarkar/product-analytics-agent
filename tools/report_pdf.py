@@ -2,8 +2,8 @@
 
 Every investigation uses the same cover, contents page, chapters, chart styles,
 colours, header and footer. Only the content file (JSON) changes. A report
-longer than MAX_PAGES (10) is refused: the output file is removed and the
-command exits non-zero, so the content must be shortened.
+longer than MAX_PAGES (10) is refused without touching an existing output.
+Existing reports are never overwritten; choose a new output path.
 
 Usage (from the repository root):
     python3 tools/report_pdf.py content.json output.pdf
@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import matplotlib
@@ -301,12 +303,17 @@ def chart_index_lines(c):
     fig, ax = _axes(c.get("height", 2.6))
     xs = c["x"]
     for s in c["series"]:
-        idx = [v / s["values"][0] * 100 for v in s["values"]]
+        baseline = s["values"][0]
+        idx = [v / baseline * 100 for v in s["values"]] if baseline else [float("nan")] * len(s["values"])
         acc = s.get("accent", False)
         col = BLUE_MID if acc else ("#a8a8a8" if s.get("dashed") else CHARCOAL)
         ax.plot(xs, idx, color=col, linewidth=2.4 if acc else 1.7, linestyle="--" if s.get("dashed") else "-", marker="o", markersize=3.4)
-        ax.annotate(f'{s["name"]} {idx[-1]:.0f}', (len(xs) - 1, idx[-1]), xytext=(8, s.get("label_dy", 0)),
-                    textcoords="offset points", va="center", fontsize=8.5, color=col, fontweight="bold" if acc else "normal")
+        if baseline:
+            ax.annotate(f'{s["name"]} {idx[-1]:.0f}', (len(xs) - 1, idx[-1]), xytext=(8, s.get("label_dy", 0)),
+                        textcoords="offset points", va="center", fontsize=8.5, color=col, fontweight="bold" if acc else "normal")
+        else:
+            ax.text(0.02, 0.94 - 0.06 * c["series"].index(s), f'{s["name"]}: N/A (zero baseline)',
+                    transform=ax.transAxes, fontsize=8, color=col)
     ax.axhline(100, color=MUTED, linewidth=0.8)
     _break(ax, c, 0.08)
     ax.set_xlim(-0.3, len(xs) - 1 + 1.3)
@@ -348,10 +355,10 @@ def chart_total_vs_part(c):
     for x, t, p in zip(xs, c["total"]["values"], c["part"]["values"]):
         ax.text(x, t + top * 0.015, f"{t:,.0f}", ha="center", va="bottom", fontsize=7.6, color=INK2)
         ax.text(x, p + top * 0.015, f"{p:,.0f}", ha="center", va="bottom", fontsize=7.6, color=INK, fontweight="bold")
-        ax.text(x, top * 1.17, f"{p / t:.1%}", ha="center", va="bottom", fontsize=9, fontweight="bold", color=BLUE_DARK)
+        ax.text(x, top * 1.17, f"{p / t:.1%}" if t else "N/A", ha="center", va="bottom", fontsize=9, fontweight="bold", color=BLUE_DARK)
     ax.text(-0.45, top * 1.17, c.get("share_label", "Share"), ha="right", va="bottom", fontsize=7.6, color=INK2)
     ax.set_xticks(xs, c["x"])
-    ax.set_ylim(0, top * 1.42)
+    ax.set_ylim(0, top * 1.42 if top else 1)
     ax.set_yticks([t for t in matplotlib.ticker.MaxNLocator(4).tick_values(0, top) if 0 <= t <= top])
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     _break(ax, c)
@@ -366,12 +373,12 @@ def chart_cohort_rates(c):
     base = c["base"]
     labels = c["groups"]
     for ax, p in zip(axs, panels):
-        rates = [n / b * 100 for n, b in zip(p["counts"], base)]
-        top = max(rates)
+        rates = [n / b * 100 if b else float("nan") for n, b in zip(p["counts"], base)]
+        top = max((rate for rate in rates if rate == rate), default=0) or 1
         cols = [BLUE_LIGHT if i <= c.get("break_after", -1) else BLUE_DARK for i in range(len(rates))]
         ax.bar(range(len(rates)), rates, color=cols, width=0.62)
         for i, (r, n, b) in enumerate(zip(rates, p["counts"], base)):
-            ax.text(i, r + top * 0.03, f"{r:.1f}%", ha="center", va="bottom", fontsize=8.5, fontweight="bold", color=INK)
+            ax.text(i, (r if b else 0) + top * 0.03, f"{r:.1f}%" if b else "N/A", ha="center", va="bottom", fontsize=8.5, fontweight="bold", color=INK)
         ax.set_xticks(range(len(labels)), [f"{g}\n{n}/{b:,}" for g, n, b in zip(labels, p["counts"], base)], fontsize=7.2)
         ax.set_ylim(0, top * 1.3)
         ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:.0f}%"))
@@ -500,7 +507,9 @@ def build(content: dict, out: Path) -> int:
     known = {s for _, _, ss, _ in CHAPTERS for s in ss} | {"glossary", "how_to_read"}
     if set(secs) - known:
         raise ValueError(f"Unknown sections: {set(secs) - known}")
-    doc = DocTemplate(str(out), meta, title=meta["title"], author=meta.get("author", ""), subject=meta["question"])
+    out = Path(out)
+    if out.exists():
+        raise FileExistsError(f"Refusing to overwrite existing report: {out}")
     toc = TableOfContents(dotsMinLevel=-1)
     toc.levelStyles = [style("toc0", fontSize=10.5, leading=22, textColor=INK)]
     story = [NextPageTemplate("body"), PageBreak(),
@@ -534,11 +543,18 @@ def build(content: dict, out: Path) -> int:
                     story.append(head)
             for items in blocks:
                 story += items
-    doc.multiBuild(story)
-    if doc.pages_drawn > MAX_PAGES:
-        Path(out).unlink(missing_ok=True)
-        raise PageLimitError(f"Report has {doc.pages_drawn} pages; the limit is {MAX_PAGES}. Shorten the content.")
-    return doc.pages_drawn
+    temp_file = tempfile.NamedTemporaryFile(prefix=".report-", suffix=".pdf", dir=out.parent, delete=False)
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    try:
+        doc = DocTemplate(str(temp_path), meta, title=meta["title"], author=meta.get("author", ""), subject=meta["question"])
+        doc.multiBuild(story)
+        if doc.pages_drawn > MAX_PAGES:
+            raise PageLimitError(f"Report has {doc.pages_drawn} pages; the limit is {MAX_PAGES}. Shorten the content.")
+        os.link(temp_path, out)  # atomic no-overwrite, including concurrent creation
+        return doc.pages_drawn
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
