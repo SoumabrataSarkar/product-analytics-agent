@@ -165,7 +165,7 @@ ORDER BY m.month_start, r.platform
     - Implemented and tested: the fixture checker computes monthly MAU and the quarter-average change from this registry's `mau_monthly` SQL; isolated tests cover month-boundary sessions, same-session login resolution, unidentified and ambiguous sessions, no cross-session device attribution, overlapping platform slices, quarter averaging and partial-month exclusion. Existing catalog checks validate session timestamps, identity links and activity evidence.
     - Proposed: declare the activity coverage window in `dataset_metadata` and check that reported months are fully covered.
 
-12. **Caveats.** The PocketToons fixture's coverage window is `2026-04-01T00:00:00Z` to `2026-10-01T00:00:00Z` (April–September), taken from the documented dataset contract rather than declared in the data. In the fixture every session has a `user_id` and no session crosses a month boundary; those cases are exercised only by isolated tests. Unidentified sessions are excluded from MAU and should be reported alongside it.
+12. **Caveats.** The PocketToons fixture's coverage window is `2026-04-01T00:00:00Z` to `2026-10-01T00:00:00Z` (April–September), taken from the documented dataset contract rather than declared in the data. Do not assume every session has an identified user or that sessions cannot cross a month boundary; check the chosen snapshot. Unidentified sessions are excluded from MAU and should be reported alongside it.
 
 ### Activity family: DAU, WAU, DEU, WEU, MEU        version: 1.0   status: approved
 
@@ -1254,3 +1254,4 @@ ORDER BY period_start, channel
 ## Proposed metrics
 
 None. A new metric is listed here before it is defined.
+

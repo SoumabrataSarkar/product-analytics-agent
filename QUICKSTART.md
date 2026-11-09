@@ -67,4 +67,5 @@ The agent may ask follow-up questions if the periods, population, or metric defi
 
 If you request a PDF report, the repository's report generator needs the Python packages `reportlab` and `matplotlib`. In a Python virtual environment, install them with `python -m pip install reportlab matplotlib`. The agent can then follow the repository's report workflow. Text answers and read-only query tooling use the Python standard library.
 
-See `SETUP.md` for full setup, regeneration instructions, and limitations. Keep the database and investigation evidence out of Git and do not share private query logs unintentionally. The broader independent evaluation is still underway.
+See `SETUP.md` for full setup, regeneration instructions, and limitations. Keep the database and investigation evidence out of Git and do not share private query logs unintentionally. The scenario evaluation and its remaining limitations are described in `docs/evaluations/results.md`; do not read it during an independent investigation.
+

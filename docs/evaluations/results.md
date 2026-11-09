@@ -1,6 +1,6 @@
 # Evaluation results
 
-**Status:** Complete for this stage (2026-11-09). 18 scenarios run blind, scored against an answer key written beforehand; one improvement round. Scenario definitions: [investigation-paths.md](investigation-paths.md). Method: [evaluation-process.md](evaluation-process.md).
+**Status:** Complete for this stage (2026-11-09). 18 scenarios run blind and scored against source-level references; one improvement round. Q02 used the reviewer’s source-level checks; the other scenarios used the answer-key batches. Scenario definitions: [investigation-paths.md](investigation-paths.md). Method: [evaluation-process.md](evaluation-process.md).
 
 ## Summary
 
@@ -13,8 +13,8 @@
 
 - **Runtimes:** Q02 in Claude Code (Claude Opus 5.5); all others in Codex, one fresh session per question, independent mode (no evaluation docs, answer keys or previous reports in context).
 - **Snapshot:** `pockettoons.sqlite` SHA-256 `8d39e78b…790b`, build `3a0dbed2` (122/122 layer checks). Coverage April–September 2026, complete UTC months.
-- **Answer key:** computed with the metric registry's canonical SQL on the **source tables only**, never on the Silver/Gold tables the agent uses, and approved before any run. Exact counts and cents; ±0.1 point on rates. Correct numbers are not enough: unsupported certainty, a silent choice of period or definition, or a missing required caveat fails.
-- **Agent versions:** round 1 = `main` after PR #1 (certainty, time-window and anomaly rules from the Q02 review). Round 2 = `cb3918d` (PR #4: start-up baseline rule).
+- **Answer key:** computed with the metric registry's canonical SQL on the **source tables only**, never on the Silver/Gold tables the agent uses, and approved before the applicable runs; Q02 used the reviewer’s source-level checks. Exact counts and cents; ±0.1 point on rates. Correct numbers are not enough: unsupported certainty, a silent choice of period or definition, or a missing required caveat fails.
+- **Agent versions:** round 1 = `main` after PR #1 (certainty, time-window and anomaly rules from the Q02 review). Round 2 Codex reruns = `cb3918d` (PR #4: start-up baseline rule); the fresh Q02 blind rerun used `0b9a143`.
 
 ## Results by scenario
 
@@ -75,3 +75,4 @@ The three reasoning lessons became skill rules (PR #1) before the other 17 scena
 ## Evidence
 
 Every run keeps one JSONL evidence log per query (SQL, SQL hash, layer, metric version, row count, truncation flag), the report and a run note. Per-scenario records, answer key and raw outputs: `evaluation-results/` (evaluator material; not for agent use during independent runs).
+

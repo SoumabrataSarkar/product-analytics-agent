@@ -13,7 +13,7 @@
 | Data storage | The source data and layers are in one local SQLite file. The reviewed file is distributed separately from the repository. |
 | Data layers | PocketToons implements 20 Bronze views, 10 Silver tables and 8 Gold tables. Bronze views expose source tables; Silver and Gold are physical tables with build metadata and reconciliation. Consult the contracts and verify the specific build rather than assuming every dataset has these layers. |
 | Routing | Use Gold only when validated and suitable for the measure, dimensions, grain, period and evidence; otherwise consider Silver or source/Bronze as needed. Correctness outranks speed. |
-| Reports | A coding agent can produce an evidence-backed report. A PDF generator is proposed in an open pull request and is not part of the main branch until merged. Preserve original agent output and identify human-reviewed edits. |
+| Reports | A coding agent can produce an evidence-backed report. `tools/report_pdf.py` generates the fixed-template PDF (up to 10 pages) and requires ReportLab and Matplotlib. Preserve original agent output and identify human-reviewed edits. |
 | Evaluation | A first independent-mode MAU/revenue investigation was run and reviewed; the original report had material failures and a corrected report was produced after feedback. The broader 15+ question evaluation is not yet complete. |
 | Visual explorer | The repository website is a static documentation prototype, not a connected agent or database interface. |
 

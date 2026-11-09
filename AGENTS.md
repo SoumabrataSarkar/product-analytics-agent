@@ -16,7 +16,7 @@ This file is the common project entrypoint. Architecture v1.0 is a **frozen desi
 
 Do not read `evaluation-results/`, `submission/` or `docs/evaluations/` during an investigation: they contain expected answers and previous reports.
 
-For user-authorized product analytics investigations, read and follow the shared [product analytics investigation skill](skills/product-analytics-investigation/SKILL.md). The skill is common to Codex and Claude Code; its first implementation has not yet been independently evaluated end to end.
+For user-authorized product analytics investigations, read and follow the shared [product analytics investigation skill](skills/product-analytics-investigation/SKILL.md). The skill is common to Codex and Claude Code; scenario evaluation results and limitations are documented separately.
 
 ## Current repository layout and scope
 
@@ -29,4 +29,5 @@ For user-authorized product analytics investigations, read and follow the shared
 - `docs/data-layers/pockettoons-gold-questions.md` lists the questions Gold answers and what it does not support; `docs/deliverables/` holds report and write-up templates; `tools/` and `skills/` hold the query, evidence and investigation tooling.
 - Future per-project catalogs, metric registries and an onboarding/updater workflow are not yet implemented. Do not move or rename files without an agreed migration; update references when one is requested.
 
-**Current project status:** Architecture v1 is frozen. For the PocketToons reference dataset, the data catalog is accepted, every metric in the registry's map is approved, and the Bronze, Silver and Gold layers are built and reconciled; the reviewed SQLite file with all layers is local. Read-only query and evidence tools and the shared investigation skill exist. Independent evaluation of the agent is the next stage. See [project status and handoff](docs/project-status.md).
+**Current project status:** Architecture v1 is frozen. For the PocketToons reference dataset, the data catalog is accepted, every metric in the registry's map is approved, and the Bronze, Silver and Gold layers are built and reconciled; the reviewed SQLite file with all layers is local. Read-only query and evidence tools and the shared investigation skill exist. An 18-scenario evaluation and selected reruns are complete for this stage; one scenario remains partial. See [project status and handoff](docs/project-status.md).
+

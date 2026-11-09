@@ -7,8 +7,8 @@ query and evidence tools, and produces an evidence-backed answer.
 
 The shared investigation skill is in
 [`skills/product-analytics-investigation/SKILL.md`](../skills/product-analytics-investigation/SKILL.md).
-The skill and query commands have targeted tests. One independent-mode
-investigation has been reviewed; broader evaluation is underway.
+The skill and query commands have targeted tests. An 18-scenario evaluation and selected reruns are documented in
+`docs/evaluations/results.md`; keep evaluation files out of independent runs.
 
 ## Existing tools
 
@@ -42,3 +42,4 @@ caller, not proof that routing or freshness is correct. Independently check
 metric definitions, joins, data quality, SQL, numerical results and claims.
 The skill requires end-to-end evaluation. Report output, visualizations and
 the independent evaluation suite remain work to complete.
+
