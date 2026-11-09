@@ -406,6 +406,21 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(len(quality), 2)
         self.assertTrue(all(quality.values()))
 
+    def test_gold_kpi_monthly_counts_rates_and_versions(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[0]: r[1:] for r in self.query('''SELECT month, mau, unidentified_sessions, meu, engagement_rate,
+            net_revenue_cents, definitions FROM gold_kpi_monthly''')}
+        self.assertEqual(sorted(rows), ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'])  # every month
+        self.assertEqual(rows['2026-04'][:2], (6, 2))           # u1 u2 u3 u4 u5 ghost; s_none and s_two unidentified
+        self.assertEqual(rows['2026-05'][:2], (0, 0))           # a month without activity still has a row
+        self.assertIsNone(rows['2026-05'][3])                   # zero denominator gives NULL, not 0
+        self.assertEqual(json.loads(rows['2026-04'][5])['mau'], '1.1')
+        checks = json.loads(result['reconciliation'])['checks']
+        kpi = {k: v for k, v in checks.items() if k.startswith('gold_kpi_monthly')}
+        self.assertEqual(len(kpi), 24)
+        self.assertTrue(all(kpi.values()))
+
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
         build_layers.build(self.path)
