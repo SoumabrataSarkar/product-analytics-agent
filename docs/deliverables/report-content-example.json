@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "project": "Example Product Analytics Agent",
+    "title": "EXAMPLE: Why did orders stay flat while visitors grew?",
+    "short_title": "EXAMPLE format reference",
+    "question": "ILLUSTRATIVE FORMAT ONLY. Invented numbers for a fictional shop; not a finding about any dataset.",
+    "date": "2026-01-01",
+    "mode": "Format example",
+    "dataset": "Fictional example data",
+    "periods": "Q1 vs Q2 (fictional)",
+    "snapshot": "sha256 example",
+    "build": "example",
+    "evidence": "6 example checks",
+    "author": "Format example"
+  },
+  "sections": {
+    "how_to_read": {"items": [
+      "<b>Check N</b> = one logged database query; the appendix lists every check in plain words.",
+      "<b>Data layers:</b> Gold = pre-built summary tables, Silver = cleaned detail tables, Bronze = raw records.",
+      "<b>Patterns, not proof:</b> where the report says a pattern “suggests” something, the cause has not been proven."
+    ]},
+    "glossary": {"items": [
+      ["Visitor", "A distinct signed-in person with at least one session in the month (fictional definition)."],
+      ["Signup cohort", "Everyone who created an account in the same calendar month, followed for their first 30 days."]
+    ]},
+    "executive": {"blocks": [
+      {"type": "lead", "text": "EXAMPLE lead sentence: state the answer and its certainty in one or two sentences, without claiming a cause the data does not show."},
+      {"type": "kpis", "items": [
+        {"value": "+15%", "label": "Visitors, Q2 vs Q1<br/>1,000 → 1,150"},
+        {"value": "+1%", "label": "Orders, Q2 vs Q1<br/>200 → 202"},
+        {"value": "17.6%", "label": "Order rate, Q2<br/>(Q1: 20.0%)"}
+      ]},
+      {"type": "chart", "chart": {
+        "kind": "stacked_with_line", "title": "Example: visitors by signup period, orders as a line",
+        "subtitle": "Invented numbers", "x": ["M1", "M2", "M3", "M4", "M5", "M6"],
+        "stacks": [{"name": "Older users", "values": [300, 300, 300, 290, 280, 280]},
+                   {"name": "Q1 signups", "values": [30, 40, 30, 50, 40, 40]},
+                   {"name": "Q2 signups", "values": [0, 0, 0, 40, 60, 70]}],
+        "line": {"name": "Orders", "values": [66, 68, 66, 67, 68, 67]},
+        "break_after": 2, "break_labels": ["Q1", "Q2"],
+        "source": "Source: example only (check 1)."}},
+      {"type": "bullets", "items": ["<b>Observed:</b> example bullet with a number and its check (check 2)."]},
+      {"type": "callout", "title": "Not yet known:", "text": "example of an open question."}
+    ]},
+    "scope": {"blocks": [
+      {"type": "table", "widths": [0.22, 0.78], "rows": [["Item", "Detail"], ["Database", "Example database, read-only"], ["Version", "Example v1"]]}
+    ]},
+    "workflow": {"blocks": [
+      {"type": "workflow",
+       "legend": {"layers": {"Gold": "summary tables", "Silver": "detail tables", "Bronze": "raw records"},
+                  "statuses": {"Supported": "evidence agrees", "Rejected": "evidence disagrees", "Inconclusive": "evidence can't decide"}},
+       "steps": [
+         {"stage": "Start", "goal": "Is the premise true?", "checks": [
+           {"status": "Passed", "layer": "Gold", "name": "Visitors up, orders flat?", "checks": "1", "result": "Yes (example)."}],
+          "next": "Look at who the new visitors are."},
+         {"stage": "Round 1", "goal": "Example round goal.", "checks": [
+           {"status": "Supported", "layer": "Silver", "name": "H1 Example hypothesis", "checks": "2", "result": "Example result."},
+           {"status": "Rejected", "layer": "Gold", "name": "H2 Example hypothesis", "checks": "3", "result": "Example result."},
+           {"status": "Inconclusive", "layer": "Bronze", "name": "H3 Example hypothesis", "checks": "4", "result": "Example result."}]}]}
+    ]},
+    "baseline": {"blocks": [
+      {"type": "chart", "chart": {"kind": "index_lines", "title": "Example index chart", "subtitle": "First month = 100",
+        "x": ["M1", "M2", "M3", "M4", "M5", "M6"],
+        "series": [{"name": "Visitors", "values": [330, 340, 330, 380, 380, 390], "accent": true},
+                   {"name": "Orders", "values": [66, 68, 66, 67, 68, 67]}],
+        "break_after": 2, "break_labels": ["Q1", "Q2"], "source": "Source: example only (check 1)."}}
+    ]},
+    "decomposition": {"blocks": [
+      {"type": "chart", "chart": {"kind": "before_after", "title": "Example before/after by group", "subtitle": "Invented numbers",
+        "before_label": "Q1 average", "after_label": "Q2 average",
+        "groups": [{"label": "Older users", "before": 300, "after": 283.3},
+                   {"label": "New users", "before": 33.3, "after": 100},
+                   {"label": "All", "before": 333.3, "after": 383.3}],
+        "source": "Source: example only (check 2)."}},
+      {"type": "math", "title": "How the change adds up", "lines": ["333 − 17 + 67 = 383 (example)."]}
+    ]},
+    "drivers": {"blocks": [
+      {"type": "chart", "chart": {"kind": "total_vs_part", "title": "Example total vs part", "subtitle": "Invented numbers",
+        "x": ["M1", "M2", "M3", "M4", "M5", "M6"],
+        "total": {"name": "Visitors", "values": [330, 340, 330, 380, 380, 390]},
+        "part": {"name": "Saw an offer", "values": [66, 66, 64, 64, 63, 63]},
+        "break_after": 2, "break_labels": ["Q1", "Q2"], "source": "Source: example only (check 3)."}},
+      {"type": "chart", "chart": {"kind": "cohort_rates", "title": "Example cohort rates", "subtitle": "Count ÷ base for each group",
+        "groups": ["M1", "M2", "M3", "M4", "M5"], "base": [100, 120, 110, 130, 140],
+        "panels": [{"title": "Saw an offer", "counts": [20, 22, 18, 10, 9]}, {"title": "Ordered", "counts": [10, 11, 9, 5, 4]}],
+        "break_after": 2, "break_labels": ["Q1", "Q2"], "legend": ["Q1 signups", "Q2 signups"],
+        "source": "Source: example only (check 4)."}},
+      {"type": "table", "widths": [0.05, 0.31, 0.19, 0.45], "status_col": 2, "rows": [
+        ["#", "Possible explanation", "Status", "What the data showed"],
+        ["H1", "Example", "Supported", "Example (check 2)"],
+        ["H2", "Example", "Pattern supported", "Pattern seen; cause not tested (check 3)"],
+        ["H3", "Example", "Inconclusive", "Evidence cannot decide (check 4)"]]}
+    ]},
+    "data_quality": {"blocks": [
+      {"type": "table", "widths": [0.3, 0.4, 0.3], "rows": [["Issue", "Effect on the answer", "Status"], ["Example issue", "Example effect", "Open"]]}
+    ]},
+    "limitations": {"blocks": [{"type": "bullets", "items": ["Example limitation."]}]},
+    "recommendations": {"blocks": [{"type": "numbered", "items": ["<b>Example action.</b> Example success check."]}]},
+    "appendix": {"blocks": [
+      {"type": "table", "widths": [0.08, 0.62, 0.12, 0.18], "layer_col": 2, "rows": [
+        ["Check", "What it asked", "Layer", "Log file"], ["1", "Example question", "Gold", "q01"], ["2", "Example question", "Silver", "q02"]]}
+    ]}
+  }
+}
