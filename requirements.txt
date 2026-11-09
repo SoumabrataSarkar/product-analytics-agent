@@ -1,0 +1,6 @@
+# Only needed for PDF reports (tools/report_pdf.py) and for rebuilding the submission PDFs.
+# Queries, evidence logs, the data generator and the layer builder use the Python standard library only.
+reportlab<5; python_version < "3.10"
+reportlab; python_version >= "3.10"
+matplotlib
+pypdf

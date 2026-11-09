@@ -24,7 +24,7 @@ Run the remaining commands from the repository root. Do not place a database, pr
 
 ## Option A: download the reviewed database
 
-1. Obtain the authorized download link for the reviewed `pockettoons.sqlite` from the submission or project owner. A download link and access settings must be supplied separately.
+1. Download the reviewed `pockettoons.sqlite` from the [PocketToons database folder](https://drive.google.com/drive/folders/1owVdIJyOJr7BwMBqT6D8ltph1m5WOPkf?usp=drive_link) (access is granted by the project owner).
 2. Download it to a local folder, for example a sibling directory named `pockettoons-data` beside the repository. Let the download finish before opening it. Use a local copy for SQLite access, not a live database on a shared or synchronized drive.
 3. Verify the checksum supplied with the download. The reviewed snapshot associated with the initial investigation had SHA-256:
 
@@ -60,7 +60,18 @@ The dataset guide and generation output contain the planted synthetic story and 
 
 Open the repository in your authorized coding-agent runtime and ask it to read [AGENTS.md](AGENTS.md) and the shared [investigation skill](skills/product-analytics-investigation/SKILL.md). Provide your database's absolute path and permission to query it read-only. Ask a business question in plain language; the agent should inspect the appropriate catalog, metric registry and layer contracts, clarify material ambiguity and preserve evidence. It should not require you to write SQL.
 
-The [tool guide](tools/INVESTIGATION.md) describes the bounded SQL and evidence tools. The [implementation map](docs/architecture/implementation-status.md) distinguishes built components from planned features. Keep query logs and answer keys private; they may contain questions, SQL and returned data. The current tools reduce accidental writes but are not a complete security sandbox.
+For PDF reports, install the optional packages with `python3 -m pip install -r requirements.txt` (Python 3.9 gets `reportlab<5`; reportlab 5 needs Python 3.10+). The [tool guide](tools/INVESTIGATION.md) describes the bounded SQL and evidence tools. The [implementation map](docs/architecture/implementation-status.md) distinguishes built components from planned features. Keep query logs and answer keys private; they may contain questions, SQL and returned data. The current tools reduce accidental writes but are not a complete security sandbox.
+
+## Check the installation
+
+Run the test suites from the repository root. Neither needs the database, and both use only the standard library:
+
+```sh
+python3 -m unittest discover -s tools -p 'test_*.py'              # query, evidence, report and loop tools (29 tests)
+python3 -m unittest discover -s examples/pockettoons -p 'test_*.py'  # generator, checks, layers and metric SQL (218 tests)
+```
+
+The report test also needs the packages in `requirements.txt`.
 
 ## Dataset overview
 
