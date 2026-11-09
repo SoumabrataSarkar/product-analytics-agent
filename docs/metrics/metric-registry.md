@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`). The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`). Draft: the funnel and lifecycle group. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -35,7 +35,7 @@
 
 ## Metrics
 
-### MAU — Monthly active users        id: mau   version: 1.0   status: approved
+### MAU — Monthly active users        id: mau   version: 1.1   status: approved
 
 1. **Business meaning.** How many distinct people used the product in a UTC calendar month. It answers "how many people are active in a month?", not "how many watched" (see `meu`).
 
@@ -98,7 +98,8 @@ ORDER BY quarter
 8. **Filters and dimensions.**
    - *Activity-level* (`sessions.platform`, `sessions.country_at_event`): a user counts in every slice in which they had a qualifying session that month. Slices can overlap; never sum them, and take total MAU from the unsliced query. A NULL country is reported as `unknown`. Historical location uses `country_at_event`, not the `users` snapshot country.
    - *User-level fixed* (`users.acquisition_source`, signup month): each user is in exactly one slice, so slices add to the total. `unknown` acquisition is a separate slice and is never reallocated.
-   - *Not supported:* subscription status or plan, and other time-varying user states, until an as-of rule is defined. Such a request is answered as unsupported or as a labelled ad hoc variant.
+   - *Subscriber status* (activity-level): a session is assigned by whether its user is a subscriber, as defined in the lifecycle group, at `session_started_at`. A user can be in both slices in one month; slices are not summed. SQL: `mau_monthly_by_subscriber_status`.
+   - *Not supported:* plan and other time-varying user states without a defined as-of rule. Such a request is answered as unsupported or as a labelled ad hoc variant.
 
 ```sql
 -- metric: mau_monthly_by_platform
@@ -487,6 +488,219 @@ GROUP BY r.month
 ORDER BY r.month
 ```
 
+### Funnel and lifecycle group        version: 1.0   status: draft
+
+| id | Name | Definition |
+|---|---|---|
+| `subscription_conversion_30d` | 30-day subscription conversion | Share of a signup cohort with a successful subscription charge within 30 days of signup |
+| `paid_conversion_30d` | 30-day paid conversion | Share of a signup cohort with any successful subscription or PPV charge within 30 days of signup |
+| `subscriber_churn_monthly` | Monthly subscriber churn | Subscribers at a month's start who are not subscribers at the next month's start ÷ subscribers at the month's start |
+| `retention_day_n` | D1 / D7 / D30 retention | Share of a signup cohort active on UTC day 1, 7 or 30 after the signup date (signup date = day 0) |
+| `retention_monthly_cohort` | Monthly cohort retention | Share of a signup-month cohort active in each later calendar month (M1, M2, …) |
+| `paywall_funnel` | Paywall funnel | Paywall views → paywalls with a linked checkout → paywalls with a successful linked purchase, by product |
+| `marketing_ctr` | Marketing click-through rate | Σ clicks ÷ Σ impressions for a month and channel |
+
+1. **Business meaning.** How signups become payers, how long users and subscribers stay, where purchase intent drops, and how well paid marketing earns clicks.
+2. **Population.** Signup cohorts are users by UTC `signup_at` month. A user is a **subscriber at instant t** if a `subscription_history` period with status `active` or `cancel_at_period_end` has `effective_start_at` ≤ t and `effective_end_at` NULL or > t; `expired` and `refunded` periods do not grant access. Retention activity uses the resolved users of `mau`. The funnel unit is a `paywall_viewed` event; marketing rows are `marketing_spend` days by channel.
+3. **Qualifying rules.**
+   - *Conversion:* a charge counts if it succeeds (success effective time, as in the revenue group) in `[signup_at, signup_at + 30 days)`, half-open, exactly 720 hours.
+   - *Churn:* a start-of-month and start-of-next-month snapshot; lapsing and resubscribing within the month is not churn. A refunded or expired period that ends access counts as churn if access is not restored by the next snapshot.
+   - *Retention:* active means a session overlapping the UTC day or month, as in `dau`/`mau`.
+   - *Funnel:* a checkout counts only through its captured `triggering_paywall_event_id`; a purchase only through `transactions.checkout_event_id` and a successful status. Unlinked checkouts or purchases are never matched by time or user. Several attempts on one checkout, or several checkouts on one paywall, count the paywall once.
+4. **Formulas.** Rates are counts of qualifying units ÷ eligible units for the same cohort or period; a zero denominator reports NULL.
+5. **Grain and time.**
+   - Conversion: cohort = signup month, users whose whole 30-day window lies inside the coverage window (`signup_at` ≥ coverage start and `signup_at + 30 days` ≤ coverage end).
+   - Day-N retention: cohort = signup month; a user is eligible for day N when the signup date is inside coverage and day N ends inside coverage.
+   - Monthly cohort retention: cohorts are signup months inside coverage; M*k* is reported only for complete months.
+   - Churn: one row per complete month whose next month start is within the coverage window (≤ coverage end).
+   - Funnel: paywalls by their `event_at` month; later checkout and purchase steps are credited to the paywall's month. Paywalls late in the last month may convert after the data ends.
+   - CTR: `marketing_spend.date` months.
+6. **Sources and layers.** `users`, `transactions`, `payment_status_history`, `subscription_history`, `sessions`, `identity_links`, `user_events`, `marketing_spend`. Planned (not implemented): Gold cohort, subscriber-state and funnel marts.
+7. **Canonical SQL.** Below; parameters as for `mau`.
+8. **Filters and dimensions.** Cohort metrics slice by user-level fixed dimensions (acquisition source, signup month). The funnel slices by product (`event_properties_json.product`). CTR slices by channel. Subscriber status at an instant follows the population rule.
+9. **Null, status and refund rules.** A later refund does not undo a conversion or a funnel purchase; it is reflected in revenue metrics. Unknown acquisition source is its own slice.
+10. **Aggregation safety.** All are ratios: combine cohorts or months only by summing numerators and denominators, never by averaging rates. CTR across channels or months is Σ clicks ÷ Σ impressions.
+11. **Quality checks.** Implemented and tested: isolated tests cover each metric's window boundary, eligibility and zero-denominator case, resubscription within a month, unlinked checkouts and repeated payment attempts; the fixture checker reconciles `subscription_conversion_30d` with its independent cohort comparison. Proposed: purchase-lag coverage for the funnel's last month.
+12. **Caveats.** Renewals are off-session, so funnel purchases are mostly first subscriptions and PPV. Captured links are observed navigation, not proof of causation. March signups are not eligible for conversion or retention because activity coverage starts in April.
+
+```sql
+-- metric: conversion_30d
+-- requires: succeeded_transactions
+WITH cohort AS (
+  SELECT user_id, signup_at, substr(signup_at, 1, 7) AS signup_month
+  FROM users
+  WHERE signup_at >= :coverage_start
+    AND strftime('%Y-%m-%dT%H:%M:%SZ', signup_at, '+30 days') <= :coverage_end
+),
+converted AS (
+  SELECT c.user_id,
+         MAX(s.type = 'subscription') AS subscription_converted,
+         MAX(s.type IN ('subscription', 'ppv')) AS paid_converted
+  FROM cohort c
+  JOIN succeeded_transactions s
+    ON s.user_id = c.user_id AND s.type <> 'refund'
+   AND s.succeeded_at >= c.signup_at
+   AND s.succeeded_at < strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_at, '+30 days')
+  GROUP BY c.user_id
+)
+SELECT c.signup_month, COUNT(*) AS eligible_users,
+       COALESCE(SUM(v.subscription_converted), 0) AS subscription_converted,
+       COALESCE(SUM(v.paid_converted), 0) AS paid_converted,
+       COALESCE(SUM(v.subscription_converted), 0) * 1.0 / COUNT(*) AS subscription_conversion_30d,
+       COALESCE(SUM(v.paid_converted), 0) * 1.0 / COUNT(*) AS paid_conversion_30d
+FROM cohort c LEFT JOIN converted v ON v.user_id = c.user_id
+GROUP BY c.signup_month
+ORDER BY c.signup_month
+```
+
+```sql
+-- metric: subscription_access_periods
+SELECT user_id, effective_start_at, effective_end_at
+FROM subscription_history
+WHERE status IN ('active', 'cancel_at_period_end')
+```
+
+```sql
+-- metric: subscriber_churn_monthly
+-- requires: periods=periods_month, access=subscription_access_periods
+WITH at_start AS (
+  SELECT DISTINCT p.period_start, a.user_id
+  FROM periods p
+  JOIN access a ON a.effective_start_at <= p.period_start
+              AND (a.effective_end_at IS NULL OR a.effective_end_at > p.period_start)
+),
+outcome AS (
+  SELECT s.period_start, s.user_id,
+         NOT EXISTS (SELECT 1 FROM access b, periods q
+                     WHERE q.period_start = s.period_start AND b.user_id = s.user_id
+                       AND b.effective_start_at <= q.period_end
+                       AND (b.effective_end_at IS NULL OR b.effective_end_at > q.period_end)) AS churned
+  FROM at_start s
+)
+SELECT p.period AS month,
+       COUNT(o.user_id) AS subscribers_at_start,
+       COALESCE(SUM(o.churned), 0) AS churned,
+       SUM(o.churned) * 1.0 / NULLIF(COUNT(o.user_id), 0) AS churn_rate
+FROM periods p
+LEFT JOIN outcome o ON o.period_start = p.period_start
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: mau_monthly_by_subscriber_status
+-- requires: periods=periods_month, resolved_sessions, access=subscription_access_periods
+SELECT p.period AS month,
+       CASE WHEN EXISTS (SELECT 1 FROM access a
+                         WHERE a.user_id = r.resolved_user_id
+                           AND a.effective_start_at <= r.session_started_at
+                           AND (a.effective_end_at IS NULL OR a.effective_end_at > r.session_started_at))
+            THEN 'subscriber' ELSE 'non_subscriber' END AS subscriber_status,
+       COUNT(DISTINCT r.resolved_user_id) AS mau
+FROM periods p
+JOIN resolved_sessions r
+  ON r.session_started_at < p.period_end AND r.last_activity_at >= p.period_start
+WHERE r.resolved_user_id IS NOT NULL
+GROUP BY p.period_start, subscriber_status
+ORDER BY p.period_start, subscriber_status
+```
+
+```sql
+-- metric: retention_day_n
+-- requires: resolved_sessions
+WITH RECURSIVE day_numbers(day_n) AS (VALUES (1), (7), (30)),
+eligible AS (
+  SELECT u.user_id, substr(u.signup_at, 1, 7) AS signup_month, d.day_n,
+         date(substr(u.signup_at, 1, 10), '+' || d.day_n || ' days') AS active_day
+  FROM users u CROSS JOIN day_numbers d
+  WHERE substr(u.signup_at, 1, 10) || 'T00:00:00Z' >= :coverage_start
+    AND strftime('%Y-%m-%dT%H:%M:%SZ', substr(u.signup_at, 1, 10), '+' || (d.day_n + 1) || ' days') <= :coverage_end
+),
+session_days(user_id, active_day, last_day) AS (
+  SELECT resolved_user_id, date(session_started_at), date(last_activity_at)
+  FROM resolved_sessions WHERE resolved_user_id IS NOT NULL
+  UNION
+  SELECT user_id, date(active_day, '+1 day'), last_day FROM session_days WHERE active_day < last_day
+),
+activity_days AS (SELECT DISTINCT user_id, active_day FROM session_days)
+SELECT e.signup_month, e.day_n, COUNT(*) AS eligible_users, COUNT(a.user_id) AS retained_users,
+       COUNT(a.user_id) * 1.0 / COUNT(*) AS retention_rate
+FROM eligible e
+LEFT JOIN activity_days a ON a.user_id = e.user_id AND a.active_day = e.active_day
+GROUP BY e.signup_month, e.day_n
+ORDER BY e.signup_month, e.day_n
+```
+
+```sql
+-- metric: retention_monthly_cohort
+-- requires: periods=periods_month, resolved_sessions
+WITH cohort AS (
+  SELECT u.user_id, p.period AS signup_month, p.period_start AS cohort_start
+  FROM users u JOIN periods p ON u.signup_at >= p.period_start AND u.signup_at < p.period_end
+),
+activity AS (
+  SELECT DISTINCT p.period_start, r.resolved_user_id AS user_id
+  FROM periods p
+  JOIN resolved_sessions r ON r.session_started_at < p.period_end AND r.last_activity_at >= p.period_start
+  WHERE r.resolved_user_id IS NOT NULL
+)
+SELECT c.signup_month, p.period AS month,
+       (CAST(substr(p.period, 1, 4) AS INTEGER) * 12 + CAST(substr(p.period, 6, 2) AS INTEGER))
+       - (CAST(substr(c.signup_month, 1, 4) AS INTEGER) * 12 + CAST(substr(c.signup_month, 6, 2) AS INTEGER)) AS months_since_signup,
+       COUNT(*) AS cohort_users,
+       COUNT(a.user_id) AS retained_users,
+       COUNT(a.user_id) * 1.0 / COUNT(*) AS retention_rate
+FROM cohort c
+JOIN periods p ON p.period_start > c.cohort_start
+LEFT JOIN activity a ON a.user_id = c.user_id AND a.period_start = p.period_start
+GROUP BY c.signup_month, p.period_start
+ORDER BY c.signup_month, p.period_start
+```
+
+```sql
+-- metric: paywall_funnel_monthly
+-- requires: periods=periods_month, succeeded_transactions
+SELECT p.period AS month,
+       json_extract(pw.event_properties_json, '$.product') AS product,
+       COUNT(DISTINCT pw.event_id) AS paywalls,
+       COUNT(DISTINCT CASE WHEN co.event_id IS NOT NULL THEN pw.event_id END) AS paywalls_with_checkout,
+       COUNT(DISTINCT CASE WHEN st.txn_id IS NOT NULL THEN pw.event_id END) AS paywalls_with_purchase,
+       COUNT(DISTINCT CASE WHEN co.event_id IS NOT NULL THEN pw.event_id END) * 1.0
+         / NULLIF(COUNT(DISTINCT pw.event_id), 0) AS paywall_to_checkout_rate,
+       COUNT(DISTINCT CASE WHEN st.txn_id IS NOT NULL THEN pw.event_id END) * 1.0
+         / NULLIF(COUNT(DISTINCT CASE WHEN co.event_id IS NOT NULL THEN pw.event_id END), 0) AS checkout_to_purchase_rate,
+       COUNT(DISTINCT CASE WHEN st.txn_id IS NOT NULL THEN pw.event_id END) * 1.0
+         / NULLIF(COUNT(DISTINCT pw.event_id), 0) AS paywall_to_purchase_rate
+FROM periods p
+JOIN user_events pw
+  ON pw.event_name = 'paywall_viewed' AND pw.event_at >= p.period_start AND pw.event_at < p.period_end
+LEFT JOIN user_events co
+  ON co.event_name = 'checkout_started' AND co.triggering_paywall_event_id = pw.event_id
+LEFT JOIN transactions t ON t.checkout_event_id = co.event_id
+LEFT JOIN succeeded_transactions st ON st.txn_id = t.txn_id AND st.type <> 'refund'
+GROUP BY p.period_start, product
+ORDER BY p.period_start, product
+```
+
+```sql
+-- metric: marketing_ctr_monthly
+-- requires: periods=periods_month
+SELECT p.period AS month, m.channel,
+       SUM(m.clicks) AS clicks, SUM(m.impressions) AS impressions,
+       SUM(m.clicks) * 1.0 / NULLIF(SUM(m.impressions), 0) AS ctr
+FROM periods p
+JOIN marketing_spend m ON m.date >= substr(p.period_start, 1, 10) AND m.date < substr(p.period_end, 1, 10)
+GROUP BY p.period_start, m.channel
+UNION ALL
+SELECT p.period, 'all',
+       SUM(m.clicks), SUM(m.impressions),
+       SUM(m.clicks) * 1.0 / NULLIF(SUM(m.impressions), 0)
+FROM periods p
+JOIN marketing_spend m ON m.date >= substr(p.period_start, 1, 10) AND m.date < substr(p.period_end, 1, 10)
+GROUP BY p.period_start
+ORDER BY 1, 2
+```
+
 ## Proposed metrics
 
 | id | Intended meaning | Status |
@@ -494,3 +708,5 @@ ORDER BY r.month
 | active_days_distribution | Number of users active on 1, 2, … N days of a period (power-user curve). | Proposed; not defined |
 | sessions_per_active_user | Sessions per active user in a period. | Proposed; not defined |
 | watch_time_per_engaged_user | Period-allocated watch seconds per engaged user. | Proposed; not defined |
+| marketing_cpc | Spend ÷ clicks by channel and period. | Proposed; not defined |
+| marketing_cac | Spend ÷ attributed new paying users by channel and period. | Proposed; not defined |
