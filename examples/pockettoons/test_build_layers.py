@@ -25,7 +25,11 @@ class BuilderTests(unittest.TestCase):
           ('s_none',NULL,'shared','web','PH','1.2.0','2026-04-12T10:00:00Z','2026-04-12T10:05:00Z','2026-04-12T10:05:00Z'),
           ('s_later',NULL,'shared','web','PH','1.2.0','2026-04-13T10:00:00Z','2026-04-13T10:05:00Z','2026-04-13T10:05:00Z'),
           ('s_two',NULL,'d3','android','MX','1.2.0','2026-04-14T10:00:00Z','2026-04-14T10:05:00Z','2026-04-14T10:05:00Z'),
-          ('s_mismatch','u4','d4','ios','US','1.2.0','2026-04-15T10:00:00Z','2026-04-15T10:01:01Z','2026-04-15T10:01:01Z');
+          ('s_mismatch','u4','d4','ios','US','1.2.0','2026-04-15T10:00:00Z','2026-04-15T10:01:01Z','2026-04-15T10:01:01Z'),
+          ('s_cross','u2','d2','web','PH','1.2.0','2026-04-11T23:50:00Z','2026-04-12T00:10:00Z','2026-04-12T00:10:00Z'),
+          ('s_to_midnight','u5','d5','ios','MX','1.2.0','2026-04-14T23:00:00Z','2026-04-15T00:00:00Z','2026-04-15T00:00:00Z'),
+          ('s_sub','s1','d6','ios','US','1.2.0','2026-06-04T10:00:00Z','2026-06-04T10:20:00Z','2026-06-04T10:20:00Z'),
+          ('s_ghost','ghost','d7','web','US','1.2.0','2026-04-16T10:00:00Z','2026-04-16T10:05:00Z','2026-04-16T10:05:00Z');
         INSERT INTO identity_links VALUES
           ('l1','s_user','u1'), ('l2','s_link','u2'), ('l3','s_later','u3'),
           ('l4','s_two','u5'), ('l5','s_two','u6'), ('l6','s_mismatch','u9');
@@ -92,10 +96,11 @@ class BuilderTests(unittest.TestCase):
           ('p1','2026-04-20T09:00:00Z','creator','US','CA','active'),
           ('s1','2026-06-01T09:00:00Z','organic','US','US','active'),
           ('s3','2026-06-01T09:00:00Z','referral','US','US','active');
-        CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT);
+        CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT, content_id TEXT, view_started_at TEXT);
         CREATE TABLE playback_segments(segment_id TEXT PRIMARY KEY, view_id TEXT, segment_started_at TEXT,
           segment_ended_at TEXT, watch_duration_sec INTEGER);
-        INSERT INTO content_views VALUES('v_u1','u1'), ('v_u2','u2'), ('v_u5','u5');
+        INSERT INTO content_views VALUES('v_u1','u1','c1','2026-04-09T23:58:00Z'), ('v_u2','u2','c1','2026-04-11T10:00:00Z'),
+          ('v_u5','u5','c2','2026-04-14T10:00:00Z');
         INSERT INTO playback_segments VALUES
           ('g_midnight','v_u1','2026-04-09T23:58:00Z','2026-04-10T00:01:00Z',180),
           ('g_u2','v_u2','2026-04-11T10:00:00Z','2026-04-11T10:01:30Z',90),
@@ -134,7 +139,7 @@ class BuilderTests(unittest.TestCase):
         build_layers.build(self.path)
         views = {r[0] for r in self.query("SELECT name FROM sqlite_master WHERE type='view'")}
         self.assertEqual(views, {f'bronze_{t}' for t in build_layers.SOURCE_ROLES})
-        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_sessions'), [(6,)])
+        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_sessions'), [(10,)])
         self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_users'), [(9,)])
 
     def test_later_source_change_is_detectable_from_the_build_fingerprint(self):
@@ -226,6 +231,30 @@ class BuilderTests(unittest.TestCase):
         profile = {k: v for k, v in checks.items() if k.startswith('silver_user_profile')}
         self.assertEqual(len(profile), 7)
         self.assertTrue(all(profile.values()))
+
+    def test_user_day_activity_days_watch_and_status(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {(r[0], r[1]): r[2:] for r in self.query('''SELECT user_id, activity_date, sessions_touching, sessions_started,
+            started_session_span_sec, watch_seconds, views_started, subscriber_at_day_start, exception_status,
+            exception_reason FROM silver_user_day_activity''')}
+        self.assertEqual(rows[('u2', '2026-04-11')][:3], (2, 2, 600 + 1200))     # span counted on the start day only
+        self.assertEqual(rows[('u2', '2026-04-12')][:3], (1, 0, 0))              # crossing midnight touches both days
+        self.assertEqual(rows[('u5', '2026-04-15')][:2], (1, 0))                 # last activity exactly at midnight
+        self.assertEqual(rows[('u1', '2026-04-09')][:2], (0, 0))                 # watch-only day kept
+        self.assertAlmostEqual(rows[('u1', '2026-04-09')][3], 120)               # 180 s split by wall-clock share
+        self.assertAlmostEqual(rows[('u1', '2026-04-10')][3], 60)
+        self.assertEqual(rows[('u2', '2026-04-11')][4], 1)                       # one view started
+        self.assertEqual(rows[('s1', '2026-06-04')][5], 1)                       # access began 06-03 01:00
+        self.assertEqual(rows[('u1', '2026-04-10')][5], 0)
+        self.assertEqual(rows[('u3', '2026-04-13')][6:], ('suspicious_usable', 'activity_before_signup'))
+        self.assertEqual(rows[('ghost', '2026-04-16')][6:], ('suspicious_usable', 'user_not_in_users'))
+        self.assertEqual(rows[('u1', '2026-04-10')][6:], ('ok', None))
+        self.assertNotIn(('u6', '2026-04-14'), rows)                             # ambiguous session is not attributed
+        checks = json.loads(result['reconciliation'])['checks']
+        activity = {k: v for k, v in checks.items() if k.startswith('silver_user_day_activity')}
+        self.assertEqual(len(activity), 11)
+        self.assertTrue(all(activity.values()))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
