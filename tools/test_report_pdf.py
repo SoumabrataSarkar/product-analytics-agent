@@ -42,6 +42,32 @@ class ReportPdfTest(unittest.TestCase):
             self.rp.build(content, self.out)
         self.assertFalse(self.out.exists())
 
+    def test_existing_report_is_never_overwritten(self):
+        self.out.write_bytes(b"existing report")
+        with self.assertRaises(FileExistsError):
+            self.rp.build(copy.deepcopy(self.example), self.out)
+        self.assertEqual(self.out.read_bytes(), b"existing report")
+
+    def test_zero_denominators_render_without_division_errors(self):
+        content = copy.deepcopy(self.example)
+        sections = content["sections"]
+        for block in sections["baseline"]["blocks"]:
+            if block.get("type") == "chart":
+                block["chart"]["series"][0]["values"][0] = 0
+        for block in sections["drivers"]["blocks"]:
+            if block.get("type") != "chart":
+                continue
+            chart = block["chart"]
+            if chart["kind"] == "total_vs_part":
+                chart["total"]["values"][0] = 0
+                chart["part"]["values"][0] = 0
+            elif chart["kind"] == "cohort_rates":
+                chart["base"][0] = 0
+                for panel in chart["panels"]:
+                    panel["counts"][0] = 0
+        self.rp.build(content, self.out)
+        self.assertTrue(self.out.exists())
+
     def test_unknown_section_is_refused(self):
         content = copy.deepcopy(self.example)
         content["sections"]["surprise"] = {"blocks": []}
