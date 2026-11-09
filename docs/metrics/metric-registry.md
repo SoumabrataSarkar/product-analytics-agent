@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group and the engagement group. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group and the engagement group. Draft: the supporting metrics. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -20,11 +20,11 @@ The registry targets a bounded core set for this product rather than every possi
 
 | Group | Defined | Planned |
 |---|---|---|
-| Activity | `mau`, `dau`, `wau`, `deu`, `weu`, `meu`, `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` | new signups; activation rate (signup to first engaged day within 7 days); sessions per active user; session duration; active-days distribution |
+| Activity | `mau`, `dau`, `wau`, `deu`, `weu`, `meu`, `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly`, `new_signups`, `activation_7d`, `sessions_per_active_user`, `session_duration`, `active_days_distribution` | — |
 | Engagement | watch time, watch time per engaged user, views per viewer, episode completion, series continuation, title reach, free-quota hit rate, paywall exposure rate | — |
-| Revenue | `net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu` | paying users; active subscribers and net subscriber adds; MRR; refund rate; payment failure rate |
-| Funnel and lifecycle | 30-day subscription and paid conversion, subscriber churn, D1/D7/D30 retention, monthly cohort retention, paywall funnel | cancellation-request rate; resubscription rate |
-| Marketing | `marketing_ctr` | spend; CPC; cost per signup; CAC |
+| Revenue | `net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`, `paying_users`, `active_subscribers`, `mrr`, `refund_rate`, `payment_failure_rate` | — |
+| Funnel and lifecycle | 30-day subscription and paid conversion, subscriber churn, D1/D7/D30 retention, monthly cohort retention, paywall funnel, `cancellation_request_rate`, `resubscription_rate_60d` | — |
+| Marketing | `marketing_ctr`, `marketing_spend`, `marketing_cpc`, `cost_per_signup`, `marketing_cac` | — |
 
 **Not supported by this data.** The agent states that these cannot be answered from the fixture rather than approximating them:
 
@@ -920,11 +920,324 @@ GROUP BY p.period_start
 ORDER BY p.period_start
 ```
 
+### Supporting metrics: activity, monetisation, lifecycle and marketing        version: 1.0   status: draft
+
+| id | Name | Definition (per complete UTC month unless stated) |
+|---|---|---|
+| `new_signups` | New signups | Users by `signup_at` month, by `acquisition_source` and in total |
+| `activation_7d` | 7-day activation | Share of a signup cohort with an engaged UTC day (≥ 60 s watched that day) on days 0–6 after the signup date |
+| `sessions_per_active_user` | Sessions per active user | Identified sessions overlapping the month ÷ `mau` |
+| `session_duration` | Session duration | Median and mean observed span, `session_started_at` to `last_activity_at`, of identified sessions starting in the month |
+| `active_days_distribution` | Active-days distribution | Users by number of distinct active UTC days in the month |
+| `paying_users` | Paying users | Users with at least one successful subscription or PPV charge in the month, in total and by product |
+| `active_subscribers` | Active subscribers and net adds | Subscribers at the month's start and at the next month's start; net adds = end − start |
+| `mrr` | Monthly recurring revenue | Σ monthly list price of subscribers at the next month's start (month end) |
+| `refund_rate` | Refund rate | Successful refund amount ÷ successful gross charges in the month; counts reported alongside |
+| `payment_failure_rate` | Payment failure rate | Failed attempts ÷ attempts with a final succeeded or failed outcome, by attempt creation month and product |
+| `cancellation_request_rate` | Cancellation-request rate | Users requesting cancellation in the month ÷ subscribers at the month's start |
+| `resubscription_rate_60d` | 60-day resubscription rate | Share of access losses followed by regained subscriber access within 60 days |
+| `marketing_spend` | Marketing spend | Σ `marketing_spend.spend_usd` by channel |
+| `marketing_cpc` | Cost per click | Spend ÷ clicks |
+| `cost_per_signup` | Cost per signup | Channel spend ÷ signups with that `acquisition_source` in the same month |
+| `marketing_cac` | Customer acquisition cost | Channel spend ÷ new paying users (first-ever successful charge) from that `acquisition_source` in the same month |
+
+1. **Business meaning.** Inputs and companions to the headline metrics: how many people join and start watching, how intensively users visit, how many pay and subscribe, what recurring revenue the subscriber base represents, how often payments fail, how subscribers leave and return, and what paid acquisition costs.
+2. **Population.** Users and signup cohorts as in the lifecycle group; active users and sessions as in `mau`; subscribers at an instant as in the lifecycle group; transactions and successful charges as in the revenue group. Marketing channels are `marketing_spend.channel`; a user's channel is `users.acquisition_source`, and `unknown` users are never reallocated to a channel.
+3. **Qualifying rules.**
+   - *Activation:* an engaged day has at least 60 watch seconds allocated to that UTC day by wall-clock share, the same allocation as `deu`.
+   - *Session duration:* identified sessions only; open sessions use `last_activity_at`.
+   - *Active days:* a session counts on every UTC day its span touches inside the month.
+   - *MRR:* price is the `list_price_usd` of the charge that started the access period.
+   - *Payment failure:* an attempt's outcome is its latest succeeded or failed status event; an attempt without either is excluded. A failed renewal followed by a successful retry counts as one failed and one successful attempt.
+   - *Cancellation request:* a `subscription_history` period with status `cancel_at_period_end` whose `cancelled_at` is in the month.
+   - *Access loss:* the end of an access period at which no other access period covers the same instant; regained access is a new access period starting within 60 days after the loss.
+   - *New paying user:* the user's earliest successful subscription or PPV charge falls in the month.
+4. **Formulas.** As in the table; a zero denominator reports NULL. Money is computed in integer cents.
+5. **Grain and time.** Complete UTC months. Activation cohorts need days 0–6 inside the coverage window and a signup date inside it. Resubscription is by the month of access loss and needs the 60-day window to end inside the coverage window. Cost per signup and CAC are same-month blended ratios; spend is not lagged to later conversions.
+6. **Sources and layers.** `users`, `sessions`, `identity_links`, `content_views`, `playback_segments`, `transactions`, `payment_status_history`, `subscription_history`, `marketing_spend`. Planned (not implemented): corresponding Gold marts.
+7. **Canonical SQL.** Below; parameters as for `mau`.
+8. **Filters and dimensions.** Signups, activation, paying users and CAC slice by user-level fixed dimensions. Session metrics slice by platform and country. Payment failure slices by product and payment method.
+9. **Null, status and refund rules.** MRR and subscriber counts ignore refunds except where a refund ends access. Failed attempts are never revenue.
+10. **Aggregation safety.** Signups, spend, clicks, sessions, attempts and money are additive. Distinct users, MRR at an instant, medians and all rates are not: recompute from components for longer periods.
+11. **Quality checks.** Implemented and tested: isolated tests cover each formula, its window or snapshot boundary and zero denominators. The fixture checker verifies that paying users match the ARPPU denominator and that subscriber snapshots reconcile with churn.
+12. **Caveats.** Cost per signup and CAC attribute by first-touch acquisition source and the same month, so they ignore conversion lag and organic influence. MRR uses list price; the fixture has one $9.99 plan and no discounts. Cancellation requests from users who subscribed during the month are in the numerator but not the denominator.
+
+```sql
+-- metric: new_signups_monthly
+-- requires: periods=periods_month
+SELECT p.period AS month, COALESCE(u.acquisition_source, 'unknown') AS acquisition_source, COUNT(*) AS signups
+FROM periods p JOIN users u ON u.signup_at >= p.period_start AND u.signup_at < p.period_end
+GROUP BY p.period_start, 2
+UNION ALL
+SELECT p.period, 'all', COUNT(u.user_id)
+FROM periods p LEFT JOIN users u ON u.signup_at >= p.period_start AND u.signup_at < p.period_end
+GROUP BY p.period_start
+ORDER BY 1, 2
+```
+
+```sql
+-- metric: activation_7d
+WITH RECURSIVE segment_days(user_id, day, seg_start, seg_end, watched) AS (
+  SELECT v.user_id, date(s.segment_started_at), s.segment_started_at, s.segment_ended_at, s.watch_duration_sec
+  FROM playback_segments s JOIN content_views v ON v.view_id = s.view_id
+  UNION ALL
+  SELECT user_id, date(day, '+1 day'), seg_start, seg_end, watched FROM segment_days
+  WHERE date(day, '+1 day') < substr(seg_end, 1, 10) OR (date(day, '+1 day') = substr(seg_end, 1, 10) AND substr(seg_end, 12) <> '00:00:00Z')
+),
+engaged_days AS (
+  SELECT user_id, day
+  FROM segment_days
+  GROUP BY user_id, day
+  HAVING SUM(watched *
+             CASE WHEN julianday(seg_end) = julianday(seg_start) THEN 1.0
+                  ELSE (MIN(julianday(seg_end), julianday(day, '+1 day')) - MAX(julianday(seg_start), julianday(day)))
+                       / (julianday(seg_end) - julianday(seg_start))
+             END) >= 60
+),
+cohort AS (
+  SELECT user_id, substr(signup_at, 1, 7) AS signup_month, substr(signup_at, 1, 10) AS signup_day
+  FROM users
+  WHERE substr(signup_at, 1, 10) || 'T00:00:00Z' >= :coverage_start
+    AND strftime('%Y-%m-%dT%H:%M:%SZ', substr(signup_at, 1, 10), '+7 days') <= :coverage_end
+),
+flags AS (
+  SELECT c.signup_month, c.user_id, MAX(d.user_id IS NOT NULL) AS activated
+  FROM cohort c
+  LEFT JOIN engaged_days d
+    ON d.user_id = c.user_id AND d.day >= c.signup_day AND d.day < date(c.signup_day, '+7 days')
+  GROUP BY c.signup_month, c.user_id
+)
+SELECT signup_month, COUNT(*) AS eligible_users, SUM(activated) AS activated_users,
+       SUM(activated) * 1.0 / COUNT(*) AS activation_rate
+FROM flags
+GROUP BY signup_month
+ORDER BY signup_month
+```
+
+```sql
+-- metric: sessions_per_active_user_monthly
+-- requires: periods=periods_month, resolved_sessions, active=mau_monthly
+SELECT p.period AS month, COUNT(r.session_id) AS sessions, a.mau,
+       COUNT(r.session_id) * 1.0 / NULLIF(a.mau, 0) AS sessions_per_active_user
+FROM periods p
+JOIN active a ON a.month = p.period
+LEFT JOIN resolved_sessions r
+  ON r.resolved_user_id IS NOT NULL
+ AND r.session_started_at < p.period_end AND r.last_activity_at >= p.period_start
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: session_duration_monthly
+-- requires: periods=periods_month, resolved_sessions
+WITH spans AS (
+  SELECT p.period AS month, p.period_start,
+         CAST(ROUND((julianday(r.last_activity_at) - julianday(r.session_started_at)) * 86400) AS INTEGER) AS sec
+  FROM periods p
+  JOIN resolved_sessions r
+    ON r.resolved_user_id IS NOT NULL
+   AND r.session_started_at >= p.period_start AND r.session_started_at < p.period_end
+),
+ranked AS (
+  SELECT month, period_start, sec,
+         ROW_NUMBER() OVER (PARTITION BY month ORDER BY sec) AS n,
+         COUNT(*) OVER (PARTITION BY month) AS total
+  FROM spans
+)
+SELECT month, MAX(total) AS sessions, AVG(sec) AS mean_sec,
+       AVG(CASE WHEN n IN ((total + 1) / 2, (total + 2) / 2) THEN sec END) AS median_sec
+FROM ranked
+GROUP BY period_start
+ORDER BY period_start
+```
+
+```sql
+-- metric: active_days_distribution_monthly
+-- requires: periods=periods_month, resolved_sessions
+WITH RECURSIVE session_days(user_id, active_day, last_day) AS (
+  SELECT resolved_user_id, date(session_started_at), date(last_activity_at)
+  FROM resolved_sessions WHERE resolved_user_id IS NOT NULL
+  UNION
+  SELECT user_id, date(active_day, '+1 day'), last_day FROM session_days WHERE active_day < last_day
+),
+user_month AS (
+  SELECT p.period AS month, p.period_start, s.user_id, COUNT(DISTINCT s.active_day) AS active_days
+  FROM periods p
+  JOIN session_days s ON s.active_day >= substr(p.period_start, 1, 10) AND s.active_day < substr(p.period_end, 1, 10)
+  GROUP BY p.period_start, s.user_id
+)
+SELECT month, active_days, COUNT(*) AS users
+FROM user_month
+GROUP BY period_start, active_days
+ORDER BY period_start, active_days
+```
+
+```sql
+-- metric: paying_users_monthly
+-- requires: periods=periods_month, succeeded_transactions
+SELECT p.period AS month,
+       COUNT(DISTINCT s.user_id) AS paying_users,
+       COUNT(DISTINCT CASE WHEN s.type = 'subscription' THEN s.user_id END) AS subscription_payers,
+       COUNT(DISTINCT CASE WHEN s.type = 'ppv' THEN s.user_id END) AS ppv_payers
+FROM periods p
+LEFT JOIN succeeded_transactions s
+  ON s.type <> 'refund' AND s.succeeded_at >= p.period_start AND s.succeeded_at < p.period_end
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: active_subscribers_monthly
+-- requires: periods=periods_month, access=subscription_access_periods
+WITH snapshots AS (
+  SELECT p.period, p.period_start,
+         (SELECT COUNT(DISTINCT a.user_id) FROM access a
+          WHERE a.effective_start_at <= p.period_start
+            AND (a.effective_end_at IS NULL OR a.effective_end_at > p.period_start)) AS subscribers_at_start,
+         (SELECT COUNT(DISTINCT a.user_id) FROM access a
+          WHERE a.effective_start_at <= p.period_end
+            AND (a.effective_end_at IS NULL OR a.effective_end_at > p.period_end)) AS subscribers_at_end
+  FROM periods p
+)
+SELECT period AS month, subscribers_at_start, subscribers_at_end,
+       subscribers_at_end - subscribers_at_start AS net_adds
+FROM snapshots
+ORDER BY period_start
+```
+
+```sql
+-- metric: mrr_monthly
+-- requires: periods=periods_month
+SELECT p.period AS month, COUNT(m.user_id) AS subscribers_at_end, COALESCE(SUM(m.price_cents), 0) AS mrr_cents
+FROM periods p
+LEFT JOIN (
+  SELECT q.period_start, h.user_id, MAX(CAST(ROUND(t.list_price_usd * 100) AS INTEGER)) AS price_cents
+  FROM periods q
+  JOIN subscription_history h
+    ON h.status IN ('active', 'cancel_at_period_end')
+   AND h.effective_start_at <= q.period_end
+   AND (h.effective_end_at IS NULL OR h.effective_end_at > q.period_end)
+  JOIN transactions t ON t.txn_id = h.source_txn_id
+  GROUP BY q.period_start, h.user_id
+) m ON m.period_start = p.period_start
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: refund_rate_monthly
+-- requires: periods=periods_month, succeeded_transactions
+SELECT p.period AS month,
+       COALESCE(SUM(CASE WHEN s.type <> 'refund' THEN s.amount_cents END), 0) AS gross_charges_cents,
+       COALESCE(SUM(CASE WHEN s.type = 'refund' THEN s.amount_cents END), 0) AS refunds_cents,
+       COUNT(CASE WHEN s.type <> 'refund' THEN 1 END) AS charges,
+       COUNT(CASE WHEN s.type = 'refund' THEN 1 END) AS refunds,
+       SUM(CASE WHEN s.type = 'refund' THEN s.amount_cents ELSE 0 END) * 1.0
+         / NULLIF(SUM(CASE WHEN s.type <> 'refund' THEN s.amount_cents ELSE 0 END), 0) AS refund_rate
+FROM periods p
+LEFT JOIN succeeded_transactions s ON s.succeeded_at >= p.period_start AND s.succeeded_at < p.period_end
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: payment_failure_rate_monthly
+-- requires: periods=periods_month
+WITH outcomes AS (
+  SELECT t.txn_id, t.type, t.transaction_at,
+         (SELECT h.status FROM payment_status_history h
+          WHERE h.txn_id = t.txn_id AND h.status IN ('succeeded', 'failed')
+          ORDER BY h.effective_at DESC, h.recorded_at DESC LIMIT 1) AS outcome
+  FROM transactions t WHERE t.type <> 'refund'
+)
+SELECT p.period AS month, o.type AS product,
+       COUNT(*) AS attempts, SUM(o.outcome = 'failed') AS failed,
+       SUM(o.outcome = 'failed') * 1.0 / NULLIF(COUNT(*), 0) AS payment_failure_rate
+FROM periods p
+JOIN outcomes o ON o.outcome IS NOT NULL
+               AND o.transaction_at >= p.period_start AND o.transaction_at < p.period_end
+GROUP BY p.period_start, o.type
+ORDER BY p.period_start, o.type
+```
+
+```sql
+-- metric: cancellation_request_rate_monthly
+-- requires: periods=periods_month, access=subscription_access_periods
+WITH counts AS (
+  SELECT p.period, p.period_start,
+         (SELECT COUNT(DISTINCT h.user_id) FROM subscription_history h
+          WHERE h.status = 'cancel_at_period_end'
+            AND h.cancelled_at >= p.period_start AND h.cancelled_at < p.period_end) AS cancellation_requests,
+         (SELECT COUNT(DISTINCT a.user_id) FROM access a
+          WHERE a.effective_start_at <= p.period_start
+            AND (a.effective_end_at IS NULL OR a.effective_end_at > p.period_start)) AS subscribers_at_start
+  FROM periods p
+)
+SELECT period AS month, cancellation_requests, subscribers_at_start,
+       cancellation_requests * 1.0 / NULLIF(subscribers_at_start, 0) AS cancellation_request_rate
+FROM counts
+ORDER BY period_start
+```
+
+```sql
+-- metric: resubscription_60d
+-- requires: periods=periods_month, access=subscription_access_periods
+WITH losses AS (
+  SELECT DISTINCT a.user_id, a.effective_end_at AS lost_at
+  FROM access a
+  WHERE a.effective_end_at IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM access b
+                    WHERE b.user_id = a.user_id AND b.effective_start_at <= a.effective_end_at
+                      AND (b.effective_end_at IS NULL OR b.effective_end_at > a.effective_end_at))
+),
+outcomes AS (
+  SELECT l.user_id, l.lost_at,
+         EXISTS (SELECT 1 FROM access r WHERE r.user_id = l.user_id
+                 AND r.effective_start_at > l.lost_at
+                 AND r.effective_start_at <= strftime('%Y-%m-%dT%H:%M:%SZ', l.lost_at, '+60 days')) AS resubscribed
+  FROM losses l
+  WHERE strftime('%Y-%m-%dT%H:%M:%SZ', l.lost_at, '+60 days') <= :coverage_end
+)
+SELECT p.period AS month, COUNT(o.user_id) AS access_losses, COALESCE(SUM(o.resubscribed), 0) AS resubscribed,
+       SUM(o.resubscribed) * 1.0 / NULLIF(COUNT(o.user_id), 0) AS resubscription_rate
+FROM periods p
+LEFT JOIN outcomes o ON o.lost_at >= p.period_start AND o.lost_at < p.period_end
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: marketing_efficiency_monthly
+-- requires: periods=periods_month, succeeded_transactions
+WITH spend AS (
+  SELECT p.period, p.period_start, p.period_end, m.channel,
+         SUM(CAST(ROUND(m.spend_usd * 100) AS INTEGER)) AS spend_cents, SUM(m.clicks) AS clicks
+  FROM periods p
+  JOIN marketing_spend m ON m.date >= substr(p.period_start, 1, 10) AND m.date < substr(p.period_end, 1, 10)
+  GROUP BY p.period_start, m.channel
+),
+first_paid AS (
+  SELECT user_id, MIN(succeeded_at) AS first_paid_at FROM succeeded_transactions
+  WHERE type <> 'refund' GROUP BY user_id
+),
+counts AS (
+  SELECT s.*,
+         (SELECT COUNT(*) FROM users u WHERE u.acquisition_source = s.channel
+            AND u.signup_at >= s.period_start AND u.signup_at < s.period_end) AS signups,
+         (SELECT COUNT(*) FROM first_paid f JOIN users u ON u.user_id = f.user_id
+          WHERE u.acquisition_source = s.channel
+            AND f.first_paid_at >= s.period_start AND f.first_paid_at < s.period_end) AS new_paying_users
+  FROM spend s
+)
+SELECT period AS month, channel, spend_cents, clicks, signups, new_paying_users,
+       spend_cents / 100.0 / NULLIF(clicks, 0) AS cpc_usd,
+       spend_cents / 100.0 / NULLIF(signups, 0) AS cost_per_signup_usd,
+       spend_cents / 100.0 / NULLIF(new_paying_users, 0) AS cac_usd
+FROM counts
+ORDER BY period_start, channel
+```
+
 ## Proposed metrics
 
-| id | Intended meaning | Status |
-|---|---|---|
-| active_days_distribution | Number of users active on 1, 2, … N days of a period (power-user curve). | Proposed; not defined |
-| sessions_per_active_user | Sessions per active user in a period. | Proposed; not defined |
-| marketing_cpc | Spend ÷ clicks by channel and period. | Proposed; not defined |
-| marketing_cac | Spend ÷ attributed new paying users by channel and period. | Proposed; not defined |
+None. A new metric is listed here before it is defined.
