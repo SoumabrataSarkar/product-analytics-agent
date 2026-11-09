@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access` and `silver_user_profile` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile` and `silver_user_day_activity` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -108,3 +108,21 @@
 | Does not support | Activity counts or revenue amounts (use the activity and payment tables); historical country or status |
 | Reconciliation | Rows and keys equal `users`; an independent Python recount reproduces first valid paid charge and first identified session; monthly signups by source equal the registry `new_signups_monthly`, activation equals `activation_7d` and conversion equals `conversion_30d` on the source |
 | Tests | No activity, PPV before subscription, refunded first charge, excluded charges, cross-midnight engagement, under-60-second watching, returning subscriber, snapshot country, unknown and unrecognised source, invalid signup time, activity before signup |
+
+## silver_user_day_activity
+
+| Part | Contract |
+|---|---|
+| Purpose | Daily, weekly and monthly active and engaged users, stickiness, active days and retention from one table instead of raw sessions and segments |
+| Grain | One row per resolved user and UTC day with any session, watch time or view start; days without activity have no row and read as inactive |
+| Key and indexes | (`user_id`, `activity_date`) primary key; index on (`activity_date`, `user_id`) |
+| Columns | `user_id`; `activity_date`; `activity_month`; `sessions_touching` (sessions whose span touches the day); `sessions_started`; `started_session_span_sec` (span of sessions started that day); `watch_seconds` (REAL); `views_started`; `subscriber_at_day_start`; `exception_status`; `exception_reason`; `build_id` |
+| Rules | Active on a day: `sessions_touching` > 0. A session touches every day from its start to its `last_activity_at`, both inclusive, so a session crossing midnight counts on both days and one whose last activity is exactly midnight touches the later day (activity family rule). Watch seconds are split across days by wall-clock share; a zero-length segment counts on its day. Engagement is not stored: engaged in a period is `SUM(watch_seconds)` ≥ 60 over the period's days, so the threshold can change without a rebuild. `subscriber_at_day_start` uses `silver_subscription_access` at 00:00:00Z. |
+| Aggregation | Distinct-user counts over several days are recounted from rows, never summed from daily counts. Days align with week and month boundaries, so watch seconds sum exactly into any day-aligned period. |
+| Time | UTC days; all days are kept, not only the coverage window |
+| Lineage | `silver_resolved_sessions` (resolved users only); `playback_segments` and `content_views`; `silver_subscription_access`; `users` for exceptions |
+| Exceptions | `suspicious_usable` with reasons `user_not_in_users` or `activity_before_signup` (comma-separated when both apply) |
+| Supports | DAU, WAU, MAU, DEU, WEU, MEU, stickiness, engagement rate, active-days distribution, day-N and monthly retention, sessions and views per active user, subscriber versus non-subscriber activity |
+| Does not support | Platform or country slices (a user can have several in a day: use `silver_resolved_sessions`); title-level watching (`silver_user_day_title_watch`, planned) |
+| Reconciliation | An independent Python recount reproduces every session-active user-day and daily DAU; an exact-fraction Python recount reproduces daily engaged users (differences allowed only within 10⁻⁶ s of the threshold); total watch seconds equal the segments; started sessions and views equal the source; WAU, WEU, MAU and MEU equal the registry and the active-days distribution equals `active_days_distribution_monthly` on the source. Daily registry DAU and DEU are not re-run in the build because their range joins take about three minutes. |
+| Tests | Midnight-crossing session, last activity exactly at midnight, watch-only day, segment split across midnight, view start, subscriber at day start, ambiguous session excluded, activity before signup, user not in `users` |
