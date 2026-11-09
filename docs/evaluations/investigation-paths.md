@@ -1,6 +1,6 @@
 # Investigation paths and evaluation questions
 
-**Status:** Design for the evaluation stage. The paths and 16 scenarios are defined; they have not yet been run as an evaluation suite, and the agent is not yet evaluated end to end.  
+**Status:** Design for the evaluation stage. The paths and 18 scenarios are defined; they have not yet been run as an evaluation suite, and the agent is not yet evaluated end to end.  
 **Scope:** The shared, model-neutral analytics workflow, using the PocketToons fixture as an example.  
 **Authoritative definitions:** [Metric Registry](../metrics/metric-registry.md), [Data Catalog](../examples/pockettoons-data-catalog.md), [reference data model](../examples/pockettoons-reference-data-model-v1.md), and [Architecture v1](../architecture/v1.md). Recheck their current versions before using a path.
 
@@ -80,7 +80,7 @@ The `Next` field is a routing guide; not every question needs every node. “Que
 | Marketing comparison | Aggregate `marketing_spend` to UTC day/channel and signups from `users.signup_date`/`acquisition_source` independently, then compare. | Do not join a spend row directly to many users and sum it. Preserve unknown and unmatched groups. Same-day spend is not proof of the exposure that caused a signup. |
 | Payment quality | `raw_payment_source.txn_id` and optional `payment_quality_review.txn_id` → `transactions.txn_id`. | Raw data is not an extra payment. Do not silently divide outliers or cast invalid text. NULL `reviewed_at` makes historical review availability unknown. |
 
-## Question catalog: 16 evaluation scenarios
+## Question catalog: 18 evaluation scenarios
 
 Each flow is a candidate route. Branch choices depend on the question and observed evidence, not a preset answer. The metric names below are capabilities to resolve in the registry at execution time; “definition needed” means stop or clarify until an approved definition exists.
 
@@ -102,6 +102,8 @@ Each flow is a candidate route. Branch choices depend on the question and observ
 | Q14 | Can we trust acquisition-channel conclusions when source values are missing? | 01–04 → 09 → 06 → 10; users and sessions; marketing only if requested. | Report unknown group and perform an appropriate sensitivity analysis. Separate same-day spend comparison from individual attribution. |
 | Q15 | “Performance is down. What happened?” | 01 → ask → 02; resume only after meaningful scope is known or an assumption is explicitly accepted. | Ask a concise clarification about metric/timeframe rather than silently picking a definition or pretending the answer is complete. |
 | Q16 | Which advertising campaign caused each user's purchase? | 01–03 → 08/09 only where useful → 10. | State that campaign-level user exposures and causal attribution are not available; explain what can be compared and what data would be needed. Do not fabricate a join or causal claim. |
+| Q17 | How many US users had an active subscription at the end of September? | 01–03 → 07 → 10; subscription history and users; approved `active_subscribers` snapshot sliced by user country. | State the snapshot instant; count every user with subscription access at that instant, including cancelled subscriptions still paid up, or say clearly that a narrower definition is used; slice by the user's country. |
+| Q18 | How many mobile sessions were there in September versus August? | 01–03 → 04 → 10; sessions and identity links; session counts sliced by platform. | Define "mobile" from the platform values and say what is excluded; count sessions the same way (all or identified) in both months; note that the months have different lengths. |
 
 ## Evaluation contract
 
