@@ -1,6 +1,6 @@
 # Investigation paths and evaluation questions
 
-**Status:** Design draft for user review. These paths and tests are not yet a running agent or an implemented evaluation suite.  
+**Status:** Design for the evaluation stage. The paths and 16 scenarios are defined; they have not yet been run as an evaluation suite, and the agent is not yet evaluated end to end.  
 **Scope:** The shared, model-neutral analytics workflow, using the PocketToons fixture as an example.  
 **Authoritative definitions:** [Metric Registry](../metrics/metric-registry.md), [Data Catalog](../examples/pockettoons-data-catalog.md), [reference data model](../examples/pockettoons-reference-data-model-v1.md), and [Architecture v1](../architecture/v1.md). Recheck their current versions before using a path.
 
@@ -8,7 +8,7 @@
 
 The question catalog below links business questions to reusable investigation steps, source data and observable success criteria. The graph is a navigation design, not a fixed list of conclusions. A path may branch, return to an earlier check or stop when evidence is insufficient.
 
-Metric definitions are approved individually. A path naming an unapproved metric is a **future test**, not permission to invent its denominator, period, population, status rules or SQL. An approved metric must be used with its current version. The fixture tables named here exist; Bronze/Silver/Gold routing and a running agent are planned. Follow the catalog's grain, identity and temporal rules instead of assuming layer tables exist.
+Every metric in the registry's metric map is approved; a request outside it is answered as a labelled ad hoc variant, not by inventing a denominator, period, population, status rules or SQL. An approved metric must be used with its current version. The fixture tables named here exist, and Bronze, Silver and Gold tables are built from them: the [Gold question list](../data-layers/pockettoons-gold-questions.md) maps each scenario to the Gold table that answers it, and the [layer contracts](../data-layers/pockettoons-layer-contracts.md) state each table's grain, rules and limits. Confirm a layer's build record and contract before relying on it; follow the catalog's grain, identity and temporal rules when working from source tables.
 
 This document is not an answer key. Independently verified expected numbers and deliberately hidden evaluation cases belong in a separate evaluator-only artifact, outside the agent's investigation context. Giving the agent this question-specific playbook during a test measures guided navigation, not independent discovery; evaluate both modes separately.
 
