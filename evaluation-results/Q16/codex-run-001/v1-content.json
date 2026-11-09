@@ -1,0 +1,201 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Which advertising campaign caused each user\u2019s purchase?",
+    "short_title": "Campaign attribution",
+    "question": "Which advertising campaign caused each user\u2019s purchase?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized PocketToons SQLite",
+    "periods": "All observed successful charges, April\u2013September 2026 UTC",
+    "snapshot": "Declared 2026-09-30 23:59:59 UTC",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "11 query attempts; 10 successful",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Check numbers refer to the individual JSONL evidence files.",
+        "A recorded acquisition source is a first-touch channel, not a campaign or proof of causation."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Purchase",
+          "A valid, successful positive non-refund charge; includes subscription renewals and PPV. A later refund does not undo the charge count."
+        ],
+        [
+          "Snapshot",
+          "The declared user snapshot instant; it is not a verified database hash."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "The campaign that caused each purchase cannot be identified from this database. No campaign-to-user exposure or click link is recorded, and observational attribution alone would not prove causation (checks 4, 6, 10)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "The data contains <b>6,215 valid successful charges by 1,465 users</b>, including renewals; no campaign assignment is supported for any of these purchases (checks 7\u20138, 11).",
+            "The recorded first-touch sources are organic 3,023 charges, paid search 1,649, paid social 1,484 and unknown 59. These are descriptive user-level source labels, not purchase-level campaign attribution (check 7)."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Independent investigation; no question-specific guides or answer keys were read. The supplied SQLite database was queried read-only.",
+            "All available successful charges, effective 2026-04-01 01:00:00 through 2026-09-25 10:00:00 UTC inclusive; no comparison period was requested (check 8).",
+            "Declared user snapshot: 2026-09-30 23:59:59 UTC. Build 3a0dbed21d2f45958aefa2887a0cadd8 succeeded 2026-11-09 11:16:56 UTC; build reconciliation checks are recorded as passing (checks 2\u20133).",
+            "Revenue group v1.1 defines valid success and charge timing. Counts are an ad hoc descriptive application, not a registered campaign attribution metric."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Inventory layers and build, inspect source schemas and event property keys, then quantify purchases and missing links.",
+            "Gold marketing is channel-month only. Silver provides validated purchase and profile detail; Bronze supplies source schemas and event properties. Stop: a campaign-level link and causal design are absent."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.35,
+            0.3,
+            0.35
+          ],
+          "rows": [
+            [
+              "First-touch source",
+              "Charges",
+              "Distinct purchasers"
+            ],
+            [
+              "Organic",
+              "3,023",
+              "700"
+            ],
+            [
+              "Paid search",
+              "1,649",
+              "388"
+            ],
+            [
+              "Paid social",
+              "1,484",
+              "363"
+            ],
+            [
+              "Unknown",
+              "59",
+              "14"
+            ],
+            [
+              "Total",
+              "6,215",
+              "1,465"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Sources partition users in this snapshot. Counts describe acquisition labels, not campaigns responsible for purchases (check 7)."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.38,
+            0.2,
+            0.42
+          ],
+          "rows": [
+            [
+              "Hypothesis",
+              "Status",
+              "Evidence"
+            ],
+            [
+              "Individual campaign links exist",
+              "Rejected for available schema",
+              "No campaign or UTM columns found; event JSON keys contain no campaign identifier (checks 6, 10)."
+            ],
+            [
+              "First-touch source identifies the causing campaign",
+              "Inconclusive",
+              "Channel is not a campaign and cannot establish causation (checks 4, 7)."
+            ]
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "59 charges and 14 purchasers have unknown first-touch source. All 6,215 charge rows have user IDs; 4,546 lack checkout links and 4,490 lack session links. Off-session payments and uncaptured links have different meanings; neither count alone measures campaign coverage (checks 7\u20138).",
+            "Thirteen payment rows have reviewed source-amount corrections; review time is unknown (check 9).",
+            "The current repository registry SHA-256 differs from the registry SHA recorded at build. The builder SHA matches. Build-time reconciliation is historical; source fingerprints have not been independently recomputed, so current layer freshness is not verified."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "There is no campaign identifier, user-level ad exposure or click-to-purchase mapping in the inspected schema and event properties. The absence of these fields prevents campaign assignment, irrespective of the share with a known channel.",
+            "Even a linked click would support an agreed attribution rule, not by itself prove incremental causal impact.",
+            "The supplied directory has no Git metadata; commit and download date are unavailable. Repository inspected 2026-11-09; hashes are recorded in run-notes."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Capture consent-appropriate campaign IDs and impression/click events with timestamps, stable identity linkage and purchase IDs; measure missing and ambiguous links.",
+            "Agree on the eligible purchases, attribution window, touchpoint precedence and treatment of renewals and unknowns before producing campaign attribution.",
+            "Use randomized holdouts or a defensible experiment to estimate incremental campaign effects, rather than treating assigned credit as causation."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Checks 01\u201311 are separate evidence logs; check 05 failed authorization on a table-valued PRAGMA and is retained. Check 10 used sqlite_master as a read-only alternative. All successful result sets were untruncated.",
+            "Inputs, SQL, results, build reconciliation and an index are saved beside this report."
+          ]
+        }
+      ]
+    }
+  }
+}

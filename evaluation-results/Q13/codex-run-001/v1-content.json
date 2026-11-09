@@ -1,0 +1,158 @@
+{
+  "meta": {
+    "project": "PocketToons product analytics",
+    "title": "Is an unusually large source payment real?",
+    "short_title": "Source payment investigation",
+    "question": "Does the unusually large source payment represent a real charge?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized synthetic PocketToons SQLite",
+    "periods": "All available records, April-September 2026 UTC",
+    "snapshot": "Metadata as-of 2026-09-30 23:59:59 UTC",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "16 read-only SQL checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to numbered evidence JSONL files. Amounts are USD.",
+        "Bronze preserves source; Silver records validated payment attempts; Gold summarizes monthly metrics."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Source amount",
+          "Provider-supplied value, which may use misleading units."
+        ],
+        [
+          "Revenue",
+          "Revenue group v1.1: charge at its single success event, less successful refunds."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "The apparent $999 payment is not supported as a $999 charge. Seven source records show 999.0 labelled USD; review identifies each as 999 cents, and the curated charge is $9.99. Each has one recorded success (checks 7, 10)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "These are seven distinct $9.99 successful subscription charges, $69.93 gross; one was refunded $9.99, leaving $59.94 net across the linked transactions (checks 10, 12, 13).",
+            "Treating each raw 999.0 as dollars would overstate these gross charges by $990.01 each, or $6,923.07 in total. This is a hypothetical raw-ingestion error, not an observed error in Gold.",
+            "The review states the provider sent cents, but the provider evidence itself is not available here; review completion times are unknown."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Independent investigation of all 6,544 payment records; UTC source arrivals from 2026-04-01 through 2026-09-25 (checks 6, 8). No single transaction was specified; all seven identical outliers were examined.",
+            "Dataset metadata records user, catalog and entitlement snapshots at 2026-09-30T23:59:59Z. These are declared timestamps, not a verified database hash or a transaction freshness guarantee (check 2).",
+            "Build succeeded 2026-11-09 11:16:56 UTC with all recorded reconciliation checks passing; 20 Bronze views, 10 Silver and 8 Gold tables exist (checks 1, 3).",
+            "Build registry SHA-256 starts 57b21d71; current registry SHA-256 starts 4b5b2f0e. Builder SHA matches 12fd6588. Definition label revenue_group 1.1 matches, but registry contents and post-build source freshness were not independently reconciled."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Baseline: profile all source representations and compare to curated subscription amounts (checks 6, 11, 14).",
+            "H1: a unit error explains the outliers - supported by seven review records and matched prices, conditional on review reliability (check 10).",
+            "H2: $999 is the actual charge - contradicted by reviewed and curated amounts; external settlement was not independently available (check 10).",
+            "H3: the payment never succeeded - rejected for these seven based on one success event each; a later refund is separate (checks 10, 13)."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Source distribution: 5,382 numeric and 899 text values of 9.99; 215 numeric and 35 text values of 1.99; seven text values of 999.0; six unavailable text values. Values include charges and refunds, not just successful charges (check 14).",
+            "All 6,288 curated subscription attempts have amount $9.99: 4,777 renewals and 1,511 initial purchases, including any failed attempts (check 11)."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Seven outliers: six initial subscriptions and one renewal, each reviewed from 999.0 USD to $9.99. Their individual transaction IDs and event dates are in check 10.",
+            "Seven charges contribute $69.93 gross; a single $9.99 linked successful refund reduces the combined net to $59.94. No other linked refund attempts appear (checks 12-13)."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Review reason says provider sent cents and the value was reconciled to purchase price. Each curated original amount and list price is $9.99; Silver recognizes 999 cents per success. This supports a scaling error rather than an unusually large charge, but those fields are not independent settlement verification (check 10).",
+            "If raw 999.0 were wrongly read as dollars for all seven charges, the gross total would be $6,993.00 rather than $69.93, overstated $6,923.07. Refunds and other records are held constant in this illustrative gross-only calculation."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "All 6,544 source records have matching transactions; 6,544 Silver attempts have unique IDs. The source key prevents duplicate non-null IDs (checks 5, 8, 16).",
+            "There are 13 reviewed corrections: seven scaling errors and six unavailable raw amounts. Silver quality exceptions expose all 13 (checks 9, 12).",
+            "Review timestamps are NULL, so availability of corrections at any historical point cannot be established. Build fingerprints document sources at build time; current source content was not independently hashed."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The fixture is synthetic. Neither actual provider settlement records nor independent external payment evidence were inspected. Review rationale is a recorded assertion.",
+            "The database has no transaction snapshot timestamp. Snapshot labels and source fingerprints do not prove present freshness. Registry file mismatch limits confidence in interpreting Gold with current documentation."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Use the reviewed $9.99 amounts and success-time revenue rules for current analysis; preserve raw values and exception flags.",
+            "For operational verification, retrieve provider settlement evidence and timestamps, verify the seven source-unit mappings, and add a unit consistency alert.",
+            "Reconcile current source fingerprints and the changed registry against the build before relying on Gold as current; do not rebuild the authorized database without permission."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Evidence files query-01.jsonl through query-16.jsonl contain bounded read-only SQL, results, durations and truncation flags. Matching request JSON files provide context.",
+            "01 layer inventory; 02 metadata; 03 build and reconciliation; 04 numeric-only profile; 05 schemas; 06 storage and units; 07 text and reviews; 08 coverage; 09 exceptions; 10 seven traces; 11 subscription baseline; 12 reviewed contributions; 13 linked refunds; 14 raw distribution; 15 Gold revenue; 16 Silver coverage.",
+            "Repository directory has no Git metadata; commit and download date unavailable. AGENTS.md observed modification 2026-11-09 20:12:48 IST, which is a file timestamp, not a download date. Full hashes and run timing are recorded in run-notes.txt."
+          ]
+        }
+      ]
+    }
+  }
+}

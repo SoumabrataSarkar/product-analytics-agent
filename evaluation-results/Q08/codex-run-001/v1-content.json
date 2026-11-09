@@ -1,0 +1,206 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Subscription versus PPV net revenue",
+    "short_title": "Revenue by product",
+    "question": "How much net revenue came from subscriptions versus PPV?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "PocketToons synthetic fixture",
+    "periods": "April\u2013September 2026 UTC",
+    "snapshot": "2026-09-30 23:59:59 UTC (metadata)",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "9 logged SQL checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "From April through September 2026, subscriptions generated $59,900.04 in net revenue (99.32%); PPV generated $411.93 (0.68%). Total net revenue was $60,311.97. Checks 5\u20136."
+        },
+        {
+          "type": "table",
+          "widths": [
+            0.27,
+            0.24,
+            0.24,
+            0.25
+          ],
+          "rows": [
+            [
+              "Revenue type",
+              "Gross charges",
+              "Refunds",
+              "Net revenue"
+            ],
+            [
+              "Subscription",
+              "$59,949.99",
+              "$49.95",
+              "$59,900.04"
+            ],
+            [
+              "PPV",
+              "$425.86",
+              "$13.93",
+              "$411.93"
+            ],
+            [
+              "Unattributed",
+              "$0.00",
+              "$0.00",
+              "$0.00"
+            ],
+            [
+              "Total",
+              "$60,375.85",
+              "$63.88",
+              "$60,311.97"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Amounts are USD and additive across these six complete months. Shares use total net revenue as the denominator. Gold monthly rows reconcile with an independent aggregation of Silver payment attempts (checks 5\u20136)."
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Coverage: [2026-04-01 00:00:00, 2026-10-01 00:00:00) UTC. All 6,227 successful records fall within this window (check 8).",
+            "Revenue group v1.1: successful charges less successful refunds, booked at success; refunds follow the original successful charge type, otherwise unattributed. Subscription payments are not spread over the service period.",
+            "Snapshot timestamps are asserted in dataset metadata, not verified freshness or a database hash (check 2). Independent mode; no answer keys or prior reports used."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "rows": [
+            [
+              "UTC month",
+              "Subscription net",
+              "PPV net"
+            ],
+            [
+              "April",
+              "$9,790.20",
+              "$73.63"
+            ],
+            [
+              "May",
+              "$10,219.77",
+              "$73.63"
+            ],
+            [
+              "June",
+              "$9,930.06",
+              "$57.71"
+            ],
+            [
+              "July",
+              "$10,099.89",
+              "$71.64"
+            ],
+            [
+              "August",
+              "$9,760.23",
+              "$59.70"
+            ],
+            [
+              "September",
+              "$10,099.89",
+              "$75.62"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Source: Gold monthly revenue (check 5). Each month has all three types, including zero unattributed refunds."
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Build 3a0dbed21d2f45958aefa2887a0cadd8 succeeded on 2026-11-09 at 11:16:56 UTC; its logged revenue reconciliation checks passed (check 3). Layer inventory: 20 Bronze views, 10 Silver tables, 8 Gold tables (check 4).",
+            "All 6,544 payment attempts have Silver status ok; 13 source amounts were corrected on review. Their included net amounts are $119.88 subscription and $1.99 PPV (checks 7 and 9). These are curated amounts, not independent proof of the original raw values.",
+            "The build records registry SHA-256 57b21d71027782fc28c8ea7eea4eb0dd9ed18273577d81bf00eaded632ff1227; the current registry hashes to 4b5b2f0e881666570ace017c06ff1bca380fff83c8dfa679317706e6a8815554. Both identify revenue group as v1.1, but the exact build-time registry file is unavailable here, so equivalence beyond the recorded version and reconciliations is not established. The builder hash matches."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Net means after refunds only; provider fees, app-store commissions and taxes are absent. This is bookings-based, not ratable recognized revenue.",
+            "This is a synthetic fixture. The coverage window is documented by the registry, not declared as a timestamp range in dataset metadata. No causal explanation is implied.",
+            "Repository has no Git metadata; commit and actual download date cannot be verified. Directory timestamp observed 2026-11-09 20:12:48 local; it is not proof of download time."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Use the product split for this snapshot; verify the build-time registry file and source freshness before treating it as a current operational figure."
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.15,
+            0.6,
+            0.25
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose",
+              "Evidence file"
+            ],
+            [
+              "1\u20134",
+              "Metadata schema, snapshot, build and layer inventory",
+              "evidence-01\u201304.jsonl"
+            ],
+            [
+              "5\u20136",
+              "Monthly Gold split and Silver reconciliation",
+              "evidence-05\u201306.jsonl"
+            ],
+            [
+              "7\u20139",
+              "Exceptions, time coverage and corrections",
+              "evidence-07\u201309.jsonl"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Each JSONL includes SQL, returned rows, bounds and status; matching query request files are retained alongside. All nine queries completed without truncation. No hypotheses were needed for this descriptive split; stop after reconciliation."
+        }
+      ]
+    }
+  }
+}

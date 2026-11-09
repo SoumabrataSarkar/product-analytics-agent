@@ -1,0 +1,290 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Monthly net revenue: latest month versus prior month",
+    "short_title": "Net revenue investigation",
+    "question": "Performance is down. What happened?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "PocketToons synthetic SQLite",
+    "periods": "September vs August 2026, UTC",
+    "snapshot": "2026-09-30T23:59:59Z (metadata)",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "8 queries",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to numbered JSONL evidence files in the accompanying folder.",
+        "Gold is a summary layer; Silver is payment-level detail. Recorded build reconciliation is not a new reconciliation."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Net revenue",
+          "Successful subscription and PPV charges less successful refunds, booked at success in USD."
+        ],
+        [
+          "PPV",
+          "Pay-per-view purchase."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "The premise is not supported for the agreed comparison: September 2026 net revenue rose $355.58 (3.62%) from August, from $9,819.93 to $10,175.51 (check 4)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Subscription net revenue rose $339.66; PPV rose $15.92. Together they reconcile to the $355.58 increase (check 5).",
+            "More initial subscription charges were partly offset by fewer renewals; this is an accounting decomposition, not a proven explanation of customer behavior (check 7).",
+            "Confirm whether a different KPI or period motivated the original concern."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Latest two complete months in documented coverage: August 1\u2013September 1 and September 1\u2013October 1, 2026, UTC, start inclusive and end exclusive.",
+            "PocketToons synthetic SQLite; users snapshot timestamp 2026-09-30T23:59:59Z. This is recorded metadata, not a verified database hash or freshness guarantee.",
+            "Revenue group v1.1; payments booked at success, not earned revenue spread across a subscription period.",
+            "Build 3a0dbed21d2f45958aefa2887a0cadd8 succeeded; checks in the build record report revenue reconciliation. The current registry file hash differs from the recorded build hash, so exact source-version equivalence is unverified (check 3)."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Independent mode; no evaluation materials, prior answers, generator answer-bearing README, or question-specific guides were consulted.",
+            "Validated schema, snapshot and build; checked baseline, revenue types, payment quality and successful payment subtypes. Stopped after the stated decline was disproved for the chosen periods."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.4,
+            0.3,
+            0.3
+          ],
+          "rows": [
+            [
+              "Measure",
+              "August",
+              "September"
+            ],
+            [
+              "Gross charges",
+              "$9,831.91",
+              "$10,177.50"
+            ],
+            [
+              "Refunds",
+              "$11.98",
+              "$1.99"
+            ],
+            [
+              "Net revenue",
+              "$9,819.93",
+              "$10,175.51"
+            ],
+            [
+              "Paying users",
+              "1,009",
+              "1,050"
+            ]
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.4,
+            0.3,
+            0.3
+          ],
+          "rows": [
+            [
+              "Net revenue component",
+              "Aug \u2192 Sep",
+              "Change"
+            ],
+            [
+              "Subscription",
+              "$9,760.23 \u2192 $10,099.89",
+              "+$339.66"
+            ],
+            [
+              "PPV",
+              "$59.70 \u2192 $75.62",
+              "+$15.92"
+            ],
+            [
+              "Unattributed refunds",
+              "$0 \u2192 $0",
+              "$0"
+            ],
+            [
+              "Total",
+              "$9,819.93 \u2192 $10,175.51",
+              "+$355.58"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Gross charges increased $345.59 and refunds fell $9.99, giving a net increase of $355.58 (checks 4\u20135). August has 31 days and September 30."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.36,
+            0.18,
+            0.46
+          ],
+          "rows": [
+            [
+              "Hypothesis",
+              "Status",
+              "Evidence"
+            ],
+            [
+              "Net revenue declined",
+              "Rejected",
+              "September exceeded August by 3.62% (check 4)."
+            ],
+            [
+              "Subscription accounts for most of the increase",
+              "Supported",
+              "+$339.66 of +$355.58, about 95.5% (check 5)."
+            ],
+            [
+              "More initial subscription charges explain gross movement",
+              "Supported, arithmetically",
+              "Initial charges +$459.54; renewal charges \u2212$129.87; PPV charges +$15.92. Refund improvement +$9.99 (checks 5, 7). Underlying causes untested."
+            ]
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Build log reports succeeded and all recorded reconciliation checks true; no independent rerun of full reconciliation (check 3).",
+            "All payment rows in the checked event-time buckets have valid curated amounts and an OK Silver status (check 6).",
+            "Reviewed source corrections: two August subscription payments totaling $19.98 and one September payment totaling $9.99 in curated values (check 8). Timing and impact of source errors before correction are not established.",
+            "Current registry SHA-256 4b5b2f0e881666570ace017c06ff1bca380fff83c8dfa679317706e6a8815554 differs from build-recorded registry SHA-256 57b21d71027782fc28c8ea7eea4eb0dd9ed18273577d81bf00eaded632ff1227. Both label revenue group v1.1; semantic differences have not been ruled out."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The data coverage ends September 2026; it does not establish current real-world performance. The dataset is synthetic.",
+            "No causal mechanism, behavior change, experiment, or counterfactual was established. No alternate KPI or period was tested as the intended concern.",
+            "The repository is a downloaded directory without Git metadata; commit and actual download date cannot be verified. AGENTS.md file modification time is November 9, 2026, 20:12 IST; this is not proof of download date."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Clarify the original KPI, comparison period, and decision before diagnosing a decline.",
+            "Review why initial subscriptions increased and renewals decreased using cohort and lifecycle data, if that is relevant to the decision.",
+            "Verify the build registry version against the current registry before using this result for production decisions."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.12,
+            0.65,
+            0.23
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose",
+              "File"
+            ],
+            [
+              "1",
+              "Schema and layer inventory",
+              "q01-schema"
+            ],
+            [
+              "2",
+              "Snapshot metadata",
+              "q02-metadata"
+            ],
+            [
+              "3",
+              "Build status and reconciliation",
+              "q03-build"
+            ],
+            [
+              "4",
+              "Monthly KPI baseline",
+              "q04-evidence"
+            ],
+            [
+              "5",
+              "Revenue type decomposition and failures",
+              "q05-evidence"
+            ],
+            [
+              "6",
+              "Payment outcomes and validity",
+              "q06-evidence"
+            ],
+            [
+              "7",
+              "Successful payment subtypes",
+              "q07-evidence"
+            ],
+            [
+              "8",
+              "Reviewed source corrections",
+              "q08-evidence"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

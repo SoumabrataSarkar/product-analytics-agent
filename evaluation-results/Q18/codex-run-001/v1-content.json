@@ -1,0 +1,199 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Mobile sessions: September versus August 2026",
+    "short_title": "Mobile sessions",
+    "question": "How many mobile sessions were there in September versus August?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized PocketToons SQLite fixture",
+    "periods": "August and September 2026 UTC",
+    "snapshot": "users_snapshot_at 2026-09-30T23:59:59Z",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "6 logged queries",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to the numbered JSONL evidence logs.",
+        "Counts are sessions, including unidentified browsing visits."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Mobile",
+          "Sessions recorded as iOS or Android, as confirmed by the user."
+        ],
+        [
+          "Session",
+          "A continuous device visit, counted by its start time."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "September had 38,365 mobile sessions versus 36,295 in August, an increase of 2,070 (5.7%). Check 3."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Android: 20,085 to 21,070 (+985). iOS: 16,210 to 17,295 (+1,085).",
+            "September had 30 days versus 31 in August. Average daily starts rose from 1,170.8 to 1,278.8 (+9.2%).",
+            "Mobile web cannot be identified from the platform field and is excluded."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "UTC start intervals: [2026-08-01, 2026-09-01) and [2026-09-01, 2026-10-01).",
+            "The count by start is an ad hoc measure, not a registered standalone metric. The registry supporting metrics version is 1.1; its sessions-per-active-user numerator uses a month-overlap rule for identified sessions.",
+            "Silver session-grain detail preserves all visits. Gold platform summaries count active users rather than sessions."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.35,
+            0.2,
+            0.2,
+            0.25
+          ],
+          "rows": [
+            [
+              "Platform",
+              "August",
+              "September",
+              "Change"
+            ],
+            [
+              "Android",
+              "20,085",
+              "21,070",
+              "+985"
+            ],
+            [
+              "iOS",
+              "16,210",
+              "17,295",
+              "+1,085"
+            ],
+            [
+              "Total",
+              "36,295",
+              "38,365",
+              "+2,070"
+            ]
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The two platform increases account for the total change arithmetically; this does not establish why usage changed.",
+            "The user requested a count comparison, so a causal investigation was not performed."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Checks 3-5: IDs are distinct within each month and platform; Bronze and Silver counts agree. Sessions occur on every day in both months. No ambiguous resolutions or mismatched links in those months.",
+            "Unidentified mobile sessions included: 2,645 in August and 2,849 in September.",
+            "One iOS session started in August and continued into September. Counting sessions touching a month gives 36,295 and 38,366, respectively (check 6).",
+            "The documented activity coverage is April 1 through October 1, 2026, exclusive, but is not independently declared in database metadata."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The stored build was successful and reports source/session reconciliation. Its registry SHA-256 differs from the current repository registry; the builder hash matches. The counts are directly reconciled with Bronze but registry equivalence and build freshness have not been independently established.",
+            "Snapshot time is the database metadata user snapshot, not a verified file hash or proof of freshness. The repository is a download without Git metadata; directory creation timestamp is November 9, 2026 20:12:48 IST, used as an approximate download date.",
+            "Web includes 9,946 August and 10,349 September sessions with no mobile-device classification in the available platform field."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Confirm whether mobile web is required and obtain device classification if so.",
+            "Use the same session-start convention for future comparisons and monitor daily averages as well as totals."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.12,
+            0.65,
+            0.23
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose",
+              "Log"
+            ],
+            [
+              "1",
+              "Layer inventory",
+              "q01.jsonl"
+            ],
+            [
+              "2",
+              "Snapshot and build metadata",
+              "q02.jsonl"
+            ],
+            [
+              "3",
+              "Platform and month counts",
+              "q03.jsonl"
+            ],
+            [
+              "4",
+              "Bronze and Silver reconciliation",
+              "q04.jsonl"
+            ],
+            [
+              "5",
+              "Coverage and session quality",
+              "q05.jsonl"
+            ],
+            [
+              "6",
+              "Month overlap sensitivity",
+              "q06.jsonl"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

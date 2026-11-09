@@ -1,0 +1,292 @@
+{
+  "meta": {
+    "project": "PocketToons product analytics",
+    "title": "Did newer signup cohorts convert to subscription at a lower rate?",
+    "short_title": "Signup cohort subscription conversion",
+    "question": "Did newer signup cohorts convert to subscription at a lower rate?",
+    "date": "2026-11-09",
+    "mode": "Independent investigation",
+    "dataset": "PocketToons SQLite, synthetic reference fixture",
+    "periods": "April\u2013August 2026 signup cohorts, UTC",
+    "snapshot": "2026-09-30 23:59:59 UTC (declared)",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "10 query attempts, including 1 error",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to numbered JSONL evidence logs stored alongside this report.",
+        "Rates are cohort counts divided by eligible signups. Percentage-point changes differ from relative percentage changes."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Cohort",
+          "Users signing up in the same UTC calendar month."
+        ],
+        [
+          "Conversion",
+          "At least one qualifying successful subscription charge within 720 hours after signup; a later refund does not reverse conversion."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Yes. Among fully observed signup cohorts, 30-day subscription conversion fell from 1.94% in May\u2013June to 0.53% in July\u2013August: a 1.40 percentage-point decline (72% relative)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "May\u2013June: 94 of 4,854 signups; July\u2013August: 29 of 5,426 (checks 4 and 9).",
+            "The decline occurs within each major acquisition source, so a shift in source mix alone does not explain it (check 6).",
+            "September has no eligible users and cannot be compared on this metric. The cause of the decline remains unproven (checks 4 and 6)."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Approved subscription_conversion_30d, funnel and lifecycle group v1.0. Window is [signup instant, signup instant + 30 days); a qualifying charge is positive, valid and successful. Eligible users must have the entire window within [2026-04-01, 2026-10-01) UTC.",
+            "Gold cohort rows at month 0 supply the baseline; Silver profiles supply fixed acquisition-source slices. An independent Bronze recount using current registry SQL matches all five mature monthly counts (checks 4, 6, 9).",
+            "Snapshot is the metadata assertion 2026-09-30 23:59:59Z; coverage is the catalog contract, not a verified freshness guarantee. The repository download has no Git metadata; files are dated 2026-11-09."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.25,
+            0.25,
+            0.25,
+            0.25
+          ],
+          "rows": [
+            [
+              "Signup month",
+              "Eligible",
+              "Converted",
+              "30-day rate"
+            ],
+            [
+              "April 2026",
+              "1,600",
+              "73",
+              "4.56%"
+            ],
+            [
+              "May 2026",
+              "2,201",
+              "38",
+              "1.73%"
+            ],
+            [
+              "June 2026",
+              "2,653",
+              "56",
+              "2.11%"
+            ],
+            [
+              "July 2026",
+              "2,477",
+              "13",
+              "0.52%"
+            ],
+            [
+              "August 2026",
+              "2,949",
+              "16",
+              "0.54%"
+            ],
+            [
+              "September 2026",
+              "0",
+              "0",
+              "Not available"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "April is the first observed coverage month, so May\u2013June is the principal comparison baseline; the pattern is also evident versus April. The sequence is not strictly monotonic (check 4).",
+            "September contains 1,720 signups but none with a complete 30-day window by coverage end; zero eligible does not mean zero conversions."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.25,
+            0.36,
+            0.39
+          ],
+          "rows": [
+            [
+              "Source",
+              "May\u2013June",
+              "July\u2013August"
+            ],
+            [
+              "Organic",
+              "46 / 2,389 = 1.93%",
+              "6 / 996 = 0.60%"
+            ],
+            [
+              "Paid search",
+              "23 / 1,273 = 1.81%",
+              "5 / 907 = 0.55%"
+            ],
+            [
+              "Paid social",
+              "23 / 1,144 = 2.01%",
+              "18 / 3,469 = 0.52%"
+            ],
+            [
+              "Unknown",
+              "2 / 48 = 4.17%",
+              "0 / 54 = 0.00%"
+            ],
+            [
+              "All",
+              "94 / 4,854 = 1.94%",
+              "29 / 5,426 = 0.53%"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Paid social share rose from 23.6% to 63.9% of eligible signups. Applying late source-specific rates to the early source mix gives 0.56%, close to the observed late 0.53%. This descriptive standardization supports a broad within-source decline; it is not a causal decomposition (check 6).",
+            "Unknown attribution is small but retained; rates for small groups are unstable."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.33,
+            0.18,
+            0.49
+          ],
+          "rows": [
+            [
+              "Hypothesis",
+              "Status",
+              "Evidence"
+            ],
+            [
+              "Newer cohorts converted less",
+              "Supported",
+              "Each July and August rate is lower than May and June (check 4)."
+            ],
+            [
+              "Source mix alone explains decline",
+              "Rejected",
+              "All three major source rates fell; standardized late rate is 0.56% (check 6)."
+            ],
+            [
+              "A particular product or campaign change caused the decline",
+              "Inconclusive",
+              "No causal experiment or change history was examined."
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Early stop after the baseline and one hypothesis round: the question is answered and a major composition explanation tested. Mechanisms and interventions remain open."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Build succeeded 2026-11-09 11:16:56Z and recorded successful Gold conversion and Silver profile reconciliations. Twenty Bronze views, ten Silver tables and eight Gold tables exist (checks 1\u20133).",
+            "Current registry SHA-256 4b5b2f0e881666570ace017c06ff1bca380fff83c8dfa679317706e6a8815554 differs from build-recorded 57b21d71027782fc28c8ea7eea4eb0dd9ed18273577d81bf00eaded632ff1227; builder hashes match. The direct source recount under the current definition matches Gold, but full source fingerprints were not freshly verified (checks 3 and 9).",
+            "Profile and payment keys are unique and non-null; signup and success timestamps tested are valid; no first subscription precedes signup; no profile or payment rows are flagged excluded (check 8).",
+            "Thirteen reviewed source amount corrections are flagged suspicious but usable; two users, one each in July and August, had a reviewed qualifying subscription charge in their window. Excluding at most both users gives 27/5,426 = 0.50%, leaving the conclusion unchanged; this is a conservative sensitivity bound, not a recalculation of alternate valid transactions (checks 7 and 10).",
+            "Check 5 failed on an incorrect column name; the corrected check 8 succeeded. All successful results were untruncated."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "This is a synthetic fixture and an observational comparison, not evidence of a real-world causal mechanism. The declared data coverage and build provenance do not independently guarantee source freshness.",
+            "The question does not specify a window or baseline; the approved 30-day definition and adjacent mature May\u2013June versus July\u2013August cohorts are used. Other definitions or time windows may yield different answers."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Inspect signup-to-purchase journeys and product, pricing or campaign changes around July, preserving cohort and 30-day windows; test causal explanations before acting on them.",
+            "Refresh data through at least 30 days after September signups before comparing that cohort, and reconcile source fingerprints and registry provenance on a future validated build."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.18,
+            0.82
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose and file"
+            ],
+            [
+              "1\u20133",
+              "Object inventory, dataset metadata and full build / reconciliation: 01_objects, 02_metadata, 03_build"
+            ],
+            [
+              "4",
+              "Monthly cohorts: 04_cohorts"
+            ],
+            [
+              "5, 8",
+              "Quality query error and corrected retry: 05_quality, 08_quality_retry"
+            ],
+            [
+              "6\u20137",
+              "Acquisition slices and exceptions: 06_segment, 07_exceptions"
+            ],
+            [
+              "9\u201310",
+              "Bronze recount and correction sensitivity: 09_source_recount, 10_review_impact"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,226 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Did refunds materially change the revenue comparison?",
+    "short_title": "Refunds and revenue",
+    "question": "Did refunds materially change July\u2013September versus April\u2013June 2026 revenue?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "pockettoons.sqlite (synthetic fixture)",
+    "periods": "Q3 vs Q2 2026, UTC",
+    "snapshot": "users_snapshot_at 2026-09-30T23:59:59Z",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "10 read-only queries",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Check numbers refer to individual evidence JSONL files in the accompanying folder.",
+        "Dollar amounts are USD. UTC periods are start-inclusive and end-exclusive."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Gross charges",
+          "Successful, valid charges booked at success time."
+        ],
+        [
+          "Net revenue",
+          "Gross charges less positive refunds booked at refund success time."
+        ],
+        [
+          "Percentage point",
+          "Difference between two percentage growth rates."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Refunds did not change the direction of the comparison, and their effect on the growth rate was only 0.040 percentage points. However, they more than doubled the very small dollar increase: the gross increase of $9.99 became a net increase of $21.97."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Refunds fell $11.98, from $37.93 to $25.95. That reduction accounts for $11.98 of the $21.97 net increase (54.5%).",
+            "Gross growth was +0.033%; net growth was +0.073%. Both quarters generated about $30,000, so the absolute change is small. No numerical materiality threshold was supplied.",
+            "April begins with zero subscribers. The requested Q2 baseline includes startup; a later two-month sensitivity comparison is reported below."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.36,
+            0.32,
+            0.32
+          ],
+          "rows": [
+            [
+              "Item",
+              "Q2 2026",
+              "Q3 2026"
+            ],
+            [
+              "UTC window",
+              "Apr 1 to Jul 1",
+              "Jul 1 to Oct 1"
+            ],
+            [
+              "Gross charges",
+              "$30,182.93",
+              "$30,192.92"
+            ],
+            [
+              "Refunds",
+              "$37.93",
+              "$25.95"
+            ],
+            [
+              "Net revenue",
+              "$30,145.00",
+              "$30,166.97"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "All payments in the supplied database; revenue group v1.1. Refunds are recorded in their own success period, not matched back to the quarter of the original purchase.",
+            "Snapshot timestamp is dataset metadata, not a verified database hash or guarantee of freshness. Build finished 2026-11-09 11:16:56 UTC. Checks 2\u20136 and 10."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Baseline and refund decomposition: Gold monthly revenue, checked against independently aggregated Silver payment attempts (checks 4\u20136).",
+            "Hypothesis: lower refunds explain part of net change. Supported as arithmetic; no causal mechanism inferred.",
+            "Quality and startup checks: payment validity and review exceptions, timing, and subscriber base (checks 7\u201310)."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.36,
+            0.32,
+            0.32
+          ],
+          "rows": [
+            [
+              "Measure",
+              "Q3 minus Q2",
+              "Growth vs Q2"
+            ],
+            [
+              "Gross charges",
+              "+$9.99",
+              "+0.033%"
+            ],
+            [
+              "Refunds",
+              "\u2212$11.98",
+              "\u221231.6%"
+            ],
+            [
+              "Net revenue",
+              "+$21.97",
+              "+0.073%"
+            ]
+          ]
+        },
+        {
+          "type": "math",
+          "title": "Reconciliation",
+          "lines": [
+            "Net change = gross change \u2212 refund change = $9.99 \u2212 (\u2212$11.98) = $21.97.",
+            "The growth-rate difference is +0.0398 percentage points; percentages use their respective gross and net Q2 denominators."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Subscription refunds fell from $29.97 to $19.98, improving the comparison by $9.99. PPV refunds fell from $7.96 to $5.97, improving it by $1.99. Together they account for the $11.98 effect (check 6).",
+            "April began with zero subscribers (check 10). Comparing equal later windows, August\u2013September against May\u2013June, gross revenue fell 1.466% and net revenue fell 1.409%: refunds improved that rate by 0.057 percentage points but did not reverse the decline (checks 4 and 10)."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Supported: the observed fall in refunds mechanically increased the Q3 net-versus-Q2 difference by $11.98.",
+            "Inconclusive: why refunds fell; the evidence does not establish a behavioral or operational cause."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Build log reports succeeded and all recorded checks passed, including source-to-Silver and Silver-to-Gold revenue reconciliations (check 3). Monthly Silver and Gold amounts match in checks 5 and 6.",
+            "All 6,544 Silver payment records have distinct transaction IDs; 6,227 succeeded, 317 failed. No invalid amounts, multiple-success exceptions or unattributed refunds were flagged; no succeeded outcome lacked a success timestamp (checks 7\u20138).",
+            "Thirteen source amounts had been corrected on review; curated successful charges total $71.92 in Q2 and $49.95 in Q3. Review timing is unknown; the uncorrected provider feed is not a trusted revenue source (check 9).",
+            "The current registry file SHA-256 (4b5b2f0e\u202615554) differs from the build-recorded hash (57b21d71\u2026f1227). The current builder hash matches the build record. Version labels and numerical reconciliation support the result, but the exact historical registry file and current source fingerprints were not independently verified.",
+            "Last recorded successful payment is September 25; the complete-month label and snapshot do not prove operational ingestion freshness beyond the fixture (check 8)."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The snapshot timestamp is a metadata assertion and not a database content hash. Revenue is synthetic and should not be treated as real customer performance.",
+            "A comparison of refund events in each quarter is not a cohort refund rate for charges originating in those quarters. The review correction timing is unknown."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Use net revenue for the primary comparison and show gross and refunds alongside it; characterize both the tiny dollar change and the sensitivity of the near-zero difference.",
+            "If a decision depends on the result, verify the build registry version, source fingerprints and data completeness, then agree on a materiality threshold."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "q01: layer inventory and schemas; q02: snapshot metadata; q03: build status, definition versions, and reconciliations; q04: Gold monthly totals.",
+            "q05: Silver monthly revenue by product; q06: Gold product breakdown; q07: payment exceptions; q08: timestamps and unique IDs; q09: reviewed corrections; q10: monthly period boundaries and subscriber startup.",
+            "Every check has a corresponding request JSON and logged SQL/result JSONL. No queries were truncated. Repository download timestamp: 2026-11-09 22:16:57 IST; this copy has no Git metadata."
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "meta": {
+    "project": "Product Analytics Agent",
+    "title": "Monthly active users across available months",
+    "short_title": "Monthly active users",
+    "question": "How did monthly active users change across the available months?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "PocketToons synthetic reference fixture",
+    "periods": "April\u2013September 2026, UTC",
+    "snapshot": "SHA-256 verified (see scope)",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "6 read-only checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to numbered evidence JSONL files in the run folder.",
+        "MAU counts distinct identified people, not sessions; unidentified sessions are shown separately."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "MAU",
+          "Distinct resolved users with a session active during a complete UTC calendar month."
+        ],
+        [
+          "Unidentified sessions",
+          "Sessions that cannot be attributed under the approved identity rule; excluded from MAU."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Monthly active users rose in every available month, from 7,937 in April to 11,447 in September 2026: an increase of 3,510 users (44.2%). Growth slowed to 1.6% in July before accelerating in August. (Check 4)"
+        },
+        {
+          "type": "table",
+          "widths": [
+            0.21,
+            0.19,
+            0.3,
+            0.3
+          ],
+          "rows": [
+            [
+              "Month 2026",
+              "MAU",
+              "Change vs prior",
+              "Unidentified sessions"
+            ],
+            [
+              "Apr",
+              "7,937",
+              "\u2014",
+              "2,286"
+            ],
+            [
+              "May",
+              "9,134",
+              "+1,197 (+15.1%)",
+              "3,044"
+            ],
+            [
+              "Jun",
+              "9,976",
+              "+842 (+9.2%)",
+              "3,184"
+            ],
+            [
+              "Jul",
+              "10,138",
+              "+162 (+1.6%)",
+              "3,354"
+            ],
+            [
+              "Aug",
+              "10,871",
+              "+733 (+7.2%)",
+              "3,480"
+            ],
+            [
+              "Sep",
+              "11,447",
+              "+576 (+5.3%)",
+              "3,703"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "title": "Interpretation",
+          "text": "These figures describe the trend, not its causes. Unidentified sessions are excluded and do not translate directly into a number of missing people."
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "<b>Period:</b> six complete UTC calendar months, April through September 2026; coverage ends 2026-10-01 00:00 UTC, exclusive.",
+            "<b>Definition:</b> approved mau v1.1; a user is active if a resolved session overlaps the month, including browsing-only activity.",
+            "<b>Snapshot:</b> SHA-256 8d39e78bbaa756b594c9e38797490dc1879f2980a05f966aaf62d3919517790b.",
+            "<b>Build:</b> 3a0dbed21d2f45958aefa2887a0cadd8, succeeded 2026-11-09 11:16:56 UTC. Checks 1\u20134."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Selected Gold monthly KPI because its grain, UTC coverage and MAU definition match the question.",
+            "Checked build reconciliation and independently recounted monthly distinct users from Silver; all six values match. (Checks 2, 4, 6)",
+            "Checked session identity, duplicates and spans in Silver. (Check 5)"
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Month-on-month changes: May +1,197 (15.1%); June +842 (9.2%); July +162 (1.6%); August +733 (7.2%); September +576 (5.3%).",
+            "MAU is non-additive: do not sum monthly counts to obtain unique users across the period."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Unidentified sessions range from 2,286 to 3,703 per month and are excluded from MAU; their number of distinct people and effect on the trend are unknown. (Check 4)",
+            "Session-start check found no duplicate IDs, invalid spans or identity-link mismatches. One session spanning August and September explains why September has 3,702 unresolved sessions started in September but 3,703 touching September. (Checks 4\u20135)",
+            "The build records successful source-to-Gold MAU reconciliation and mau v1.1. Its registry file SHA-256 differs from the current registry file, so exact registry-file equivalence is unverified despite the matching version label. The builder hash matches the current builder. (Check 2)"
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The dataset is synthetic; its activity coverage is declared complete for the fixture, not evidence of real-world completeness.",
+            "The trend alone does not establish why MAU changed. No causal hypotheses were tested for this descriptive question."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "If an explanation is needed, investigate acquisition and retention using the approved growth-accounting definition and check whether excluded unidentified traffic changes interpretation."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.12,
+            0.58,
+            0.3
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose",
+              "Evidence file"
+            ],
+            [
+              "1",
+              "Layer inventory",
+              "01_objects.jsonl"
+            ],
+            [
+              "2",
+              "Build and reconciliation",
+              "02_build.jsonl"
+            ],
+            [
+              "3",
+              "Dataset metadata",
+              "03_metadata.jsonl"
+            ],
+            [
+              "4",
+              "Gold monthly MAU",
+              "04_monthly.jsonl"
+            ],
+            [
+              "5",
+              "Session quality",
+              "05_quality.jsonl"
+            ],
+            [
+              "6",
+              "Silver MAU recount",
+              "06_recount.jsonl"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

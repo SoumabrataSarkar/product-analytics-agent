@@ -1,0 +1,111 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "US subscribers at the end of September 2026",
+    "short_title": "September subscribers",
+    "question": "How many US users had an active subscription at the end of September?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized PocketToons SQLite fixture",
+    "periods": "September 2026; month-end UTC",
+    "snapshot": "User snapshot 2026-09-30 23:59:59 UTC",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "8 read-only queries",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Check numbers refer to the individual JSONL evidence files in the accompanying folder.",
+        "Silver is curated detail; Gold is a prebuilt summary; source history provides an independent recount."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Subscriber",
+          "A distinct user with an access-granting subscription period at the specified instant."
+        ],
+        [
+          "US user",
+          "A user whose recorded current country at the user snapshot is US."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "349 US users had subscriber access at the end of September 2026 (check 5)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "The approved month-end instant is 2026-10-01 00:00:00 UTC. Access includes active and cancel-at-period-end statuses (supporting metrics v1.1; lifecycle v1.0).",
+            "The 349 include 37 users with cancel-at-period-end access. No qualifying US user had a flagged subscription period or overlapping qualifying periods (check 7).",
+            "Source history independently gives 349 US users and 1,011 subscribers overall; the overall total matches Gold (check 6)."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Country is the recorded user country at the 2026-09-30 23:59:59 UTC snapshot, as confirmed by the requester. It is not a historical location measure.",
+            "Access starts at or before the instant and ends after it or has no end; distinct users are counted once.",
+            "Gold has no matching country dimension for this subscriber measure, so the answer uses Silver subscription access joined to Silver user profiles."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Inventory and metadata (checks 1-4); Silver count (check 5); source and Gold reconciliation (check 6); quality and boundary checks (checks 7-8).",
+            "A point-in-time count was requested, so no causal hypotheses or movement decomposition were necessary."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "No subscribers had missing profile or country in the source recount; zero qualifying US users had flagged or overlapping periods (checks 6-7).",
+            "No US access periods start or end exactly at the boundary (check 8).",
+            "The single recorded build succeeded and its reconciliation checks passed (check 3). The builder hash matches the local builder. The build registry hash differs from the current registry file; their equivalence is not established.",
+            "The source recount agrees with the Silver result under the current documented rule. The snapshot identifier is metadata, not a verified content hash; post-build source freshness was not independently fingerprinted."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The database is a synthetic fixture, not a production customer population. Snapshot country is not proof of location at the historical instant.",
+            "The repository directory has no Git metadata; neither commit nor download date could be verified. Files were inspected on 2026-11-09; AGENTS.md has a 2026-11-09 20:12:48 IST modification time, which is not evidence of download time."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "q01: layer inventory; q02: snapshot metadata; q03: build status and reconciliation; q04: schemas.",
+            "q05: country counts; q06: source and Gold reconciliation; q07: exceptions, overlaps and cancellation; q08: boundary records.",
+            "Full SQL, results, timings and row-limit status are in the corresponding JSONL evidence files. No query was truncated."
+          ]
+        }
+      ]
+    }
+  }
+}

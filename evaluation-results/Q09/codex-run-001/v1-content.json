@@ -1,0 +1,237 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Did refunds materially change the revenue comparison?",
+    "short_title": "Refunds and revenue",
+    "question": "Did refunds materially change total revenue from April-June to July-September 2026?",
+    "date": "2026-11-09",
+    "mode": "Independent investigation",
+    "dataset": "Authorized PocketToons SQLite",
+    "periods": "April-June vs July-September 2026, UTC",
+    "snapshot": "Metadata: 2026-09-30 23:59:59 UTC",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "12 read-only checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Check numbers refer to the private evidence logs in this run directory.",
+        "Dollar changes are arithmetic contributions, not proof of causes."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Gross charges",
+          "Successful subscription and pay-per-view charges booked when they succeed."
+        ],
+        [
+          "Net revenue",
+          "Gross charges less successful refunds booked in their own success period; excludes fees and taxes."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Refunds materially changed the size of the very small quarter-over-quarter increase, but not its direction or the conclusion that total revenue was nearly flat."
+        },
+        {
+          "type": "kpis",
+          "items": [
+            {
+              "value": "+$9.99",
+              "label": "Gross change<br/>$30,182.93 to $30,192.92"
+            },
+            {
+              "value": "+$21.97",
+              "label": "Net change<br/>$30,145.00 to $30,166.97"
+            },
+            {
+              "value": "+$11.98",
+              "label": "Contribution from lower refunds<br/>54.5% of net increase"
+            }
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Refunds fell from $37.93 to $25.95. The $11.98 reduction increased the net change by 120% of the $9.99 gross change (check 7).",
+            "Net growth was about 0.073% versus gross growth of about 0.033%; no materiality threshold was provided. The absolute difference is small relative to approximately $30,000 per quarter."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "All successful subscription and PPV charges and successful refunds; USD bookings, revenue group v1.1. Refunds are assigned to their success month and positive amounts are subtracted.",
+            "Periods are [2026-04-01, 2026-07-01) and [2026-07-01, 2026-10-01), UTC. Quarter amounts are sums of complete months.",
+            "Gold revenue monthly supports the exact grain and components; Silver and Bronze recounts verify key results (checks 7, 8, 11)."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.34,
+            0.22,
+            0.22,
+            0.22
+          ],
+          "rows": [
+            [
+              "Measure",
+              "Apr-Jun",
+              "Jul-Sep",
+              "Change"
+            ],
+            [
+              "Gross charges",
+              "$30,182.93",
+              "$30,192.92",
+              "+$9.99"
+            ],
+            [
+              "Refunds",
+              "$37.93",
+              "$25.95",
+              "-$11.98"
+            ],
+            [
+              "Net revenue",
+              "$30,145.00",
+              "$30,166.97",
+              "+$21.97"
+            ]
+          ]
+        },
+        {
+          "type": "math",
+          "title": "Reconciliation",
+          "lines": [
+            "Net change = gross change - change in refunds = $9.99 - (-$11.98) = $21.97 (check 7)."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.34,
+            0.22,
+            0.22,
+            0.22
+          ],
+          "rows": [
+            [
+              "Revenue type",
+              "Gross change",
+              "Refund change",
+              "Net change"
+            ],
+            [
+              "Subscription",
+              "+$9.99",
+              "-$9.99",
+              "+$19.98"
+            ],
+            [
+              "Pay-per-view",
+              "$0.00",
+              "-$1.99",
+              "+$1.99"
+            ],
+            [
+              "Unattributed",
+              "$0.00",
+              "$0.00",
+              "$0.00"
+            ],
+            [
+              "Total",
+              "+$9.99",
+              "-$11.98",
+              "+$21.97"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "One fewer subscription refund and one fewer PPV refund account for the $11.98 decrease; counts are 7 then 5 total refunds (check 7)."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "<b>Supported:</b> fewer refunds increased the net quarter-over-quarter difference by $11.98. This is an arithmetic effect, not an explanation of why refund behavior changed (check 7).",
+            "<b>Supported:</b> the gross increase came from subscription charges; PPV gross was unchanged (check 7).",
+            "<b>Not tested:</b> operational or customer causes of refunds. The dataset does not establish causality."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "All 6,544 Silver payment rows have unique non-null transaction IDs; no missing validated amounts or missing success time among succeeded attempts were found. Silver reports no excluded or suspicious payment rows, apart from 13 reviewed source corrections separately recorded in quality exceptions (checks 5, 6, 9).",
+            "Eight reviewed corrected charges totaling $71.92 occurred in April-June and five totaling $49.95 in July-September. A hypothetical omission would raise the net change to $43.94; this is sensitivity, not a recommended correction (check 10).",
+            "The current source recount reproduces the quarter totals, and relevant source row counts agree with the build record (checks 11-12). Full current source fingerprints were not recomputed."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The successful build recorded revenue v1.1 and passing reconciliation checks, but its registry hash differs from the current registry file. The current builder hash matches; changes between registry versions have not been established (check 3).",
+            "Dataset metadata asserts a 2026-09-30 23:59:59 UTC snapshot; it is not a verified file hash or guarantee of freshness. Revenue coverage follows the documented fixture contract.",
+            "Revenue is net of refunds only and is bookings-based; it excludes provider fees, taxes and app-store commissions. No business materiality threshold was specified.",
+            "The repository copy has no Git metadata. Filesystem creation timestamp is 2026-11-09 20:12:48 IST; download date and commit are unverified."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Use net revenue for the comparison and report gross and refunds alongside it; describe revenue as essentially flat.",
+            "Confirm the business threshold for materiality and review the registry hash mismatch and source freshness before relying on this snapshot for a consequential decision."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Checks 1-3: inventory, metadata and build. Checks 4-6: monthly revenue and quality exceptions. Checks 7-10: quarter breakdown, Silver recount, grain and reviewed corrections. Checks 11-12: source recount and source row counts.",
+            "Each numbered JSONL contains SQL, results and status. Checks 4-6 were initially labelled metadata: check 4 is Gold, checks 5-6 Silver. Checks 1-6 used a pending snapshot label; check 2 establishes the asserted metadata timestamp.",
+            "Independent mode. No evaluation materials, previous investigations, answer keys, generator answer-bearing README, or question-specific guides were used."
+          ]
+        }
+      ]
+    }
+  }
+}

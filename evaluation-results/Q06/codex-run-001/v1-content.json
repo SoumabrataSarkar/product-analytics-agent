@@ -1,0 +1,229 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Are more users new, retained or returning?",
+    "short_title": "Monthly growth accounting",
+    "question": "Which group is largest each month?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized synthetic SQLite",
+    "periods": "May–September 2026 UTC",
+    "snapshot": "2026-09-30T23:59:59Z, metadata assertion",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "10 read-only queries",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Each numbered check refers to a SQL evidence log.",
+        "Counts are distinct identified active users within each month."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "New",
+          "Active and signed up in the month."
+        ],
+        [
+          "Retained",
+          "Active in this month and the previous month."
+        ],
+        [
+          "Returning",
+          "Active this month, not the previous month, and signed up earlier; called resurrected in the registry."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Retained users are the largest group in every month from May to September 2026. In September, 5,071 (44.3%) were retained, 4,656 (40.7%) returning, and 1,720 (15.0%) new. (Checks 4 and 6)"
+        },
+        {
+          "type": "callout",
+          "title": "Coverage",
+          "text": "Unidentified sessions are excluded. September had 3,703 such sessions, whose distinct users and categories are unknown. (Checks 5 and 10)"
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Growth accounting v1.0 and MAU v1.1; UTC months use inclusive start, exclusive next-month start. April lacks a growth row because March is outside the coverage window.",
+            "Gold was reconciled at build and independently recounted from Silver for September."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Checked database inventory, metadata, build, monthly results, Silver recount, identity coverage and quality.",
+            "The comparison directly answers the question; no causal hypotheses were tested."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.14,
+            0.22,
+            0.22,
+            0.24,
+            0.18
+          ],
+          "rows": [
+            [
+              "Month",
+              "New",
+              "Retained",
+              "Returning",
+              "MAU"
+            ],
+            [
+              "May",
+              "2,201 (24.1%)",
+              "4,757 (52.1%)",
+              "2,176 (23.8%)",
+              "9,134"
+            ],
+            [
+              "June",
+              "2,653 (26.6%)",
+              "4,867 (48.8%)",
+              "2,456 (24.6%)",
+              "9,976"
+            ],
+            [
+              "July",
+              "2,477 (24.4%)",
+              "4,753 (46.9%)",
+              "2,908 (28.7%)",
+              "10,138"
+            ],
+            [
+              "August",
+              "2,949 (27.1%)",
+              "4,415 (40.6%)",
+              "3,507 (32.3%)",
+              "10,871"
+            ],
+            [
+              "September",
+              "1,720 (15.0%)",
+              "5,071 (44.3%)",
+              "4,656 (40.7%)",
+              "11,447"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Percentages use the same month’s identified MAU; rounding may affect totals. Do not sum distinct users across months. (Check 4)"
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "September MAU rose by 576 from August: 1,720 new + 4,656 returning − 5,800 churned = 576. Churned means active in August but not September. (Check 4)",
+            "Of September returning users, 157 had their first observed session in September despite earlier signup. (Check 6)"
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "No cause is established by these counts."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "September’s 3,703 unidentified sessions include one beginning in August. Session counts are not people; unknown identities could affect the retained–returning gap of 415. (Checks 5 and 10)",
+            "September Silver recount matches Gold. No missing profiles, future signups, duplicate or null user-day keys, flagged activity rows or flagged profiles were found. Thirteen payment corrections are outside this activity metric. (Checks 6, 7, 9)",
+            "Build succeeded and reports passing growth and MAU reconciliation. Current registry hash differs from the build registry hash; same metric versions and the September recount support this result, but full registry equivalence and source freshness were not independently established. (Check 3)"
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Returning includes people first active after signup month, including those signed up before coverage.",
+            "Metadata snapshot and synthetic completeness are assertions, not a verified database hash or proof of real-world telemetry completeness.",
+            "First five checks were logged before the snapshot was known; check 2 records its value. Repository has no Git metadata: local directory timestamp 2026-11-09 20:12:48 IST is a copy-date proxy, not a verified download date."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Track buckets and identity coverage together; improve linkage before extrapolating to all visitors.",
+            "If only previously active reactivations should count as returning, agree the definition and recompute."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.12,
+            0.62,
+            0.26
+          ],
+          "rows": [
+            [
+              "Check",
+              "Evidence",
+              "Layer"
+            ],
+            [
+              "1–3",
+              "Inventory, metadata and build",
+              "Metadata"
+            ],
+            [
+              "4–5",
+              "Growth and MAU coverage",
+              "Gold"
+            ],
+            [
+              "6–10",
+              "Recount, quality, identity and boundaries",
+              "Silver"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

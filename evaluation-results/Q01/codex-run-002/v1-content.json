@@ -1,0 +1,253 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "How did monthly active users change?",
+    "short_title": "Monthly active users",
+    "question": "How did monthly active users change across the available months?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized synthetic SQLite",
+    "periods": "April - September 2026, UTC",
+    "snapshot": "2026-09-30 23:59:59 UTC metadata",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "8 read-only queries",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks identify the numbered evidence logs, which contain SQL and results.",
+        "Unidentified sessions are excluded; session counts are not distinct people."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "MAU",
+          "Distinct resolved people with a session touching the month."
+        ],
+        [
+          "Resurrected",
+          "Active this month, not the prior month, and signed up earlier."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "MAU increased every month from 7,937 in April to 11,447 in September: +3,510 (+44.2%). July growth slowed to +162 (+1.6%) before recovering in August (check 3)."
+        },
+        {
+          "type": "table",
+          "widths": [
+            0.18,
+            0.16,
+            0.16,
+            0.16,
+            0.34
+          ],
+          "rows": [
+            [
+              "Month",
+              "MAU",
+              "Change",
+              "Change %",
+              "Unidentified sessions"
+            ],
+            [
+              "Apr 2026",
+              "7,937",
+              "-",
+              "-",
+              "2,286 (6.5%)"
+            ],
+            [
+              "May 2026",
+              "9,134",
+              "+1,197",
+              "+15.1%",
+              "3,044 (7.6%)"
+            ],
+            [
+              "Jun 2026",
+              "9,976",
+              "+842",
+              "+9.2%",
+              "3,184 (7.4%)"
+            ],
+            [
+              "Jul 2026",
+              "10,138",
+              "+162",
+              "+1.6%",
+              "3,354 (7.6%)"
+            ],
+            [
+              "Aug 2026",
+              "10,871",
+              "+733",
+              "+7.2%",
+              "3,480 (7.5%)"
+            ],
+            [
+              "Sep 2026",
+              "11,447",
+              "+576",
+              "+5.3%",
+              "3,703 (7.6%)"
+            ]
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "MAU v1.1: distinct resolved users with a session active span touching the UTC month. Complete months in [2026-04-01, 2026-10-01).",
+            "Synthetic dataset; unidentified sessions are excluded (checks 2, 3, 8)."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Independent mode; inventory and build checks, Gold trend, Silver recount, identity coverage, growth accounting and acquisition-source partition.",
+            "10,400 users signed up before coverage; no pre-April activity is available (check 7)."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Monthly gains: +1,197, +842, +162, +733 and +576 (check 3)."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "June to July: 2,477 new + 2,908 resurrected - 5,223 churned = +162 (check 3).",
+            "April to September source changes: paid social +2,436, organic +561, paid search +480, unknown +33 = +3,510 (check 6)."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Supported accounting pattern: paid social accounts for 69.4% of net growth. First-touch classification does not establish causality (check 6).",
+            "Specific product or marketing causes were not tested."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Gold MAU matches the Silver recount; unidentified sessions comprise 6.5%-7.6% of monthly session records. Their impact on the number of people is unknown (checks 3, 4, 8).",
+            "No ambiguous links, mismatches, or activity/profile exceptions found (checks 5, 7).",
+            "One session crossed August to September and is included in both; the registry caveat claiming none cross is stale (check 8).",
+            "Successful build records reconciliation, but the repository registry hash differs from the build hash. Source fingerprints were not recomputed (check 2)."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The coverage interval is documented in the registry, not declared as timestamps in database metadata. The synthetic coverage label is not independent proof.",
+            "Pre-coverage activity and causal mechanisms are unknown. Resurrected includes earlier registrants whose first observed activity occurs later."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Monitor monthly MAU with unidentified-session share.",
+            "Investigate the July slowdown and paid-social cohort behavior before attributing change to a cause."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.12,
+            0.6,
+            0.28
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose",
+              "Evidence"
+            ],
+            [
+              "1",
+              "Layer inventory",
+              "q01.jsonl"
+            ],
+            [
+              "2",
+              "Snapshot and build status",
+              "q02.jsonl"
+            ],
+            [
+              "3",
+              "Monthly MAU and growth accounting",
+              "q03.jsonl"
+            ],
+            [
+              "4",
+              "Silver recount",
+              "q04.jsonl"
+            ],
+            [
+              "5",
+              "Identity and time bounds",
+              "q05.jsonl"
+            ],
+            [
+              "6",
+              "Acquisition sources",
+              "q06.jsonl"
+            ],
+            [
+              "7",
+              "Startup and exceptions",
+              "q07.jsonl"
+            ],
+            [
+              "8",
+              "Overlap and unidentified coverage",
+              "q08.jsonl"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

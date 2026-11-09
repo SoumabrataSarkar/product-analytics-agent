@@ -1,0 +1,837 @@
+{
+ "meta": {
+  "project": "Product Analytics Agent - PocketToons",
+  "title": "MAU +20% QoQ, revenue flat: what is happening and what to do",
+  "short_title": "MAU up, revenue flat (Q3 vs Q2 2026)",
+  "question": "MAU is up 20% QoQ but revenue is flat. Board meeting Thursday. Figure out what's happening and what we should do about it.",
+  "date": "2026-11-10",
+  "mode": "Independent (no answer keys, guides or generator README read)",
+  "dataset": "PocketToons synthetic fixture, pockettoons.sqlite (read-only)",
+  "periods": "Q3 2026 (Jul-Sep) vs Q2 2026 (Apr-Jun), UTC calendar months",
+  "snapshot": "layer build log",
+  "build": "3a0dbed2",
+  "evidence": "18 queries",
+  "author": "Claude Code (Opus 5.5) with the shared investigation skill"
+ },
+ "sections": {
+  "how_to_read": {
+   "items": [
+    "<b>Check N</b> = one logged read-only query. Each logs/qNN.jsonl holds its SQL, parameters, layer, version, limitations and rows (inputs in requests/qNN.json). No query was truncated or failed.",
+    "<b>Data layers:</b> Gold = pre-built monthly summary tables, Silver = cleaned detail tables, Bronze = raw source records.",
+    "<b>Quarter figures:</b> quarter MAU is the average of its three monthly MAUs; quarter revenue is the sum of its three months.",
+    "<b>Patterns, not proof:</b> the data is observational and synthetic. Where the report says a pattern is 'associated with' something, the cause has not been proven."
+   ]
+  },
+  "glossary": {
+   "items": [
+    [
+     "MAU (v1.1)",
+     "Distinct identified users with at least one session overlapping the UTC month. Logged-out sessions with no same-session login are excluded."
+    ],
+    [
+     "Net revenue (v1.1)",
+     "Successful subscription and PPV charges minus successful refunds, booked when the payment succeeds. Net of refunds only (no fees or tax data)."
+    ],
+    [
+     "Paying users",
+     "Users with at least one successful subscription or PPV charge in the month."
+    ],
+    [
+     "Paywall-exposed users",
+     "Distinct identified users who saw at least one paywall in the month (paywall_exposure)."
+    ],
+    [
+     "30-day paywall reach",
+     "Share of a signup cohort that saw a paywall within 30 days of signup (ad hoc, built on registered cohort rules)."
+    ],
+    [
+     "Acquisition source",
+     "The user's fixed first-touch channel: organic, paid search, paid social or unknown."
+    ]
+   ]
+  },
+  "executive": {
+   "blocks": [
+    {
+     "type": "lead",
+     "text": "The premise holds: average MAU rose 20.0% while net revenue rose 0.07%. The extra users, mostly paid-social signups, are not reaching the paywall. About 1,000 people see a paywall each month, so the paying base stays at about 1,000 subscribers on a $9.99 plan."
+    },
+    {
+     "type": "kpis",
+     "items": [
+      {
+       "value": "+20.0%",
+       "label": "Avg monthly MAU, Q3 vs Q2<br/>9,016 &#8594; 10,819 (check 17)"
+      },
+      {
+       "value": "+0.07%",
+       "label": "Net revenue, Q3 vs Q2<br/>$30,145 &#8594; $30,167 (check 17)"
+      },
+      {
+       "value": "1,036",
+       "label": "Avg monthly paying users<br/>in both Q2 and Q3 (check 17)"
+      }
+     ]
+    },
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "stacked_with_line",
+      "title": "Monthly active users by signup period; paying users as a line",
+      "subtitle": "MAU v1.1 partitioned by user signup date; paying users per revenue group v1.1",
+      "x": [
+       "Apr",
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep"
+      ],
+      "stacks": [
+       {
+        "name": "Signed up before Apr 2026",
+        "values": [
+         6337,
+         5999,
+         5422,
+         4734,
+         4351,
+         4659
+        ]
+       },
+       {
+        "name": "Q2 2026 signups",
+        "values": [
+         1600,
+         3135,
+         4554,
+         2927,
+         2599,
+         2815
+        ]
+       },
+       {
+        "name": "Q3 2026 signups",
+        "values": [
+         0,
+         0,
+         0,
+         2477,
+         3921,
+         3973
+        ]
+       }
+      ],
+      "line": {
+       "name": "Paying users",
+       "values": [
+        1019,
+        1063,
+        1025,
+        1049,
+        1009,
+        1050
+       ]
+      },
+      "break_after": 2,
+      "break_labels": [
+       "Q2",
+       "Q3"
+      ],
+      "source": "Source: Silver user-day activity, user profile and payment attempts (check 14); Gold KPI table for paying users (check 2). UTC months, 2026."
+     }
+    },
+    {
+     "type": "bullets",
+     "items": [
+      "<b>Where the growth came from:</b> paid-social MAU rose by 1,841 a month on average, more than the total gain of 1,803. Paid-social spend rose 121% (checks 5, 7).",
+      "<b>Why revenue stayed flat:</b> 99.3% of revenue is subscriptions. About 100 subscribers lapse each month and about 100 join, so the base stays at about 1,000 (checks 2, 17).",
+      "<b>Where the path breaks:</b> paywall viewers stayed at about 1,000 a month while MAU grew. 30-day paywall reach for new signups fell from 4.4% (May) to 0.5% (August). Conversion after the paywall did not get worse (checks 8, 13).",
+      "<b>Cost:</b> Q3 paid social cost $30,760 and brought 67 new paying users, about $459 each (check 7)."
+     ]
+    },
+    {
+     "type": "callout",
+     "title": "Recommendation in one line:",
+     "text": "Tell the board that the MAU growth is paid reach that has not monetised yet. Cap further paid-social scale-up until a payback check passes. Make getting new users to their first paywall the Q4 priority."
+    }
+   ]
+  },
+  "scope": {
+   "blocks": [
+    {
+     "type": "table",
+     "widths": [
+      0.24,
+      0.76
+     ],
+     "rows": [
+      [
+       "Item",
+       "Detail"
+      ],
+      [
+       "Periods",
+       "Q2 = Apr-Jun 2026, Q3 = Jul-Sep 2026; complete UTC months, half-open."
+      ],
+      [
+       "Definitions",
+       "mau 1.1, revenue 1.1, growth accounting 1.0, funnel and lifecycle 1.0, engagement 1.0, supporting 1.1 (from the build log, check 1). Slices by source and cohort are labelled ad hoc."
+      ],
+      [
+       "Data",
+       "pockettoons.sqlite, read-only. Build 3a0dbed2 (2026-11-09) with all layers. The repo copy has no git metadata, so the commit is unverified; the registry hash corresponds to commit 7240dfe (documentation-only change since the build)."
+      ],
+      [
+       "Start-up caveat",
+       "Subscriptions start from zero in April, so funnel and cohort trends are read from May. Without April: MAU +13.2%, revenue -0.8% (check 17)."
+      ]
+     ]
+    }
+   ]
+  },
+  "workflow": {
+   "blocks": [
+    {
+     "type": "workflow",
+     "legend": {
+      "layers": {
+       "Gold": "monthly summary tables",
+       "Silver": "cleaned detail",
+       "Bronze": "raw records"
+      },
+      "statuses": {
+       "Supported": "evidence agrees",
+       "Rejected": "evidence disagrees",
+       "Inconclusive": "evidence can't decide"
+      }
+     },
+     "steps": [
+      {
+       "stage": "Start",
+       "goal": "Check the build and test the premise.",
+       "checks": [
+        {
+         "status": "Passed",
+         "layer": "Gold",
+         "name": "Build reconciled; MAU +20%, revenue flat?",
+         "checks": "1, 2, 17",
+         "result": "Yes: MAU +20.0%, net revenue +0.07%, paying users flat."
+        }
+       ]
+      },
+      {
+       "stage": "Round 1",
+       "goal": "Who are the new users, and what limits revenue?",
+       "checks": [
+        {
+         "status": "Supported",
+         "layer": "Gold",
+         "name": "H1 Growth comes from one low-monetising channel",
+         "checks": "3, 5, 6, 7",
+         "result": "Paid social accounts for all of the net MAU gain."
+        },
+        {
+         "status": "Supported",
+         "layer": "Gold",
+         "name": "H2 Revenue is capped by a flat subscriber base",
+         "checks": "2, 4",
+         "result": "About 1,000 subscribers at $9.99."
+        },
+        {
+         "status": "Rejected",
+         "layer": "Silver",
+         "name": "H3 The new users are low-quality or barely engaged",
+         "checks": "6, 11",
+         "result": "Activation 51-55% in every cohort."
+        }
+       ]
+      },
+      {
+       "stage": "Round 2",
+       "goal": "Paywall reach, paywall conversion or price?",
+       "checks": [
+        {
+         "status": "Rejected",
+         "layer": "Gold",
+         "name": "H4 Paywall-to-purchase conversion got worse",
+         "checks": "4, 8",
+         "result": "No trend from May to September."
+        },
+        {
+         "status": "Supported",
+         "layer": "Silver",
+         "name": "H5 Paywall reach did not grow with MAU",
+         "checks": "8, 10, 13, 14",
+         "result": "About 1,000 viewers a month."
+        },
+        {
+         "status": "Rejected",
+         "layer": "Gold",
+         "name": "H6 Price, PPV or refunds pulled revenue down",
+         "checks": "2, 4, 17",
+         "result": "ARPPU $9.68-9.74."
+        }
+       ]
+      },
+      {
+       "stage": "Round 3",
+       "goal": "What lies behind the low paywall reach?",
+       "checks": [
+        {
+         "status": "Inconclusive",
+         "layer": "Bronze",
+         "name": "H7 Fewer blocked-playback triggers",
+         "checks": "9, 12",
+         "result": "Blocked plays (about 200 a month) explain few paywall views."
+        },
+        {
+         "status": "Rejected",
+         "layer": "Bronze",
+         "name": "H8 More content was made free",
+         "checks": "15",
+         "result": "1 of 337 episode tiers changed (in July)."
+        },
+        {
+         "status": "Rejected",
+         "layer": "Silver",
+         "name": "H9 Measurement artefact inflates MAU",
+         "checks": "1, 16",
+         "result": "Build reconciled."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "baseline": {
+   "blocks": [
+    {
+     "type": "table",
+     "widths": [
+      0.34,
+      0.22,
+      0.22,
+      0.22
+     ],
+     "rows": [
+      [
+       "Metric (definition)",
+       "Q2 2026",
+       "Q3 2026",
+       "Change"
+      ],
+      [
+       "Avg monthly MAU (mau 1.1)",
+       "9,015.7",
+       "10,818.7",
+       "+20.0%"
+      ],
+      [
+       "Net revenue, sum (revenue 1.1)",
+       "$30,145.00",
+       "$30,166.97",
+       "+0.07%"
+      ],
+      [
+       "  of which subscription",
+       "$29,940.03",
+       "$29,960.01",
+       "+0.07%"
+      ],
+      [
+       "  of which PPV",
+       "$204.97",
+       "$206.96",
+       "+1.0%"
+      ],
+      [
+       "Avg monthly paying users",
+       "1,035.7",
+       "1,036.0",
+       "0.0%"
+      ],
+      [
+       "ARPU, avg of monthly ratios",
+       "$1.12",
+       "$0.93",
+       "-17%"
+      ],
+      [
+       "Signups, sum",
+       "6,454",
+       "7,146",
+       "+10.7%"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Sources: checks 2, 4 and 17. Revenue is additive across months. MAU and paying users are distinct counts, so they are averaged and never summed."
+    },
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "index_lines",
+      "title": "MAU grew; revenue, payers and paywall viewers did not",
+      "subtitle": "Index, May 2026 = 100 (April omitted: subscription start-up month)",
+      "x": [
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep"
+      ],
+      "series": [
+       {
+        "name": "MAU",
+        "values": [
+         9134,
+         9976,
+         10138,
+         10871,
+         11447
+        ],
+        "accent": true
+       },
+       {
+        "name": "Net revenue",
+        "values": [
+         1029340,
+         998777,
+         1017153,
+         981993,
+         1017551
+        ],
+        "label_dy": 6
+       },
+       {
+        "name": "Paywall viewers",
+        "values": [
+         1056,
+         1002,
+         1045,
+         999,
+         1050
+        ],
+        "dashed": true,
+        "label_dy": -6
+       }
+      ],
+      "break_after": 1,
+      "break_labels": [
+       "Q2",
+       "Q3"
+      ],
+      "source": "Source: Gold KPI table (check 2) and Gold funnel table (check 8). Net revenue in cents; paywall viewers = distinct identified users who saw a paywall."
+     }
+    }
+   ]
+  },
+  "decomposition": {
+   "blocks": [
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "before_after",
+      "title": "Average monthly active users by acquisition source",
+      "subtitle": "Acquisition source is fixed per user, so the sources add up to total MAU",
+      "before_label": "Q2 2026 average",
+      "after_label": "Q3 2026 average",
+      "groups": [
+       {
+        "label": "Organic",
+        "before": 4444.0,
+        "after": 4288.3
+       },
+       {
+        "label": "Paid search",
+        "before": 2423.7,
+        "after": 2515.7
+       },
+       {
+        "label": "Paid social",
+        "before": 2059.0,
+        "after": 3900.3
+       },
+       {
+        "label": "Unknown source",
+        "before": 89.0,
+        "after": 114.3
+       },
+       {
+        "label": "All users",
+        "before": 9015.7,
+        "after": 10818.7
+       }
+      ],
+      "source": "Source: Gold activity segments, acquisition_source dimension (check 5)."
+     }
+    },
+    {
+     "type": "math",
+     "title": "How the +1,803 change adds up (average monthly MAU)",
+     "lines": [
+      "Paid social +1,841.3; paid search +92.0; unknown +25.3; organic -155.7",
+      "Total: 9,015.7 + 1,803.0 = 10,818.7 (paid social = 102% of the net gain)"
+     ]
+    },
+    {
+     "type": "bullets",
+     "items": [
+      "<b>Paid social spend:</b> $13,918 in Q2 and $30,760 in Q3 (+121%). Paid-social signups went from 1,489 to 4,568 (check 7). Spend ramped in July, the same month paid-social MAU jumped from 2,299 to 3,358 (check 5). The timing matches, but this does not prove the spend caused the growth: there is no click-level attribution.",
+      "<b>Growth accounting:</b> retained users stayed at about 4,400-5,070 a month. Growth came from new signups (1,720-2,949 a month) and returning users (2,176 rising to 4,656), while churned users rose from 3,180 to 5,800 (check 3).",
+      "<b>The old base is shrinking and still carries revenue:</b> users who signed up before April fell from 6,337 to 4,659 active, and their payers from 1,019 to 693. Payers from Q2 signups (303 a month in Q3) only replaced that loss. Q3 signups had 54 payers by September (check 14)."
+     ]
+    }
+   ]
+  },
+  "drivers": {
+   "blocks": [
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "total_vs_part",
+      "title": "Monthly active users and the part who saw a paywall",
+      "subtitle": "Paywall-exposed users stayed at about 1,000 while MAU grew",
+      "share_label": "Exposure",
+      "x": [
+       "May",
+       "Jun",
+       "Jul",
+       "Aug",
+       "Sep"
+      ],
+      "total": {
+       "name": "MAU",
+       "values": [
+        9134,
+        9976,
+        10138,
+        10871,
+        11447
+       ]
+      },
+      "part": {
+       "name": "Saw a paywall",
+       "values": [
+        1056,
+        1002,
+        1045,
+        999,
+        1050
+       ]
+      },
+      "break_after": 1,
+      "break_labels": [
+       "Q2",
+       "Q3"
+      ],
+      "source": "Source: Gold funnel table, all-products row (check 8). April (1,838 of 7,937) is omitted as the subscription start-up month."
+     }
+    },
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "cohort_rates",
+      "title": "New signups: paywall reach and subscription within 30 days",
+      "subtitle": "Share of each signup-month cohort (all sources); 7-day activation stayed at 51-55% for these cohorts",
+      "groups": [
+       "May",
+       "Jun",
+       "Jul",
+       "Aug"
+      ],
+      "base": [
+       2201,
+       2653,
+       2477,
+       2949
+      ],
+      "panels": [
+       {
+        "title": "Saw a paywall within 30 days",
+        "counts": [
+         97,
+         72,
+         25,
+         16
+        ]
+       },
+       {
+        "title": "Subscribed within 30 days",
+        "counts": [
+         38,
+         56,
+         13,
+         16
+        ]
+       }
+      ],
+      "break_after": 1,
+      "break_labels": [
+       "Q2",
+       "Q3"
+      ],
+      "legend": [
+       "Q2 signups",
+       "Q3 signups"
+      ],
+      "source": "Source: Silver user profile and paywall funnel (checks 6, 13); subscription conversion and activation reconcile exactly with Gold cohorts (check 18). September signups do not yet have a full 30-day window."
+     }
+    },
+    {
+     "type": "table",
+     "widths": [
+      0.05,
+      0.28,
+      0.2,
+      0.47
+     ],
+     "status_col": 2,
+     "rows": [
+      [
+       "#",
+       "Possible explanation",
+       "Status",
+       "What the data showed"
+      ],
+      [
+       "H1",
+       "Growth is from a low-monetising channel",
+       "Pattern supported",
+       "Paid social is 102% of the net MAU gain. Its exposure rate fell from 10-12% (Q2) to 6.1-6.9% (Q3), while other sources stayed at 9.5-12.4% (checks 5, 10)."
+      ],
+      [
+       "H2",
+       "Revenue capped by a flat subscriber base",
+       "Supported",
+       "977-1,023 subscribers at every month-end; about 100 churn a month and are replaced by about 100 new subscribers (check 2)."
+      ],
+      [
+       "H3",
+       "New users are low-quality",
+       "Rejected",
+       "Q3 paid-social users watched 28.5-31 minutes a month, against 32-34 for others; 57-59% were engaged, against 59-62% (check 11). The gap is small."
+      ],
+      [
+       "H4",
+       "Paywall conversion got worse",
+       "Rejected",
+       "Paywall-to-purchase rate was 9.9-14.7% from May to September, alternating month to month with no trend (check 8)."
+      ],
+      [
+       "H5",
+       "Paywall reach did not scale",
+       "Supported",
+       "About 1,000 paywall viewers every month; new-cohort 30-day reach fell from 4.4% to 0.5% in all channels (checks 8, 13)."
+      ],
+      [
+       "H6",
+       "Price, PPV or refunds",
+       "Rejected",
+       "ARPPU $9.68-9.74; PPV about $69 a month; refunds of $2-14 a month (checks 2, 4)."
+      ],
+      [
+       "H7",
+       "Fewer blocked-playback triggers",
+       "Inconclusive",
+       "About 200 blocked plays a month against 1,000+ paywall views, so most paywall triggers are not recorded. Free-quota hit rate fell from 0.84% to 0.68% (checks 9, 12)."
+      ],
+      [
+       "H8",
+       "More free content",
+       "Rejected",
+       "One episode tier change in July; subscriber views flat at about 7,000-7,500 a month (check 15)."
+      ],
+      [
+       "H9",
+       "Measurement artefact",
+       "Rejected",
+       "Layers reconciled; exceptions limited to 13 reviewed payment corrections (checks 1, 16)."
+      ]
+     ]
+    },
+    {
+     "type": "callout",
+     "title": "Not yet known:",
+     "text": "Why new users increasingly fail to reach a paywall in their first 30 days. The data has no in-app navigation or recommendation events, so the cause cannot be identified from this data. It needs instrumentation or an experiment."
+    }
+   ]
+  },
+  "data_quality": {
+   "blocks": [
+    {
+     "type": "table",
+     "widths": [
+      0.3,
+      0.42,
+      0.28
+     ],
+     "rows": [
+      [
+       "Issue",
+       "Effect on the answer",
+       "Status"
+      ],
+      [
+       "Subscription start-up in April 2026 (0 subscribers at 1 April)",
+       "Inflates April paywall views, purchases and first payments. Funnel and cohort trends are read from May. Headline conclusions hold without April (MAU +13.2%, revenue -0.8%).",
+       "Handled; disclosed"
+      ],
+      [
+       "Logged-out sessions: 6.5% (Apr) to 7.6% (Sep) of sessions have no identified user",
+       "Excluded from MAU by definition, and they grew roughly in line with sessions. Counting them would only add reach that also does not pay, so the conclusion does not change.",
+       "Known limitation"
+      ],
+      [
+       "13 raw payment amounts corrected on review",
+       "Curated amounts are already used in revenue. These are the only Silver exceptions (check 16).",
+       "Reviewed; no impact"
+      ],
+      [
+       "Purchase attribution only through captured links (about 5% of checkouts unlinked)",
+       "Funnel rates are slightly understated; in-app purchases without a checkout link are 1-7 a month (check 8).",
+       "Minor; disclosed"
+      ],
+      [
+       "One unidentified session spans the Aug/Sep boundary (3,703 in Gold vs 3,702 by start month)",
+       "Immaterial. Noted because the registry says no fixture session crosses a month boundary.",
+       "Open, immaterial"
+      ]
+     ]
+    }
+   ]
+  },
+  "limitations": {
+   "blocks": [
+    {
+     "type": "bullets",
+     "items": [
+      "Synthetic, observational data. The channel, timing and funnel patterns are associations. The report does not claim that paid-social spend caused the MAU growth, or that low paywall reach is the only reason revenue stayed flat.",
+      "No lifetime value or payback: the registry marks LTV as unsupported (six months of history), so the $459 per new payer is a monthly ratio of spend to first-time payers, not a cohort payback.",
+      "Paywall triggers are only partly recorded (blocked plays). Exposure-by-source and cohort paywall reach are ad hoc slices, with their SQL logged.",
+      "Revenue is net of refunds only; app-store fees and tax are not in the data.",
+      "Q3 cohorts are young: July-September signups may still monetise. Q2 signups reached 303 payers by Q3, so re-check Q3 cohorts in Q4."
+     ]
+    }
+   ]
+  },
+  "recommendations": {
+   "blocks": [
+    {
+     "type": "numbered",
+     "items": [
+      "<b>Reframe the board story.</b> Present Q3 as paid reach that has not yet monetised. Report subscribers, paywall-exposed users and new payers next to MAU.",
+      "<b>Cap paid-social at its July run-rate (about $10k a month) until incrementality and payback are measured</b>, with a geo or time-based holdout. <i>Check:</i> new payers per $1k of paid-social spend (May-Jun 6.7; Q3 2.2).",
+      "<b>Make reaching the first paywall the Q4 product priority for new users.</b> A/B test earlier premium sampling or paywall prompts in week one, and the 8-a-day free quota, which fewer than 1% of free-viewer days reach. <i>Check:</i> 30-day paywall reach and subscription conversion by signup month (both 0.5% for August signups).",
+      "<b>Instrument paywall triggers and content navigation</b>, so the fall in paywall reach can be explained, not only observed. <i>Check:</i> every paywall view has a recorded trigger.",
+      "<b>Protect the subscriber base.</b> About 100 subscribers (9-11%) lapse each month. Test retention offers. <i>Check:</i> monthly churn rate and month-end subscribers.",
+      "<b>Re-run this analysis after October and November close.</b> Confirm whether Q3 cohorts convert with tenure, as Q2 cohorts did."
+     ]
+    }
+   ]
+  },
+  "appendix": {
+   "blocks": [
+    {
+     "type": "table",
+     "widths": [
+      0.09,
+      0.61,
+      0.12,
+      0.18
+     ],
+     "layer_col": 2,
+     "rows": [
+      [
+       "Check",
+       "What it asked",
+       "Layer",
+       "Log files"
+      ],
+      [
+       "1",
+       "Build status, metadata and layer objects",
+       "Gold",
+       "q01"
+      ],
+      [
+       "2, 17",
+       "Monthly KPIs; Q3 vs Q2 quarter figures, with and without April",
+       "Gold",
+       "q02, q17"
+      ],
+      [
+       "3",
+       "Growth accounting (new, retained, resurrected, churned)",
+       "Gold",
+       "q03"
+      ],
+      [
+       "4",
+       "Revenue by type; refunds; payment failures",
+       "Gold",
+       "q04"
+      ],
+      [
+       "5",
+       "Active users by platform, country, source and subscriber status",
+       "Gold",
+       "q05"
+      ],
+      [
+       "6, 18",
+       "Cohort 30-day conversion and activation by source; reconciled with Gold",
+       "Silver",
+       "q06, q18"
+      ],
+      [
+       "7",
+       "Marketing spend, signups, new payers and CAC by channel",
+       "Gold",
+       "q07"
+      ],
+      [
+       "8",
+       "Paywall funnel and exposure by product",
+       "Gold",
+       "q08"
+      ],
+      [
+       "9, 11",
+       "Watch time and free quota (Gold); engagement depth by source (Silver)",
+       "Silver",
+       "q09, q11"
+      ],
+      [
+       "10, 13",
+       "Paywall exposure by source; cohort 30-day paywall reach",
+       "Silver",
+       "q10, q13"
+      ],
+      [
+       "12, 15",
+       "Blocked-playback reasons; content tier changes and views by type",
+       "Bronze",
+       "q12, q15"
+      ],
+      [
+       "14",
+       "Active, exposed and paying users by signup period",
+       "Silver",
+       "q14"
+      ],
+      [
+       "16",
+       "Quality exceptions; identity resolution by month",
+       "Silver",
+       "q16"
+      ]
+     ]
+    }
+   ]
+  }
+ }
+}
