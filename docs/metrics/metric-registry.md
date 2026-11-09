@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group and the engagement group. Draft: the supporting metrics. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group, the engagement group and the supporting metrics. Every metric in the metric map is defined. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -920,7 +920,7 @@ GROUP BY p.period_start
 ORDER BY p.period_start
 ```
 
-### Supporting metrics: activity, monetisation, lifecycle and marketing        version: 1.0   status: draft
+### Supporting metrics: activity, monetisation, lifecycle and marketing        version: 1.0   status: approved
 
 | id | Name | Definition (per complete UTC month unless stated) |
 |---|---|---|
