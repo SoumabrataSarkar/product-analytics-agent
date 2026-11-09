@@ -156,6 +156,22 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Resolution:** A separately seeded marketing stream generates varied daily spend, impressions and clicks, with higher social spend from July. Marketing remains correlated synthetic data and does not establish causal attribution. The independent stream keeps unrelated generated journeys stable.
 
+## PPV buyers never finishing the episode
+
+**Issue:** Every PPV view watched positions 0–600 seconds of a 968–1,500-second episode, so PPV episode completion was 0% while free and subscription completion were about 32% and 27%.
+
+**Analytical impact:** Completion by entitlement suggested that paying viewers were the least engaged, the opposite of typical behaviour, and could mislead content or pricing analysis.
+
+**Resolution:** Four in five PPV buyers now watch to the end of the episode; one in five stops after 600 seconds, which preserves the forward-skip playback example. The choice is deterministic by purchase index and the purchase session is extended to contain the view, so no random stream shifts and payments, MAU and refunds are unchanged. PPV completion is about 82%.
+
+## Missing tracking gaps
+
+**Issue:** Every session was signed in, every checkout named its paywall and every in-app payment named its checkout. The catalog allows anonymous browsing and missing links, but the data contained none.
+
+**Analytical impact:** Unidentified-session reporting and unlinked-funnel handling could not be evaluated, and funnel attribution looked complete.
+
+**Resolution:** About 8% extra sessions are logged-out browsing on devices that never sign in: no user, no identity link and no playback, with an app-open event and engagement evidence. About 5% of checkouts have no paywall link and about 3% of transactions have no checkout link, chosen deterministically by ID. A separate random stream generates the visitor sessions, so MAU, revenue and every other generated value are unchanged. Paywall-to-purchase rates fall slightly because some purchases cannot be traced to their paywall.
+
 ## Deliberate data-quality issues
 
 | Issue | Analytical impact | Representation and handling |
