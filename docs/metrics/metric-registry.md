@@ -2,7 +2,7 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group. Draft: the engagement group. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
 
 ## Registry rules
 
@@ -13,6 +13,32 @@
 - Each quality check is marked **implemented and tested** or **proposed**.
 - A request that differs from a registered definition uses a registered alternative when one exists. Otherwise the result is labelled as an ad hoc variant, is not reported under the registered metric's name and is shown with its SQL. The evidence log records the definition used: registry id and version, or ad hoc with its SQL.
 - A proposed metric is named for future definition only; it has no approved semantics and must not be computed as if it were registered.
+
+## Metric map
+
+The registry targets a bounded core set for this product rather than every possible metric. A question that needs a metric outside the map is answered from registered building blocks as a labelled ad hoc variant, or as unsupported.
+
+| Group | Defined | Planned |
+|---|---|---|
+| Activity | `mau`, `dau`, `wau`, `deu`, `weu`, `meu`, `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` | new signups; activation rate (signup to first engaged day within 7 days); sessions per active user; session duration; active-days distribution |
+| Engagement | watch time, watch time per engaged user, views per viewer, episode completion, series continuation, title reach, free-quota hit rate, paywall exposure rate | — |
+| Revenue | `net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu` | paying users; active subscribers and net subscriber adds; MRR; refund rate; payment failure rate |
+| Funnel and lifecycle | 30-day subscription and paid conversion, subscriber churn, D1/D7/D30 retention, monthly cohort retention, paywall funnel | cancellation-request rate; resubscription rate |
+| Marketing | `marketing_ctr` | spend; CPC; cost per signup; CAC |
+
+**Not supported by this data.** The agent states that these cannot be answered from the fixture rather than approximating them:
+
+| Request | Reason |
+|---|---|
+| Customer lifetime value (LTV) | Six months of history is too short for a defensible lifetime. |
+| NPS, satisfaction or survey results | No survey data. |
+| Advertising revenue or ad metrics | The product has no ads. |
+| Revenue net of provider fees, app-store commission or tax | No fee, commission or tax data. |
+| Free-trial metrics | There are no trials. |
+| Push, email or notification metrics | No messaging data. |
+| Search, recommendation or in-app click-through metrics | No search or recommendation events; only paywall and checkout navigation is captured. |
+| App performance, crashes or latency | No technical telemetry. |
+| Campaign-level ROAS or attribution beyond channel | Marketing data is daily channel totals without campaign-to-user links. |
 
 ## Definition template
 
@@ -217,7 +243,7 @@ SELECT s.session_id, s.session_started_at, s.last_activity_at, s.platform, s.cou
 FROM sessions s
 ```
 
-The next two blocks read a `periods` table supplied by the metric that uses them.
+The `active_users`, `period_watch_seconds` and `engaged_users` blocks read a `periods` table supplied by the metric that uses them.
 
 ```sql
 -- metric: active_users
@@ -231,25 +257,32 @@ ORDER BY p.period_start
 ```
 
 ```sql
+-- metric: period_watch_seconds
+SELECT q.period_start, v.user_id, v.content_id,
+       SUM(s.watch_duration_sec *
+           CASE WHEN julianday(s.segment_ended_at) = julianday(s.segment_started_at) THEN 1.0
+                ELSE (MIN(julianday(s.segment_ended_at), julianday(q.period_end))
+                      - MAX(julianday(s.segment_started_at), julianday(q.period_start)))
+                     / (julianday(s.segment_ended_at) - julianday(s.segment_started_at))
+           END) AS watched_sec
+FROM periods q
+JOIN playback_segments s
+  ON s.segment_started_at < q.period_end
+ AND (s.segment_ended_at > q.period_start
+      OR (s.segment_ended_at = s.segment_started_at AND s.segment_started_at >= q.period_start))
+JOIN content_views v ON v.view_id = s.view_id
+GROUP BY q.period_start, v.user_id, v.content_id
+```
+
+```sql
 -- metric: engaged_users
+-- requires: period_watch_seconds
 SELECT p.period, p.period_start, COUNT(e.user_id) AS users
 FROM periods p
 LEFT JOIN (
-  SELECT q.period_start, v.user_id,
-         SUM(s.watch_duration_sec *
-             CASE WHEN julianday(s.segment_ended_at) = julianday(s.segment_started_at) THEN 1.0
-                  ELSE (MIN(julianday(s.segment_ended_at), julianday(q.period_end))
-                        - MAX(julianday(s.segment_started_at), julianday(q.period_start)))
-                       / (julianday(s.segment_ended_at) - julianday(s.segment_started_at))
-             END) AS watched_sec
-  FROM periods q
-  JOIN playback_segments s
-    ON s.segment_started_at < q.period_end
-   AND (s.segment_ended_at > q.period_start
-        OR (s.segment_ended_at = s.segment_started_at AND s.segment_started_at >= q.period_start))
-  JOIN content_views v ON v.view_id = s.view_id
-  GROUP BY q.period_start, v.user_id
-  HAVING watched_sec >= 60
+  SELECT period_start, user_id FROM period_watch_seconds
+  GROUP BY period_start, user_id
+  HAVING SUM(watched_sec) >= 60
 ) e ON e.period_start = p.period_start
 GROUP BY p.period_start
 ORDER BY p.period_start
@@ -701,12 +734,197 @@ GROUP BY p.period_start
 ORDER BY 1, 2
 ```
 
+### Engagement group        version: 1.0   status: draft
+
+| id | Name | Definition (per complete UTC month) |
+|---|---|---|
+| `watch_time` | Total watch time | Σ period-allocated watch seconds, reported in seconds and hours |
+| `watch_time_per_engaged_user` | Watch time per engaged user | Watch seconds of `meu` users ÷ `meu` |
+| `views_per_viewer` | Views per viewer | Views started in the month ÷ distinct users who started a view in the month |
+| `episode_completion_rate` | Episode completion rate | User-episodes completed ÷ user-episodes started |
+| `series_continuation_rate` | Series continuation rate | Completed user-episodes followed by the same user starting the next episode of the title ÷ completed user-episodes that have a next episode |
+| `title_reach` | Title reach | Distinct users who started a view of a title in the month |
+| `free_quota_hit_rate` | Free-quota hit rate | Free viewer-days that reach the eight-episode limit ÷ free viewer-days |
+| `paywall_exposure_rate` | Paywall exposure rate | Users who saw at least one paywall ÷ `mau` |
+
+1. **Business meaning.** How much people watch, whether they finish episodes and continue a series, which titles reach people, and how often free users meet the free limit or a paywall.
+2. **Population.** Viewers are `content_views.user_id`. A *user-episode* is a user and a (`content_id`, `episode_number`), started at the user's first recorded view of that episode. A *free viewer-day* is a user and UTC date with at least one quota-consuming free view. Paywall exposure resolves an event's user from `user_events.user_id`, or else the event session's resolved user as in `mau`.
+3. **Qualifying rules.**
+   - *Watch time* is the period-allocated segment `watch_duration_sec` used by `deu`; rewatched sections count as watch time.
+   - *Completion:* the union of unique positions covered by all of the user's playback segments of the episode within 7 days of the first start reaches at least 90% of `content_episodes.episode_duration_sec`. Rewinds and repeated sections do not add coverage; resumed viewing in a later attempt does.
+   - *Continuation:* the same user starts episode *n*+1 of the same title within 7 days of the first start of completed episode *n*.
+   - *Free-quota hit:* the viewer-day has a view with `free_quota_sequence` 8.
+   - *Paywall exposure:* at least one `paywall_viewed` event in the month.
+4. **Formulas.** As in the table; a zero denominator reports NULL. Views are attempts (`view_id`), not segments or heartbeats.
+5. **Grain and time.** Complete UTC months. Watch time is split across periods by wall-clock share. Views, viewers, title reach and paywall exposure use event or view start time. User-episodes belong to the month of the first start and are eligible only when the 7-day window ends inside the coverage window; free viewer-days belong to their UTC date's month.
+6. **Sources and layers.** `content_views`, `playback_segments`, `content_episodes`, `user_events`, `sessions`, `identity_links`. Planned (not implemented): Gold watch-time, user-episode and quota marts.
+7. **Canonical SQL.** Below; parameters as for `mau`.
+8. **Filters and dimensions.** Title (`content_id`), view type (free, subscription, PPV), platform and country from the view or session. Titles and view types can overlap per user; watch seconds are additive across titles and view types.
+9. **Null, status and refund rules.** Engagement does not depend on payment state; a refunded PPV view's watch time still counts. Views without segments contribute no watch time or coverage.
+10. **Aggregation safety.** Watch seconds and view counts are additive. Rates and per-user values are ratios: combine periods only by summing numerators and denominators. Title reach is a distinct count and must not be summed across titles or months.
+11. **Quality checks.** Implemented and tested: isolated tests cover watch-time splitting across midnight, the engaged-user population for per-user watch time, completion with resume, rewinds and the 7-day window, the 90% threshold, continuation timing and the last episode, quota hits, paywall exposure through session resolution and zero denominators; the fixture checker reconciles monthly watch time with total playback-segment seconds; existing catalog checks validate segments, positions and quota sequences. Proposed: completion windows for titles with episodes released during the window.
+12. **Caveats.** Completion requires playback segments; the fixture covers every view. The 90% threshold treats closing credits as optional. Watch time includes time watched by users below the engaged threshold, except in `watch_time_per_engaged_user`.
+
+```sql
+-- metric: watch_time_monthly
+-- requires: periods=periods_month, period_watch_seconds, engaged=meu
+SELECT p.period AS month,
+       COALESCE(SUM(w.watched_sec), 0) AS watch_sec,
+       COALESCE(SUM(w.watched_sec), 0) / 3600.0 AS watch_hours,
+       e.meu,
+       (SELECT SUM(t.user_sec) FROM (SELECT SUM(x.watched_sec) AS user_sec FROM period_watch_seconds x
+                                      WHERE x.period_start = p.period_start GROUP BY x.user_id
+                                      HAVING SUM(x.watched_sec) >= 60) t) / NULLIF(e.meu, 0) AS watch_sec_per_engaged_user
+FROM periods p
+LEFT JOIN period_watch_seconds w ON w.period_start = p.period_start
+JOIN engaged e ON e.month = p.period
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: views_per_viewer_monthly
+-- requires: periods=periods_month
+SELECT p.period AS month, COUNT(v.view_id) AS views, COUNT(DISTINCT v.user_id) AS viewers,
+       COUNT(v.view_id) * 1.0 / NULLIF(COUNT(DISTINCT v.user_id), 0) AS views_per_viewer
+FROM periods p
+LEFT JOIN content_views v ON v.view_started_at >= p.period_start AND v.view_started_at < p.period_end
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: user_episodes
+SELECT v.user_id, v.content_id, v.episode_number, MIN(v.view_started_at) AS first_start_at,
+       strftime('%Y-%m-%dT%H:%M:%SZ', MIN(v.view_started_at), '+7 days') AS window_end_at
+FROM content_views v
+GROUP BY v.user_id, v.content_id, v.episode_number
+```
+
+```sql
+-- metric: user_episode_completion
+-- requires: user_episodes
+WITH segments AS (
+  SELECT e.user_id, e.content_id, e.episode_number, s.position_start_sec AS a, s.position_end_sec AS b
+  FROM user_episodes e
+  JOIN content_views v ON v.user_id = e.user_id AND v.content_id = e.content_id
+                      AND v.episode_number = e.episode_number
+                      AND v.view_started_at < e.window_end_at
+  JOIN playback_segments s ON s.view_id = v.view_id
+  WHERE s.position_end_sec > s.position_start_sec
+),
+ordered AS (
+  SELECT *, MAX(b) OVER (PARTITION BY user_id, content_id, episode_number ORDER BY a, b
+                         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prior_end
+  FROM segments
+),
+islands AS (
+  SELECT *, SUM(CASE WHEN prior_end IS NULL OR a > prior_end THEN 1 ELSE 0 END)
+              OVER (PARTITION BY user_id, content_id, episode_number ORDER BY a, b
+                    ROWS UNBOUNDED PRECEDING) AS island
+  FROM ordered
+),
+coverage AS (
+  SELECT user_id, content_id, episode_number, SUM(island_sec) AS covered_sec
+  FROM (SELECT user_id, content_id, episode_number, MAX(b) - MIN(a) AS island_sec
+        FROM islands GROUP BY user_id, content_id, episode_number, island)
+  GROUP BY user_id, content_id, episode_number
+)
+SELECT e.user_id, e.content_id, e.episode_number, e.first_start_at, e.window_end_at,
+       COALESCE(c.covered_sec, 0) AS covered_sec, d.episode_duration_sec,
+       COALESCE(c.covered_sec, 0) >= 0.9 * d.episode_duration_sec AS completed
+FROM user_episodes e
+JOIN content_episodes d ON d.content_id = e.content_id AND d.episode_number = e.episode_number
+LEFT JOIN coverage c ON c.user_id = e.user_id AND c.content_id = e.content_id AND c.episode_number = e.episode_number
+```
+
+```sql
+-- metric: episode_completion_monthly
+-- requires: periods=periods_month, completion=user_episode_completion
+SELECT p.period AS month, COUNT(c.user_id) AS user_episodes_started,
+       COALESCE(SUM(c.completed), 0) AS user_episodes_completed,
+       SUM(c.completed) * 1.0 / NULLIF(COUNT(c.user_id), 0) AS episode_completion_rate
+FROM periods p
+LEFT JOIN completion c
+  ON c.first_start_at >= p.period_start AND c.first_start_at < p.period_end
+ AND c.window_end_at <= :coverage_end
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: series_continuation_monthly
+-- requires: periods=periods_month, completion=user_episode_completion
+SELECT p.period AS month,
+       COUNT(c.user_id) AS completed_with_next_episode,
+       COALESCE(SUM(EXISTS (
+         SELECT 1 FROM content_views n
+         WHERE n.user_id = c.user_id AND n.content_id = c.content_id
+           AND n.episode_number = c.episode_number + 1
+           AND n.view_started_at >= c.first_start_at AND n.view_started_at < c.window_end_at)), 0) AS continued,
+       SUM(EXISTS (
+         SELECT 1 FROM content_views n
+         WHERE n.user_id = c.user_id AND n.content_id = c.content_id
+           AND n.episode_number = c.episode_number + 1
+           AND n.view_started_at >= c.first_start_at AND n.view_started_at < c.window_end_at)) * 1.0
+         / NULLIF(COUNT(c.user_id), 0) AS series_continuation_rate
+FROM periods p
+LEFT JOIN completion c
+  ON c.completed = 1 AND c.first_start_at >= p.period_start AND c.first_start_at < p.period_end
+ AND c.window_end_at <= :coverage_end
+ AND EXISTS (SELECT 1 FROM content_episodes x
+             WHERE x.content_id = c.content_id AND x.episode_number = c.episode_number + 1)
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: title_reach_monthly
+-- requires: periods=periods_month
+SELECT p.period AS month, v.content_id, COUNT(DISTINCT v.user_id) AS viewers
+FROM periods p
+JOIN content_views v ON v.view_started_at >= p.period_start AND v.view_started_at < p.period_end
+GROUP BY p.period_start, v.content_id
+ORDER BY p.period_start, v.content_id
+```
+
+```sql
+-- metric: free_quota_hit_monthly
+-- requires: periods=periods_month
+SELECT p.period AS month, COUNT(d.user_id) AS free_viewer_days,
+       COALESCE(SUM(d.hit), 0) AS quota_hit_days,
+       SUM(d.hit) * 1.0 / NULLIF(COUNT(d.user_id), 0) AS free_quota_hit_rate
+FROM periods p
+LEFT JOIN (
+  SELECT user_id, date, MAX(free_quota_sequence = 8) AS hit
+  FROM content_views WHERE free_quota_consuming = 1
+  GROUP BY user_id, date
+) d ON d.date >= substr(p.period_start, 1, 10) AND d.date < substr(p.period_end, 1, 10)
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
+```sql
+-- metric: paywall_exposure_monthly
+-- requires: periods=periods_month, resolved_sessions, active=mau_monthly
+SELECT p.period AS month,
+       COUNT(DISTINCT COALESCE(e.user_id, r.resolved_user_id)) AS exposed_users,
+       a.mau,
+       COUNT(DISTINCT COALESCE(e.user_id, r.resolved_user_id)) * 1.0 / NULLIF(a.mau, 0) AS paywall_exposure_rate
+FROM periods p
+JOIN active a ON a.month = p.period
+LEFT JOIN user_events e
+  ON e.event_name = 'paywall_viewed' AND e.event_at >= p.period_start AND e.event_at < p.period_end
+LEFT JOIN resolved_sessions r ON r.session_id = e.session_id
+GROUP BY p.period_start
+ORDER BY p.period_start
+```
+
 ## Proposed metrics
 
 | id | Intended meaning | Status |
 |---|---|---|
 | active_days_distribution | Number of users active on 1, 2, … N days of a period (power-user curve). | Proposed; not defined |
 | sessions_per_active_user | Sessions per active user in a period. | Proposed; not defined |
-| watch_time_per_engaged_user | Period-allocated watch seconds per engaged user. | Proposed; not defined |
 | marketing_cpc | Spend ÷ clicks by channel and period. | Proposed; not defined |
 | marketing_cac | Spend ÷ attributed new paying users by channel and period. | Proposed; not defined |
