@@ -49,7 +49,7 @@ Evidence ledger → quantified RCA report and recommendations
 
 The planned investigation is autonomous, with at most three rounds of up to three distinct hypotheses; it should stop early when adequately explained or ask for human direction when exhausted. It must not invent causes.
 
-The intended runtime is Codex or Claude Code using the shared investigation skill. The skill and query/evidence commands exist, but have not yet been independently evaluated in a complete investigation. End-to-end report generation and the evaluation suite remain incomplete. The experimental Python loop is not a turnkey agent. Runtime access depends on the user's chosen coding tool and account.
+The intended product is a reusable analytics framework operated through the user's own Codex or Claude Code runtime and available model. The runtime follows the shared investigation skill and uses the repository's definitions, catalog and evidence tools with the user's authorized local database. A separate standalone model service or custom API is not required for this workflow. One independent-mode investigation has been reviewed; the broader evaluation remains incomplete. Runtime access depends on the user's chosen tool, model and account.
 
 ## Visual explorer
 
