@@ -80,7 +80,7 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** If every session has a view, app activity and viewing activity become indistinguishable. A repeat view at position zero does not demonstrate resume behavior.
 
-**Resolution:** The fixture includes 5,273 browsing-only sessions and repeat views with playback-position continuity. Session duration, playback duration and completion are separate measures.
+**Resolution:** The fixture includes browsing-only sessions and repeat views with playback-position continuity. Session duration, playback duration and completion are separate measures.
 
 ### Episode completion and the daily free limit
 
@@ -171,6 +171,14 @@ The log contains planted story details and expected findings. Exclude it from th
 **Analytical impact:** Unidentified-session reporting and unlinked-funnel handling could not be evaluated, and funnel attribution looked complete.
 
 **Resolution:** About 8% extra sessions are logged-out browsing on devices that never sign in: no user, no identity link and no playback, with an app-open event and engagement evidence. About 5% of checkouts have no paywall link and about 3% of transactions have no checkout link, chosen deterministically by ID. A separate random stream generates the visitor sessions, so MAU, revenue and every other generated value are unchanged. Paywall-to-purchase rates fall slightly because some purchases cannot be traced to their paywall.
+
+## Engagement, signup visits, mix and refunds
+
+**Issue:** About 95% of monthly active users watched at least 60 seconds; a third to a half of each month's signups had no visit in their signup month, some never visited, and every signup was at exactly 00:00 UTC; platforms rotated evenly across users and the five non-US countries had equal shares; and about 18% of PPV purchases were refunded.
+
+**Analytical impact:** Engagement, day-N retention, activation and new-user counts in growth accounting were distorted; platform and country comparisons showed no real differences; and refunds looked like a major PPV revenue problem.
+
+**Resolution:** In some months a non-paying user only browses, so about 60% of active users are engaged. Every signup happens in a visit: the user's first session starts at the signup time, with a `signup` identity link, and each month's new signups are all active that month while the same number of earlier non-paying users sit out, so MAU stays at its targets. Signup times follow local daily patterns. Each user has a weighted primary platform (Android 45%, iOS 35%, web 20%) and a different second-device platform, and countries are weighted (US 30%, BR 19%, MX 16%, PH 15%, ID 12%, TH 8%). About 3% of PPV purchases are refunded: the other refunded purchases are not generated, and because each was refunded in its own month, monthly net revenue is unchanged; gross PPV revenue, refunds and PPV payers are lower. Each change uses its own random stream, so MAU, net revenue and subscriptions are unchanged.
 
 ## Deliberate data-quality issues
 
