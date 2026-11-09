@@ -1,0 +1,294 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Where does the paywall funnel lose users?",
+    "short_title": "Paywall funnel",
+    "question": "Where do users drop from viewing a paywall to starting checkout and purchasing?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "PocketToons SQLite synthetic fixture",
+    "periods": "April\u2013September 2026 UTC",
+    "snapshot": "2026-09-30 23:59:59 UTC (metadata)",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "14 logged checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to the numbered JSONL evidence files in the run directory.",
+        "The registered funnel counts paywall events, not distinct people.",
+        "Observed links and associations do not prove causes."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Checkout",
+          "A checkout event explicitly linked to the paywall."
+        ],
+        [
+          "Purchase",
+          "A linked, successful valid charge; a later refund does not undo this count."
+        ],
+        [
+          "PPV",
+          "Pay-per-view."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "The biggest observed gap is before checkout: 3,824 of 7,221 paywall views (53.0%) had no linked checkout. A further 1,804 of 3,397 linked checkout paywalls (53.1%) had no linked successful purchase (checks 4\u20137)."
+        },
+        {
+          "type": "kpis",
+          "items": [
+            {
+              "value": "7,221",
+              "label": "Paywall views"
+            },
+            {
+              "value": "3,397",
+              "label": "Linked checkout paywalls<br/>47.0% of views"
+            },
+            {
+              "value": "1,593",
+              "label": "Linked purchase paywalls<br/>22.1% of views"
+            }
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Subscription paywalls account for 87.4% of views and 87.5% of the pre-checkout losses (check 5).",
+            "April has much higher conversion than May\u2013September; investigate the change in subscription flow and instrumentation before attributing a cause (checks 4, 8, 11).",
+            "Uncaptured links and the incomplete follow-up at the end of September mean these are observed funnel losses, not proof of abandonment."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Independent investigation; authorized PocketToons SQLite, read-only. April 1 through October 1, 2026 UTC, half-open; paywalls grouped by event month.",
+            "Approved paywall_funnel v1.0: one view is one funnel unit. Multiple checkouts or payment attempts per paywall count once. Purchases are credited through recorded checkout links; later refunds do not reverse conversion.",
+            "Gold monthly funnel fits the approved definition; Silver and Bronze check detail and traceability. Build 3a0dbed21d2f45958aefa2887a0cadd8 succeeded November 9; metadata snapshot is September 30, 23:59:59 UTC (checks 1\u20133).",
+            "Synthetic reference fixture; metadata timestamp is an asserted snapshot, not a verified whole-file hash."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Baseline and product decomposition: Gold, independently compared with Silver (checks 4, 5, 7).",
+            "Round 1: product differences; payment-attempt evidence; end-of-coverage sensitivity (checks 8, 11, 14). Stop: further mechanism claims require instrumentation or product context."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.18,
+            0.2,
+            0.2,
+            0.2,
+            0.22
+          ],
+          "rows": [
+            [
+              "UTC month",
+              "Views",
+              "Checkout",
+              "Purchase",
+              "View to purchase"
+            ],
+            [
+              "Apr",
+              "1,935",
+              "1,257",
+              "937",
+              "48.4%"
+            ],
+            [
+              "May",
+              "1,088",
+              "455",
+              "160",
+              "14.7%"
+            ],
+            [
+              "Jun",
+              "1,023",
+              "399",
+              "102",
+              "10.0%"
+            ],
+            [
+              "Jul",
+              "1,069",
+              "428",
+              "140",
+              "13.1%"
+            ],
+            [
+              "Aug",
+              "1,026",
+              "421",
+              "102",
+              "9.9%"
+            ],
+            [
+              "Sep",
+              "1,080",
+              "437",
+              "152",
+              "14.1%"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Each later step is credited to the paywall month; September can be right-censored. Rates combine counts, never averages of monthly rates (check 4)."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.25,
+            0.18,
+            0.18,
+            0.18,
+            0.21
+          ],
+          "rows": [
+            [
+              "Product",
+              "Views",
+              "Checkout",
+              "Purchase",
+              "No checkout"
+            ],
+            [
+              "Subscription",
+              "6,311",
+              "2,965",
+              "1,394",
+              "3,346"
+            ],
+            [
+              "PPV",
+              "910",
+              "432",
+              "199",
+              "478"
+            ],
+            [
+              "All",
+              "7,221",
+              "3,397",
+              "1,593",
+              "3,824"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Subscription: 47.0% reached checkout; 47.0% of those reached purchase. PPV: 47.5% reached checkout; 46.1% of those reached purchase. Aggregate rates mask a large shift over time (checks 4\u20135).",
+            "In April, subscription purchase per view was 50.6% (902/1,781); in May\u2013September it was 10.9% (492/4,530). PPV was 22.7% in April and 21.7% thereafter (check 11). These are associations, not causal decompositions."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.28,
+            0.18,
+            0.54
+          ],
+          "rows": [
+            [
+              "Hypothesis",
+              "Status",
+              "Evidence"
+            ],
+            [
+              "Subscription conversion shifted after April",
+              "Supported pattern",
+              "Both steps worsened: checkout/view 66.3% to 39.4%; purchase/checkout 76.4% to 27.6% in May\u2013September. Cause unknown (checks 4, 11)."
+            ],
+            [
+              "Failed recorded attempts explain most checkout losses",
+              "Rejected as recorded pattern",
+              "Subscription has 1,571 checkout paywalls without purchase and zero linked failed attempts; PPV has 233 such paywalls and 29 with a linked failed attempt. Missing attempts can reflect missing telemetry (check 8)."
+            ],
+            [
+              "September tail is fully observed",
+              "Inconclusive",
+              "Sept 24\u201330: 10/204 purchased vs 142/876 earlier in September; timing or population may differ. No fixed lag is guaranteed (check 14)."
+            ]
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "175 of 3,572 checkout events (4.9%) have no captured paywall link; 56 of 1,725 in-app successful purchases (3.2%) have no checkout link. Counts use checkout/purchase month, not paywall cohort, so do not add them to the funnel or infer attribution (checks 6, 13).",
+            "All 7,221 paywalls have distinct event IDs, identified users and no Silver exceptions; 3,646 distinct viewers make clear that events are not people (checks 5, 9). Source event count matches the build record, but no current content fingerprint was recomputed (checks 3, 12).",
+            "Build-reported builder SHA matches local code; build registry SHA 57b21d... differs from current registry SHA 4b5b2f... . Both report funnel version 1.0, but the difference is unresolved; build-time reconciliation does not establish that the source or definitions are unchanged now (check 3).",
+            "Metadata snapshots end September 30; the last month is susceptible to delayed outcomes. No evidence establishes causality or telemetry completeness."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Audit subscription paywall and checkout changes around April\u2013May, including event and transaction link capture; reconcile instrumentation with payment provider records.",
+            "Instrument checkout steps, exits, errors and payment initiation; monitor the two stage rates and missing-link rates by product and cohort.",
+            "Re-run on a later verified snapshot with a defined follow-up window, particularly for September; compare mature cohorts before concluding the late-month drop is behavioral.",
+            "Resolve the registry hash mismatch and recompute source fingerprints before relying on the build as current."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Checks 01\u201303: table inventory, metadata and build/reconciliation.",
+            "Checks 04\u201307: monthly funnel, product totals, source coverage and Silver reconciliation.",
+            "Checks 08\u201311: attempts, key quality, event tail and period/product comparison.",
+            "Checks 12\u201314: source row count, unlinked purchases and late-September sensitivity.",
+            "Full SQL, parameters, timestamps, returned rows and truncation status are retained in separate JSONL files. All 14 checks succeeded without truncation."
+          ]
+        }
+      ]
+    }
+  }
+}

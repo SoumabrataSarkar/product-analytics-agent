@@ -1,0 +1,246 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Paywall to purchase: where the funnel drops",
+    "short_title": "Paywall funnel",
+    "question": "Where do users drop from viewing a paywall to starting checkout and purchasing?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized PocketToons SQLite fixture",
+    "periods": "April\u2013September 2026 UTC",
+    "snapshot": "2026-09-30 23:59:59 UTC metadata",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "11 read-only checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Check numbers refer to the JSONL evidence files.",
+        "The approved funnel counts paywall views; patterns do not establish causes."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Checkout",
+          "A checkout event explicitly linked to a paywall."
+        ],
+        [
+          "Purchase",
+          "A valid successful charge linked through checkout; later refunds do not remove it."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "The largest measured drop is before checkout: 3,824 of 7,221 paywall views (53.0%) have no linked checkout. Another 1,804 (25.0% of views) reach checkout without a linked purchase; 1,593 (22.1%) reach a purchase (checks 3\u20135)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "For May\u2013September, 59.5% of views had no linked checkout and 28.1% reached checkout without a linked purchase.",
+            "Subscription accounts for 2,746 of 3,146 later no-checkout views and 1,292 of 1,484 later checkout-without-purchase views (check 7).",
+            "Prioritize link instrumentation and the subscription journey. Missing links prevent interpreting every gap as abandonment."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Complete view months [2026-04-01, 2026-10-01), UTC; linked later events credited to view month with no fixed conversion window.",
+            "Approved paywall_funnel v1.0 uses one paywall view as the unit, counting multiple linked checkouts or attempts at most once. A later refund does not undo a purchase.",
+            "Gold monthly funnel, Silver detail and Bronze checkout links; dataset metadata snapshot 2026-09-30 23:59:59 UTC is not a verified hash."
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Baseline and coverage: checks 1\u20136, 9\u201311.",
+            "One hypothesis round: product and time decomposition (checks 3, 5, 7) and linked payment attempt classification (check 8).",
+            "Stop: stage patterns are quantified, but available telemetry does not establish behavioral or technical causes."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "rows": [
+            [
+              "Month",
+              "Views",
+              "Checkout",
+              "Purchase",
+              "View to checkout",
+              "Checkout to purchase"
+            ],
+            [
+              "Apr",
+              "1,935",
+              "1,257",
+              "937",
+              "65.0%",
+              "74.5%"
+            ],
+            [
+              "May",
+              "1,088",
+              "455",
+              "160",
+              "41.8%",
+              "35.2%"
+            ],
+            [
+              "Jun",
+              "1,023",
+              "399",
+              "102",
+              "39.0%",
+              "25.6%"
+            ],
+            [
+              "Jul",
+              "1,069",
+              "428",
+              "140",
+              "40.0%",
+              "32.7%"
+            ],
+            [
+              "Aug",
+              "1,026",
+              "421",
+              "102",
+              "41.0%",
+              "24.2%"
+            ],
+            [
+              "Sep",
+              "1,080",
+              "437",
+              "152",
+              "40.5%",
+              "34.8%"
+            ]
+          ],
+          "widths": [
+            0.16666666666666666,
+            0.16666666666666666,
+            0.16666666666666666,
+            0.16666666666666666,
+            0.16666666666666666,
+            0.16666666666666666
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "April versus pooled May\u2013September: paywall-to-checkout fell from 65.0% to 40.5%; checkout-to-purchase fell from 74.5% to 30.7%. Rates are event-weighted, not averages of monthly rates (check 5).",
+            "Subscription rates fell from 66.3% to 39.4% at checkout and from 76.4% to 27.6% at purchase. PPV rates were 49.4% to 47.1%, and 46.1% to 46.1%, respectively (check 5). April is one month; September may have incomplete follow-up."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "<b>Supported pattern:</b> more views lack a linked checkout (3,824) than reach checkout without a linked purchase (1,804), over the full period.",
+            "<b>Supported pattern:</b> subscription represents 87.3% of later no-checkout views and 87.1% of later checkout-without-purchase views; product volume matters (check 7).",
+            "<b>Payment failure explanation not supported by captured attempts:</b> all 1,292 later subscription checkouts without purchase have no linked non-refund attempt. Missing telemetry and behavior remain indistinguishable (check 8)."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Build 3a0dbed21d2f45958aefa2887a0cadd8 succeeded 2026-11-09 11:16:56 UTC; all recorded reconciliation checks passed. Relevant current row counts match build counts; source content hashes were not recomputed (checks 2, 9, 10).",
+            "Build registry SHA-256 57b21d...1227 differs from current registry 4b5b2f...5554. Both identify the funnel group as v1.0, but file equivalence was not established. Gold row definitions omit the funnel version; build metadata records it.",
+            "There were 175 checkout events without paywall links and 56 of 1,725 in-app purchases without checkout links (3.2%), counted by their own event months. They cannot be assigned to paywall cohorts (check 5).",
+            "All 7,221 paywall rows had distinct IDs and identified users; none had a flagged funnel exception. Implemented rules cannot detect every telemetry omission (checks 4, 6). The build records 13 reviewed payment corrections with unknown review time (check 2)."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The approved metric counts events, not distinct people. Monthly distinct people by product appear in check 11 and can overlap across months and products.",
+            "No causal experiment, checkout substep or abandonment reason was assessed. No linked attempt does not prove no attempt occurred.",
+            "Link gaps, possible late follow-up, unverified current fingerprints and the registry hash mismatch limit precise interpretation."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Audit paywall-to-checkout and checkout-to-transaction links against client, server and provider records, including retries and lags.",
+            "Instrument checkout substeps and errors; investigate the May transition and subscription experience. Use controlled experiments to validate causes.",
+            "Reconcile registry versions and verify source fingerprints, then repeat with a defined mature conversion window."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "rows": [
+            [
+              "Checks",
+              "Purpose"
+            ],
+            [
+              "01\u201302",
+              "Inventory, metadata and build"
+            ],
+            [
+              "03\u201305",
+              "Baseline, identity and product totals"
+            ],
+            [
+              "06\u201308",
+              "Exceptions, stage decomposition and attempts"
+            ],
+            [
+              "09\u201310",
+              "Build fingerprints and current row counts"
+            ],
+            [
+              "11",
+              "Distinct-person descriptive variant"
+            ]
+          ],
+          "widths": [
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    }
+  }
+}

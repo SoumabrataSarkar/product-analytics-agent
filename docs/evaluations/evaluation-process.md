@@ -1,6 +1,6 @@
 # Evaluation process
 
-**Status:** Process in use. The answer key covers all 18 scenarios and is held outside the repository. Agent runs are in progress; results are published here only after the blind runs are complete.
+**Status:** Round 1 (18 scenarios) and round 2 (4 reruns) complete. [Results](results.md); answer key and scored runs in [`evaluation-results/`](../../evaluation-results/), published after the blind runs.
 **Scope:** How the analytics agent is evaluated on the PocketToons fixture, in Claude Code and Codex, using the shared investigation skill.
 
 The evaluation checks whether the agent answers product questions correctly, with traceable evidence and honest uncertainty. It compares each agent run against an answer key written **before** the run, from the source data, by a method independent of the agent's own pipeline.

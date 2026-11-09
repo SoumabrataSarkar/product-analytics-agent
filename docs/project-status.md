@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-11-09 UTC (2026-11-09 IST).  
 **Repository:** `SoumabrataSarkar/product-analytics-agent` (private).  
-**Current focus:** Independent evaluation of the analytics agent on the completed PocketToons data, catalog, registry and layers.
+**Current focus:** Evaluation complete: 18 blind scenarios, 16 pass, 1 partial, 1 fail after one improvement round ([results](evaluations/results.md)). Submission deliverables are in [`submission/`](../submission/README.md).
 
 This is the common project progress and handoff record. The frozen architecture describes the intended reusable framework; the current catalog, data model, metric definitions, layer contracts and executable SQL describe the **PocketToons reference dataset**. They are shared between supported agents, not automatically valid for every product or data source.
 
@@ -18,7 +18,7 @@ Dates and times are shown in UTC, with IST (UTC+05:30) in brackets where a preci
 | [PocketToons metric registry](metrics/metric-registry.md) | Complete for this stage | Every metric in the metric map is defined and approved individually, with canonical SQL and tests. | Soumabrata Sarkar and Claude; template 2026-11-08 19:40 UTC (2026-11-09 01:10 IST), map completed 2026-11-09 06:29 UTC (11:59 IST). [Record](#contribution-and-date-record) |
 | [Data layers](data-layers/layer-build-workflow.md) · [contracts](data-layers/pockettoons-layer-contracts.md) · [Gold questions](data-layers/pockettoons-gold-questions.md) | Complete for this stage | 20 Bronze views, 10 Silver and 8 Gold tables, approved by the user (Silver one at a time, Gold in small groups) and reconciled at every build. | Soumabrata Sarkar and Claude; workflow 2026-11-09 06:54 UTC (12:24 IST), Gold completed 10:49 UTC (16:19 IST). [Record](#contribution-and-date-record) |
 | [Query, evidence and investigation tools](../tools/INVESTIGATION.md) · [shared skill](../skills/product-analytics-investigation/SKILL.md) | Available, not yet evaluated | Bounded read-only SQL, per-query evidence logs and a shared Codex/Claude investigation skill, with targeted tests. | Soumabrata Sarkar and Codex; query foundation 2026-11-09 07:41 UTC (13:11 IST). [Record](#contribution-and-date-record) |
-| [Investigation and evaluation paths](evaluations/investigation-paths.md) · [run template](evaluations/evaluation-run-template.md) | Designed, not yet run | 18 scenarios connected to checks, data, layers and safeguards. | Soumabrata Sarkar and Codex; recorded 2026-11-08 20:54 UTC (2026-11-09 02:24 IST). [Record](#contribution-and-date-record) |
+| [Investigation and evaluation paths](evaluations/investigation-paths.md) · [run template](evaluations/evaluation-run-template.md) | Run and scored ([results](evaluations/results.md)) | 18 scenarios connected to checks, data, layers and safeguards. | Soumabrata Sarkar and Codex; recorded 2026-11-08 20:54 UTC (2026-11-09 02:24 IST). [Record](#contribution-and-date-record) |
 | [Static documentation explorer](../web/index.html) | Available as prototype | Explains the project and its current status; it does not run the agent or connect to a model. | Soumabrata Sarkar and AI assistance. [Record](#contribution-and-date-record) |
 | Agent evaluation, reports and write-up | Next | Evaluator-only answer key, runs in Codex and Claude Code, scored results, example reports and the submission write-up. | Led by Soumabrata Sarkar with AI assistance. |
 
@@ -47,8 +47,8 @@ The reviewed local database contains the current source with Bronze, Silver and 
 
 ## Remaining work
 
-1. **Evaluation.** Build an evaluator-only answer key for the [18 scenarios](evaluations/investigation-paths.md): expected results, the layer and definition versions to use, quality traps to report, and when to clarify or decline. Keep it outside the agent's investigation context. Run the agent in Codex and Claude Code on the fixed database in independent and guided modes, record runs with the [evaluation run template](evaluations/evaluation-run-template.md), and score correctness, evidence, uncertainty and clarification.
-2. **Agent improvement.** Fix the shared skill, layer routing and tools from the evaluation results and rerun. The experimental Python investigation loop has only scripted tests; these foundations do not yet establish a verified end-to-end agent.
+1. **Evaluation (done for this stage).** An answer key for all [18 scenarios](evaluations/investigation-paths.md) was computed from source tables and approved before any run. Round 1 ran every scenario blind (Q02 in Claude Code, the rest in Codex): 15 pass, 1 partial, 2 fail. Round 2 added one skill rule and reran four scenarios: Q07 fixed, Q11 unchanged, no regressions. See [results](evaluations/results.md) and [`evaluation-results/`](../evaluation-results/).
+2. **Agent improvement.** Extend the start-up-period rule to trend descriptions (Q11), compare canonical SQL rather than file hashes when checking registry provenance, and run the same scenarios in both runtimes. The experimental Python investigation loop has only scripted tests; these foundations do not yet establish a verified end-to-end agent.
 3. **Catalog follow-through.** Provide a machine-readable catalog and layer map for the agent. Preserve documented limitations, including incomplete historical review versions, source coverage, unsupported bundle cases and attribution uncertainty.
 4. **Outputs.** Produce evidence-backed investigation reports with the [report template](deliverables/investigation-report-template.md) and the submission write-up with the [one-page template](deliverables/one-page-write-up-template.md).
 5. **Optional UI.** Pursue connected web or other UI work only when requested and with a secure backend.

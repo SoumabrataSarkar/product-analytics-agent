@@ -8,6 +8,7 @@ An LLM-agnostic product analytics agent using shared analytical skills, metric d
 
 ## Start here
 
+- **[Submission: deliverables and where to find them](submission/README.md)** · [Evaluation results](docs/evaluations/results.md)
 - [Setup and reviewer guide](SETUP.md) · [Current architecture implementation](docs/architecture/implementation-status.md)
 - [Project status and handoff](docs/project-status.md)
 - [PocketToons data catalog](docs/examples/pockettoons-data-catalog.md)

@@ -1,0 +1,315 @@
+{
+  "meta": {
+    "project": "PocketToons product analytics",
+    "title": "Did newer signup cohorts convert to subscription at a lower rate?",
+    "short_title": "Signup cohort conversion",
+    "question": "Compare mature signup cohorts on the approved 30-day subscription conversion metric.",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized PocketToons SQLite synthetic fixture",
+    "periods": "April-August 2026 signup cohorts, UTC",
+    "snapshot": "users_snapshot_at 2026-09-30T23:59:59Z (asserted dataset metadata)",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "7 logged checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Checks refer to separate JSONL evidence logs with SQL and results.",
+        "Gold is a precomputed cohort summary; Silver supplies user-level cohort details.",
+        "Observed associations do not establish causes."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Signup cohort",
+          "All users who signed up in a UTC calendar month."
+        ],
+        [
+          "30-day conversion",
+          "Eligible users with a successful subscription charge in the 720 hours starting at signup, divided by eligible users."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Yes. Every mature cohort after April converted below April, and July-August cohorts were particularly low. The pattern is not strictly monotonic; September is not yet measurable on a complete 30-day basis."
+        },
+        {
+          "type": "kpis",
+          "items": [
+            {
+              "value": "2.59%",
+              "label": "April-June<br/>167 / 6,454"
+            },
+            {
+              "value": "0.53%",
+              "label": "July-August<br/>29 / 5,426"
+            },
+            {
+              "value": "-2.05 pp",
+              "label": "Difference<br/>79% relative decline"
+            }
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "April was 4.56%, May 1.73%, June 2.11%, July 0.52%, and August 0.54% (check 3).",
+            "Rates fell within organic, paid search, and paid social; the acquisition mix also shifted strongly toward paid social (check 5). This does not identify a cause.",
+            "Investigate checkout and subscription payment pathways and validate later cohorts when fully observed."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Approved funnel and lifecycle group v1.0; charge success time in [signup, signup + 30 days), including charges subsequently refunded. Cohort includes all eligible signups, active or inactive.",
+            "Coverage is [2026-04-01, 2026-10-01) UTC per repository contract; windows must end on or before coverage end. March signups and 1,720 September signups are excluded from this metric (checks 3 and 7).",
+            "Gold cohort month-zero rows avoid repeated cohort-level counts. Silver profile supports acquisition slices and matches Gold totals (checks 3 and 5)."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.25,
+            0.25,
+            0.25,
+            0.25
+          ],
+          "rows": [
+            [
+              "Signup month",
+              "Eligible",
+              "Converted",
+              "Rate"
+            ],
+            [
+              "April 2026",
+              "1,600",
+              "73",
+              "4.56%"
+            ],
+            [
+              "May 2026",
+              "2,201",
+              "38",
+              "1.73%"
+            ],
+            [
+              "June 2026",
+              "2,653",
+              "56",
+              "2.11%"
+            ],
+            [
+              "July 2026",
+              "2,477",
+              "13",
+              "0.52%"
+            ],
+            [
+              "August 2026",
+              "2,949",
+              "16",
+              "0.54%"
+            ],
+            [
+              "September 2026",
+              "0 of 1,720",
+              "Not observed",
+              "Not available"
+            ]
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.28,
+            0.36,
+            0.36
+          ],
+          "rows": [
+            [
+              "Acquisition source",
+              "April-June converted / eligible",
+              "July-August converted / eligible"
+            ],
+            [
+              "Organic",
+              "82 / 3,204 (2.56%)",
+              "6 / 996 (0.60%)"
+            ],
+            [
+              "Paid search",
+              "38 / 1,697 (2.24%)",
+              "5 / 907 (0.55%)"
+            ],
+            [
+              "Paid social",
+              "44 / 1,489 (2.96%)",
+              "18 / 3,469 (0.52%)"
+            ],
+            [
+              "Unknown",
+              "3 / 64 (4.69%)",
+              "0 / 54 (0.00%)"
+            ],
+            [
+              "All",
+              "167 / 6,454 (2.59%)",
+              "29 / 5,426 (0.53%)"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Pooled rates use summed users and converters, not an unweighted average of monthly rates. Paid social increased from 23.1% to 63.9% of eligible signups (check 5).",
+            "The decline within each major source shows the overall decline is not solely explained by changing source weights. These are descriptive comparisons, not causal effects."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.34,
+            0.19,
+            0.47
+          ],
+          "rows": [
+            [
+              "Hypothesis",
+              "Status",
+              "Evidence"
+            ],
+            [
+              "Lower conversion across acquisition sources",
+              "Supported pattern",
+              "All three major sources fell between pooled periods (check 5); reason unknown."
+            ],
+            [
+              "Lower seven-day activation explains decline",
+              "Not supported as overall pattern",
+              "Activation was 53.0% versus 54.4%; this does not rule out downstream or subgroup issues (check 5)."
+            ],
+            [
+              "Acquisition mix alone explains decline",
+              "Rejected as sole arithmetic explanation",
+              "Each major source also declined; mix changes may still contribute (check 5)."
+            ]
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Build status succeeded, with build-time Gold cohort and Silver profile conversion reconciliation recorded as passing (check 2). Snapshot metadata is an asserted timestamp, not a verified database hash or freshness guarantee.",
+            "All 24,000 profiles have a non-null user and signup; no duplicate user IDs. There are 13 reviewed payment corrections across the dataset (check 4). Two corrected subscription transactions fall in eligible conversion windows, one each in July and August (check 6). Removing at most those two converters would make later rates even lower; this is a conservative sensitivity, not a claim that corrections are wrong.",
+            "The build records registry SHA-256 57b21d...1227; current registry file SHA-256 is 4b5b2f...5554. Both state lifecycle v1.0, but byte-level mismatch means exact build-time source text was not verified. Underlying source fingerprints were recorded by the build but not independently rehashed now."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "The period split is a descriptive comparison chosen after observing monthly results; no randomized or causal conclusion follows.",
+            "September is immature, and March lies outside the defined observation window. Observed 30-day success is not lifetime conversion or subscription access.",
+            "Small converter counts, especially in individual slices, make rates unstable. Source attribution is first touch and unknown remains explicit.",
+            "The repository is a downloaded copy without Git metadata. AGENTS.md filesystem creation and modification timestamp is 2026-11-09 20:12:48 IST; this is a proxy for download date, not a commit identifier."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Validate payment and checkout instrumentation and compare acquisition-source-specific funnel journeys for the affected cohorts; establish complete follow-up before comparing.",
+            "Track mature 30-day cohorts and relevant quality exceptions; investigate the build registry hash mismatch and verify source freshness before operational decisions.",
+            "Test candidate interventions experimentally before attributing the change to acquisition, onboarding, pricing, or payment friction."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.1,
+            0.65,
+            0.25
+          ],
+          "rows": [
+            [
+              "Check",
+              "Purpose",
+              "Evidence file"
+            ],
+            [
+              "1",
+              "Layer inventory and schema",
+              "01_inventory.jsonl"
+            ],
+            [
+              "2",
+              "Snapshot, build, definitions and reconciliation",
+              "02_metadata.jsonl"
+            ],
+            [
+              "3",
+              "Monthly cohort conversion",
+              "03_cohorts.jsonl"
+            ],
+            [
+              "4",
+              "Exceptions, nulls, duplicates and build IDs",
+              "04_quality.jsonl"
+            ],
+            [
+              "5",
+              "Cohort source and activation breakdown",
+              "05_segments.jsonl"
+            ],
+            [
+              "6",
+              "Reviewed payment correction sensitivity",
+              "06_corrected.jsonl"
+            ],
+            [
+              "7",
+              "Profile coverage and incomplete windows",
+              "07_coverage.jsonl"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

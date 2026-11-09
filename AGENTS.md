@@ -14,6 +14,8 @@ This file is the common project entrypoint. Architecture v1.0 is a **frozen desi
 10. Do not publicly expose confidential assignment text, proprietary data or keys.
 11. Documentation must state final requirements, decisions, results and limitations directly and consistently. Do not narrate the sequence of edits, add unsolicited interview coaching, or contrast obsolete drafts with the current design. For issue logs, use a factual issue → analytical impact → resolution/limitation format. Keep established rules in the relevant model or contract so they are applied to future generation.
 
+Do not read `evaluation-results/`, `submission/` or `docs/evaluations/` during an investigation: they contain expected answers and previous reports.
+
 For user-authorized product analytics investigations, read and follow the shared [product analytics investigation skill](skills/product-analytics-investigation/SKILL.md). The skill is common to Codex and Claude Code; its first implementation has not yet been independently evaluated end to end.
 
 ## Current repository layout and scope
@@ -23,7 +25,7 @@ For user-authorized product analytics investigations, read and follow the shared
 - `docs/examples/pockettoons-reference-data-model-v1.md` and `docs/examples/pockettoons-data-catalog.md` describe the PocketToons reference data.
 - `docs/metrics/metric-registry.md` currently defines metrics and SQL for the PocketToons fixture, shared by supported agent runtimes. It is not a universal registry for other datasets.
 - `docs/data-layers/layer-build-workflow.md` is the dataset-independent method for building Bronze/Silver/Gold layers; `docs/data-layers/pockettoons-layer-contracts.md` holds the PocketToons layer table contracts.
-- `examples/pockettoons/` holds the example generator, checks and tests; `docs/evaluations/` holds evaluation designs; `web/` holds the static explorer.
+- `examples/pockettoons/` holds the example generator, checks and tests; `docs/evaluations/` holds evaluation designs and `results.md`; `evaluation-results/` holds the answer key and scored runs, and `submission/` the assignment deliverables; `web/` holds the static explorer.
 - `docs/data-layers/pockettoons-gold-questions.md` lists the questions Gold answers and what it does not support; `docs/deliverables/` holds report and write-up templates; `tools/` and `skills/` hold the query, evidence and investigation tooling.
 - Future per-project catalogs, metric registries and an onboarding/updater workflow are not yet implemented. Do not move or rename files without an agreed migration; update references when one is requested.
 

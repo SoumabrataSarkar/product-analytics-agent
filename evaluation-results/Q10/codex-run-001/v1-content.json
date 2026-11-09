@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "project": "PocketToons",
+    "title": "Subscription cancellations taking effect",
+    "short_title": "August 2026 cancellations",
+    "question": "How many subscription cancellations took effect during August?",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized pockettoons.sqlite",
+    "periods": "August 2026 UTC",
+    "snapshot": "Users snapshot 2026-09-30 23:59:59 UTC",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "10 logged checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Each check refers to a separate JSONL evidence log in this folder.",
+        "Silver holds validated detail; Bronze preserves source records."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Effective cancellation",
+          "A cancellation-at-period-end interval whose paid access spell actually ended."
+        ],
+        [
+          "Cancellation request",
+          "An earlier notice to stop renewal; access may continue until the paid period ends."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "113 subscription cancellations took effect in August 2026, representing 113 distinct users and 113 subscriptions (checks 4, 7 and 9)."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Count ends from 1 August 00:00 UTC inclusive to 1 September 00:00 UTC exclusive.",
+            "The separate Gold count of cancellation requests in August is 92; it measures requests, not effective access loss (check 5)."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Ad hoc effective-cancellation definition: Silver rows with status cancel_at_period_end, ends_access_spell = 1, and effective_end_at in the window. This is not a separately versioned registry metric.",
+            "Silver is used because Gold has requests and snapshot-based churn, not this event count. Source Bronze history independently agrees (check 9).",
+            "Snapshot is the metadata users_snapshot_at, 30 September 2026 23:59:59 UTC; this is an as-of assertion, not a verified whole-file hash.",
+            "Build succeeded on 9 November 2026; the source access table uses build 3a0dbed21d2f45958aefa2887a0cadd8 (checks 3 and 8)."
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "All 113 qualifying rows have a request timestamp, user and subscription ID, no Silver exception, and matching source values (checks 7 and 10).",
+            "The build records successful source-to-Silver and access-loss reconciliations; it does not prove completeness of every historical event (check 3).",
+            "The current registry file SHA-256 differs from the hash recorded at build time. The builder hash matches. Consequently, build-time registry identity cannot be verified against the current file; the answer is a transparent ad hoc count based on recorded access fields, not a claim of registry-version identity."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "August was interpreted as August 2026, in UTC, consistent with the fixture coverage.",
+            "Recorded history may omit or overwrite events; no test proves full source ingestion. This count does not include refunds or other access losses unless represented as a cancellation-at-period-end spell ending in the period.",
+            "No causal explanation or period comparison was requested or inferred."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Checks 1\u20133: schema, dataset metadata, build status and reconciliation.",
+            "Checks 4\u20135: effective ends and Gold request context.",
+            "Checks 6\u20138: source schema, qualifying-row quality and Silver build identity.",
+            "Checks 9\u201310: independent Bronze recount and row-level lineage.",
+            "Full SQL, results, truncation flags and timings are in q01\u2013q10 JSONL. See evidence-index.md for corrected layer and snapshot annotations."
+          ]
+        }
+      ]
+    }
+  }
+}

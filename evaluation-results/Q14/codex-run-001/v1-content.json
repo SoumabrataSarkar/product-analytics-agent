@@ -1,0 +1,267 @@
+{
+  "meta": {
+    "project": "PocketToons Product Analytics",
+    "title": "Can we trust acquisition-channel conclusions when source values are missing?",
+    "short_title": "Acquisition source trust",
+    "question": "Assess the effect of missing acquisition source on channel conclusions.",
+    "date": "2026-11-09",
+    "mode": "Independent",
+    "dataset": "Authorized PocketToons SQLite",
+    "periods": "April-September 2026, UTC",
+    "snapshot": "Users snapshot 2026-09-30 23:59:59 UTC",
+    "build": "3a0dbed21d2f45958aefa2887a0cadd8",
+    "evidence": "14 logged checks",
+    "author": "Codex"
+  },
+  "sections": {
+    "how_to_read": {
+      "items": [
+        "Check numbers refer to individual JSONL query logs in this folder.",
+        "Unknown is an unallocated first-touch source; hypothetical reassignment is a sensitivity bound, not a correction."
+      ]
+    },
+    "glossary": {
+      "items": [
+        [
+          "Signup",
+          "One registered user counted in the UTC month of signup."
+        ],
+        [
+          "New payer",
+          "A user counted in the month of their first successful charge, by their recorded acquisition source."
+        ],
+        [
+          "MAU",
+          "Distinct identified users active in a UTC month."
+        ]
+      ]
+    },
+    "executive": {
+      "blocks": [
+        {
+          "type": "lead",
+          "text": "Qualified yes for large descriptive differences in this fixture: missing sources are approximately 1% of signups, and the example channel shift remains large under extreme reassignment. This does not establish that recorded sources are correct or that marketing caused the outcomes."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Across April-September, 135 of 13,600 signups (0.99%) have unknown source. Monthly unknown share ranges from 0.98% to 1.01% (checks 5 and 10).",
+            "In July, paid social has 1,582 signups versus 453 organic; allocating all 25 unknown signups to organic still leaves social ahead by 1,104 (check 14).",
+            "The database build registry hash differs from the current repository registry hash; verify the precise definition changes before relying on Gold for consequential decisions (check 4 and run notes)."
+          ]
+        }
+      ]
+    },
+    "scope": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.24,
+            0.76
+          ],
+          "rows": [
+            [
+              "Item",
+              "Definition and coverage"
+            ],
+            [
+              "Period",
+              "Complete UTC months [2026-04-01, 2026-10-01); monthly signup and first-payment event counts."
+            ],
+            [
+              "Definitions",
+              "Supporting metrics v1.1; MAU v1.1. Source is the fixed first-touch user label. Unknown remains separate. Same-month CAC is spend divided by first-time payers in the month, not cohort CAC."
+            ],
+            [
+              "Lineage",
+              "Gold marketing and activity marts for compatible monthly aggregates, Silver profile for checks, Bronze users for raw values."
+            ],
+            [
+              "Build",
+              "Succeeded 2026-11-09; build-time reconciliation passed. Recorded source fingerprints have not been recomputed. Snapshot is metadata, not a verified hash."
+            ]
+          ]
+        }
+      ]
+    },
+    "workflow": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Baseline: inventory layers, build, population, unknown labels and monthly segment counts (checks 1-13).",
+            "Round 1: test whether unknown attribution is material; whether it can overturn illustrative channel comparisons; and whether recorded source proves causal attribution (checks 5, 10, 14).",
+            "Stopped after one round: illustrative sensitivity is bounded; label accuracy and causality cannot be established from these fields alone."
+          ]
+        }
+      ]
+    },
+    "baseline": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.24,
+            0.76
+          ],
+          "rows": [
+            [
+              "Month",
+              "Unknown signups / total; unknown active / MAU"
+            ],
+            [
+              "Apr",
+              "16 / 1,600; 80 / 7,937"
+            ],
+            [
+              "May",
+              "22 / 2,201; 87 / 9,134"
+            ],
+            [
+              "Jun",
+              "26 / 2,653; 100 / 9,976"
+            ],
+            [
+              "Jul",
+              "25 / 2,477; 114 / 10,138"
+            ],
+            [
+              "Aug",
+              "29 / 2,949; 116 / 10,871"
+            ],
+            [
+              "Sep",
+              "17 / 1,720; 113 / 11,447"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Checks 5, 6, 10 and 13. Monthly source slices partition identified MAU; do not sum MAU across months. Unidentified sessions excluded from MAU range from 2,286 to 3,703 per month, and are not unique people."
+          ]
+        }
+      ]
+    },
+    "decomposition": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "June to July signups: social 622 to 1,582 (+960), organic 1,305 to 453 (-852), search 700 to 417 (-283), unknown 26 to 25 (-1). These sum to -176, matching total 2,653 to 2,477 (check 14).",
+            "Extreme allocation of all unknowns to a single channel in either month bounds the social change at +934 to +985 and organic change at -878 to -827. Bounds are illustrative and do not allocate real users (check 14)."
+          ]
+        }
+      ]
+    },
+    "drivers": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.24,
+            0.76
+          ],
+          "rows": [
+            [
+              "Hypothesis / status",
+              "Evidence and interpretation"
+            ],
+            [
+              "H1: Unknown share is large / Rejected for signups",
+              "Around 1% each month; 238 of 24,000 total profiles (0.99%) have unknown source. This is not a guarantee of low error in every subgroup (checks 7, 10, 11)."
+            ],
+            [
+              "H2: Missing labels can reverse the large July signup lead / Rejected for this example",
+              "Even assigning all 25 unknown signups to organic leaves a 1,104 lead for paid social. Close comparisons may behave differently (check 14)."
+            ],
+            [
+              "H3: Source label establishes channel causality / Inconclusive",
+              "Source is first-touch and no click-level linkage is available; recorded labels may be wrong and confounding is untested. No causal lift or return on spend follows from these counts."
+            ]
+          ]
+        }
+      ]
+    },
+    "data_quality": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "Bronze has 24,000 distinct users, 238 literal unknown values, no SQL NULLs or blanks; Silver matches Bronze source values for all profiles (checks 11-12). No flagged Silver profiles; 13 payment corrections appear in quality exceptions (checks 8-9).",
+            "Monthly new-payer unknown counts are 10, 1, 1, 1, 1 and 0; payer denominators can be small, making even one missing label consequential for close CAC comparisons (check 10).",
+            "Gold monthly spend has zero excluded days, but attribution is a channel-label match and cannot verify campaign or click attribution (check 5)."
+          ]
+        }
+      ]
+    },
+    "limitations": {
+      "blocks": [
+        {
+          "type": "bullets",
+          "items": [
+            "No independent validation of whether recorded known labels are correct; 1% unknown is not the total attribution error rate. Missingness may be systematic within segments.",
+            "The build-time registry SHA-256 (57b21d...1227) differs from this repository copy (4b5b2f...5554), although builder hashes match. Build checks do not demonstrate current definition equivalence or current source freshness.",
+            "Unknown users cannot be assigned without evidence. Sample comparisons are not a universal guarantee for every channel, cohort, period or metric."
+          ]
+        }
+      ]
+    },
+    "recommendations": {
+      "blocks": [
+        {
+          "type": "numbered",
+          "items": [
+            "Keep unknown visible, monitor source completeness by signup cohort, platform and campaign, and investigate collection failures.",
+            "For each decision, bound the result by allocating unknowns adversarially; require stronger evidence when rankings or cost ratios could flip.",
+            "Audit known source labels against independent attribution records and validate the build registry mismatch and fresh source fingerprints. Use experiments or a defensible causal design for spend decisions."
+          ]
+        }
+      ]
+    },
+    "appendix": {
+      "blocks": [
+        {
+          "type": "table",
+          "widths": [
+            0.24,
+            0.76
+          ],
+          "rows": [
+            [
+              "Checks",
+              "Evidence log subjects"
+            ],
+            [
+              "01-04",
+              "Inventory, snapshot, schema, build metadata and reconciliations"
+            ],
+            [
+              "05-06",
+              "Marketing and activity monthly source slices"
+            ],
+            [
+              "07-09",
+              "Bronze values, Silver exceptions and profile coverage"
+            ],
+            [
+              "10-12",
+              "Gold signup reconciliation, raw completeness, Bronze-Silver agreement"
+            ],
+            [
+              "13-14",
+              "MAU reconciliation and sensitivity inputs"
+            ]
+          ]
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Each qNN.jsonl contains SQL, results, limits and timing; qNN-request.json records inputs. All 14 queries succeeded without truncation. Full paths, timestamps, hashes and run count are in RUN-NOTES.md."
+          ]
+        }
+      ]
+    }
+  }
+}
