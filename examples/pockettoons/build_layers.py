@@ -30,7 +30,22 @@ REQUIRED_SOURCE = {
     'identity_links': {'identity_link_id', 'session_id', 'user_id'},
 }
 
+# Source tables exposed in Bronze, with their role (see the layer contracts).
+SOURCE_ROLES = {
+    'sessions': 'raw record', 'identity_links': 'raw record', 'content_views': 'raw record',
+    'playback_segments': 'raw record', 'user_events': 'raw record', 'transactions': 'raw record',
+    'payment_status_history': 'raw record', 'marketing_spend': 'raw record',
+    'raw_payment_source': 'raw provider feed',
+    'subscription_history': 'effective-dated history', 'content_availability_history': 'effective-dated history',
+    'content_tier_history': 'effective-dated history',
+    'users': 'current-state snapshot', 'anonymous_identities': 'current-state snapshot',
+    'content_catalog': 'current-state snapshot', 'content_episodes': 'current-state snapshot',
+    'transaction_content_attribution': 'derived business bridge', 'refund_content_attribution': 'derived business bridge',
+    'payment_quality_review': 'review evidence', 'dataset_metadata': 'metadata',
+}
+
 # Objects owned by this builder. Only these are dropped and recreated.
+OWNED_VIEWS = [f'bronze_{table}' for table in SOURCE_ROLES]
 OWNED_TABLES = ['silver_resolved_sessions']
 OWNED_INDEXES = ['ix_silver_resolved_sessions_user_time', 'ix_silver_resolved_sessions_time']
 
@@ -99,13 +114,16 @@ def check_schema(db):
             problems.append(f'missing table {table}')
         elif columns - present:
             problems.append(f'{table} missing columns {sorted(columns - present)}')
+    for table in SOURCE_ROLES:
+        if table not in REQUIRED_SOURCE and not db.execute(f'PRAGMA table_info("{table}")').fetchall():
+            problems.append(f'missing table {table}')
     if problems:
         raise ValueError('source schema mismatch: ' + '; '.join(problems))
 
 
 def fingerprint(db):
     result = {}
-    for table in REQUIRED_SOURCE:
+    for table in SOURCE_ROLES:
         rows = db.execute(f'SELECT * FROM "{table}" ORDER BY 1').fetchall()
         result[table] = {'rows': len(rows), 'sha256': hashlib.sha256(repr(rows).encode()).hexdigest()}
     return result
@@ -134,6 +152,9 @@ def independent_recount(db):
 
 def reconcile(db):
     checks = {}
+    checks['bronze_views_match_source'] = all(
+        db.execute(f'SELECT COUNT(*) FROM bronze_{t}').fetchone()[0] == db.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+        for t in SOURCE_ROLES)
     source_rows = db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]
     silver_rows = db.execute('SELECT COUNT(*) FROM silver_resolved_sessions').fetchone()[0]
     checks['row_count_equals_source'] = silver_rows == source_rows
@@ -166,12 +187,15 @@ def build(path):
             db.execute(f'DROP INDEX IF EXISTS {index}')
         for table in OWNED_TABLES:
             db.execute(f'DROP TABLE IF EXISTS {table}')
+        for view in OWNED_VIEWS:
+            db.execute(f'DROP VIEW IF EXISTS {view}')
+            db.execute(f'CREATE VIEW {view} AS SELECT * FROM "{view[len("bronze_"):]}"')
         for statement in SILVER_RESOLVED_SESSIONS.strip().split(';\n'):
             if statement.strip():
                 db.execute(statement, {'build_id': build_id} if ':build_id' in statement else {})
         checks, details = reconcile(db)
         record['reconciliation'] = json.dumps({'checks': checks, 'details': details})
-        record['row_counts'] = json.dumps({t: db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in OWNED_TABLES})
+        record['row_counts'] = json.dumps({t: db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in OWNED_VIEWS + OWNED_TABLES})
         failed = [name for name, ok in checks.items() if not ok]
         if failed:
             raise AssertionError('reconciliation failed: ' + ', '.join(failed))
