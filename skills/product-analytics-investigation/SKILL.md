@@ -111,14 +111,26 @@ clarify the answer, with labels, units, periods, sources and data-quality
 caveats. Do not imply an unbuilt chart or output file exists. Ask before
 writing to an external system or sharing data beyond the authorized scope.
 
-Deliver the report as a PDF of at most 10 pages, built with
-`tools/report_pdf.py` from a content file in the format of
-`docs/deliverables/report-content-example.json`, following
+State findings with the certainty the evidence supports:
+
+- Name comparison periods and populations exactly, and compare amounts on the
+  same time basis (monthly with monthly, quarterly with quarterly).
+- Mark a hypothesis supported only for what the evidence shows (an observed
+  pattern is not a proven mechanism), and inconclusive when the evidence
+  cannot rule it in or out.
+- For data-quality caveats, quantify the affected scope and assess impact or
+  sensitivity where feasible and material. If either is unknown, say so.
+- For time-bounded questions, define and enforce the appropriate start and end
+  boundaries, including the timezone and whether each boundary is inclusive or
+  exclusive.
+- Keep a material unexplained anomaly open until evidence supports resolving
+  it. Do not say it has no impact unless that has been assessed.
+
+When a report is requested, or for the assignment deliverable, deliver it as a
+PDF of at most 10 pages built with `tools/report_pdf.py` from a content file in
+the format of `docs/deliverables/report-content-example.json`, following
 `docs/deliverables/investigation-report-template.md`. The generator fixes the
 layout and refuses longer reports; shorten the content rather than changing
-the template. Write for a business reader: plain words, terms explained in the
-glossary, every number tied to its check, comparison periods named exactly,
-and amounts compared on the same time basis. Mark a hypothesis supported only
-for what the evidence shows (a pattern is not a mechanism) and inconclusive
-when the evidence cannot rule it in or out. Keep the content file and the PDF
-with the private evidence logs, not in the repository.
+the template. A quick metric question or a clarification does not need a
+report; answer it directly with its evidence. Keep report content files and
+PDFs with the private evidence logs, not in the repository.
