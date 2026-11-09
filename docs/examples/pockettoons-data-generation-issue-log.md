@@ -82,6 +82,12 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Resolution:** The fixture includes 5,273 browsing-only sessions and repeat views with playback-position continuity. Session duration, playback duration and completion are separate measures.
 
+### Episode completion and the daily free limit
+
+**Issue and impact:** Every view lasted 4–10 minutes of a 16–25 minute episode, so no view reached 90% completion; the eight-episode daily free limit was reached only in one scenario. Completion and free-limit analyses would have shown zero.
+
+**Resolution:** Some views watch the episode to the end, and some of those continue to the next episode to the end; completed episodes are not followed by a same-day resume. About 130 times a month a never-subscribed free viewer returns later the same UTC day, watches seven more distinct free episodes of the same title, and a ninth attempt is blocked with `daily_free_quota_exhausted`. These visits fall on days the user is already active, so monthly MAU is unchanged; payments are unaffected.
+
 ### Subscriber departures
 
 **Issue and impact:** Exactly 100 subscribers left in every month, an implausibly constant churn count.
