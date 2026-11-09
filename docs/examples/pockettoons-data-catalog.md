@@ -4,7 +4,7 @@
 
 **Reading the column lists:** Each line identifies a column and its meaning. All columns have SQLite TEXT type except amounts and completion percentages (REAL), counts, durations, positions, episode numbers and boolean flags (INTEGER), and raw_amount (no declared type). Timestamps are UTC ISO-8601 values stored as TEXT. Dates are TEXT. A question mark after a column means nullable in the current schema; other non-key columns are declared NOT NULL. SQLite text primary keys are not always explicitly declared NOT NULL, but the model and existing checker require non-null identifiers. Composite key columns are declared NOT NULL.
 
-All tables below exist in newly generated fixtures. Logical Bronze/Silver/Gold assignments, transformations and reconciliation are planned, not implemented. Dataset-level metadata stores the user snapshot timestamp. Examples are illustrative; not real customer records. Existing checker coverage is selective: a model requirement is not automatically a database constraint or a passing test.
+All tables below exist in newly generated fixtures. Bronze views over every table, the Silver and Gold tables built from them, and their reconciliation are defined in the [PocketToons layer contracts](../data-layers/pockettoons-layer-contracts.md) and built by `examples/pockettoons/build_layers.py`; source tables are never modified by a build. Dataset-level metadata stores the user snapshot timestamp. Examples are illustrative; not real customer records. Existing checker coverage is selective: a model requirement is not automatically a database constraint or a passing test.
 
 ## Shared safe-use rules
 
@@ -551,7 +551,7 @@ A checkout's optional triggering_paywall_event_id references the specific trigge
 
 ## Open implementation work
 
-The user-profile update check covers generated status changes but not all possible source profile changes. The full data layers, metric registry, catalog machine-readable format and agent integration remain future work. Each proposed quality check must be implemented and verified before it is described as an existing check.
+The user-profile update check covers generated status changes but not all possible source profile changes. The data layers and metric registry are complete for this stage; a machine-readable catalog format and agent integration remain future work. Each proposed quality check must be implemented and verified before it is described as an existing check.
 
 ## 18. dataset_metadata
 
