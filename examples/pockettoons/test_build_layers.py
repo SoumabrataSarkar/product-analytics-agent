@@ -123,13 +123,31 @@ class BuilderTests(unittest.TestCase):
           ('g_u2d','v_u2d','2026-04-11T12:30:00Z','2026-04-11T12:30:40Z',40,30,70),
           ('g_late','v_u1_late','2026-04-20T10:00:00Z','2026-04-20T10:01:00Z',60,40,100);
         ''')
+        db.executescript('''
+        CREATE TABLE user_events(event_id TEXT PRIMARY KEY, user_id TEXT, event_at TEXT, event_name TEXT, session_id TEXT,
+          content_id TEXT, episode_number INTEGER, event_properties_json TEXT, triggering_paywall_event_id TEXT);
+        INSERT INTO user_events VALUES
+          ('pw_buy','s3','2026-06-05T10:00:00Z','paywall_viewed',NULL,NULL,NULL,'{"product":"subscription"}',NULL),
+          ('co_ok','s3','2026-06-05T10:01:00Z','checkout_started',NULL,NULL,NULL,NULL,'pw_buy'),
+          ('co_fail','s3','2026-06-05T10:03:00Z','checkout_started',NULL,NULL,NULL,NULL,'pw_buy'),
+          ('pw_session',NULL,'2026-04-11T10:02:00Z','paywall_viewed','s_link','c1',2,'{"product":"ppv"}',NULL),
+          ('pw_odd',NULL,'2026-04-14T10:02:00Z','paywall_viewed','s_two',NULL,NULL,'{"product":"bundle"}',NULL),
+          ('pw_late','u1','2026-04-10T10:10:00Z','paywall_viewed','s_user',NULL,NULL,'{"product":"subscription"}',NULL),
+          ('co_early','u1','2026-04-10T10:05:00Z','checkout_started','s_user',NULL,NULL,NULL,'pw_late'),
+          ('other','u1','2026-04-10T10:06:00Z','episode_detail_viewed','s_user',NULL,NULL,NULL,NULL);
+        ''')
+        for txn_id, checkout, status in (('t_pw_ok', 'co_ok', 'succeeded'), ('t_pw_fail', 'co_fail', 'failed')):
+            db.execute("INSERT INTO transactions VALUES(?,'s3','subscription','subscription_initial',9.99,'card',"
+                       "'2026-06-05T10:02:00Z',NULL,NULL,NULL,9.99,'US',?)", (txn_id, checkout))
+            db.execute("INSERT INTO payment_status_history VALUES(?,?,?,'2026-06-05T10:02:00Z','2026-06-05T10:02:00Z')",
+                       (txn_id + '_0', txn_id, status))
         for n in range(1, 9):  # p1 uses all eight free slots on one day
             db.execute("INSERT INTO content_views VALUES(?,?,?,?,?,?,?,?,?,?)",
                        (f'v_q{n}', 'p1', 'c3', n, '2026-04-22', f'2026-04-22T1{n}:00:00Z', 'free', 1, 1, n))
         for table in build_layers.SOURCE_ROLES:
             if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
                              'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments',
-                             'content_episodes'):
+                             'content_episodes', 'user_events'):
                 db.execute(f'CREATE TABLE "{table}"(id TEXT)')
         db.commit()
         db.close()
@@ -319,6 +337,23 @@ class BuilderTests(unittest.TestCase):
         episodes = {k: v for k, v in checks.items() if k.startswith('silver_user_episodes')}
         self.assertEqual(len(episodes), 4)
         self.assertTrue(all(episodes.values()))
+
+    def test_paywall_funnel_checkouts_purchases_and_exceptions(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[0]: r[1:] for r in self.query('''SELECT paywall_event_id, user_id, product, checkouts_started,
+            first_checkout_event_id, purchase_txn_id, purchase_revenue_cents, exception_status, exception_reason
+            FROM silver_paywall_funnel''')}
+        self.assertEqual(set(rows), {'pw_buy', 'pw_session', 'pw_odd', 'pw_late'})  # paywall views only
+        self.assertEqual(rows['pw_buy'][:6], ('s3', 'subscription', 2, 'co_ok', 't_pw_ok', 999))  # failed retry ignored
+        self.assertEqual(rows['pw_buy'][6:], ('ok', None))
+        self.assertEqual(rows['pw_session'][:4], ('u2', 'ppv', 0, None))           # viewer from the resolved session
+        self.assertEqual(rows['pw_odd'][6:], ('suspicious_usable', 'unidentified_viewer,unrecognised_product'))
+        self.assertEqual(rows['pw_late'][6:], ('suspicious_usable', 'checkout_before_paywall'))
+        checks = json.loads(result['reconciliation'])['checks']
+        funnel = {k: v for k, v in checks.items() if k.startswith('silver_paywall_funnel')}
+        self.assertEqual(len(funnel), 5)
+        self.assertTrue(all(funnel.values()))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
