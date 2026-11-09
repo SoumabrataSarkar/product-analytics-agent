@@ -58,7 +58,7 @@ Use this format for every layer table:
 
 Before accepting a set of Silver tables, map every approved metric, dimension and example question to the table and columns that answer it. A gap means another table, a view, or a documented safe query against the source.
 
-### 4. Design Gold from questions
+### 4. Design Gold from questions *(PocketToons: done)*
 
 For each Gold table: the row grain (for example one month, or one month per channel), the metrics and dimensions it contains, which values may be summed across rows, and which questions must go to Silver. Distinct counts and ratios are stored only at their own grain and never summed or averaged into another grain.
 
