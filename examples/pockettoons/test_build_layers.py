@@ -421,6 +421,26 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(len(kpi), 24)
         self.assertTrue(all(kpi.values()))
 
+    def test_gold_activity_segments_and_growth_accounting(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[:3]: r[3:] for r in self.query('''SELECT month, dimension, value, active_users, engaged_users, mau
+            FROM gold_activity_segments_monthly''')}
+        self.assertEqual(rows[('2026-04', 'all', 'all')][:1], (6,))
+        self.assertEqual(rows[('2026-04', 'platform', 'web')][0], 3)              # u2 twice, u3, ghost on web
+        self.assertEqual(rows[('2026-04', 'acquisition_source', 'missing_user_record')][0], 1)   # ghost
+        self.assertEqual(rows[('2026-04', 'acquisition_source', 'unknown')][0], 1)               # u3: NULL source
+        self.assertIsNone(rows[('2026-04', 'platform', 'web')][1])               # engaged only by acquisition source
+        self.assertEqual(rows[('2026-04', 'acquisition_source', 'paid_search')][1], 1)           # u2 watched 90 s
+        growth = self.query('SELECT month FROM gold_growth_accounting_monthly ORDER BY month')
+        self.assertEqual(growth[0], ('2026-05',))                                # first month has no previous month
+        self.assertEqual(len(growth), 5)
+        checks = json.loads(result['reconciliation'])['checks']
+        gold = {k: v for k, v in checks.items()
+                if k.startswith(('gold_activity_segments_monthly', 'gold_growth_accounting_monthly'))}
+        self.assertEqual(len(gold), 13)
+        self.assertTrue(all(gold.values()))
+
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
         build_layers.build(self.path)
