@@ -17,6 +17,7 @@ An LLM-agnostic product analytics agent using shared analytical skills, metric d
 - [Architecture evaluation template](docs/evaluations/architecture-review-template.md)
 - [Coding-agent guidance](AGENTS.md) · [Claude entrypoint](CLAUDE.md)
 - [Investigation tools and current status](tools/INVESTIGATION.md)
+- [Shared investigation skill](skills/product-analytics-investigation/SKILL.md)
 - [PocketToons data-model contract](docs/examples/pockettoons-reference-data-model-v1.md)
 - [PocketToons dataset and validation](examples/pockettoons/README.md)
 - [Data-generation issue log](docs/examples/pockettoons-data-generation-issue-log.md)
@@ -44,7 +45,7 @@ Evidence ledger → quantified RCA report and recommendations
 
 The planned investigation is autonomous, with at most three rounds of up to three distinct hypotheses; it should stop early when adequately explained or ask for human direction when exhausted. It must not invent causes.
 
-The intended runtime is Codex or Claude Code using shared project instructions. The query and evidence tools exist, but the shared investigation skill and its integration, end-to-end report generation and independent evaluation are not yet complete. The experimental Python loop is not a turnkey agent. Runtime access depends on the user's chosen coding tool and account.
+The intended runtime is Codex or Claude Code using the shared investigation skill. The skill and query/evidence commands exist, but have not yet been independently evaluated in a complete investigation. End-to-end report generation and the evaluation suite remain incomplete. The experimental Python loop is not a turnkey agent. Runtime access depends on the user's chosen coding tool and account.
 
 ## Visual explorer
 
