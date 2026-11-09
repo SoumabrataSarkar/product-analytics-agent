@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts` and `silver_subscription_access` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access` and `silver_user_profile` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -90,3 +90,21 @@
 | Does not support | Payments (`silver_payment_attempts`) |
 | Reconciliation | Row count equals source periods; access and no-access counts add to the total; an independent Python merge of each user's access intervals reproduces run starts and known losses; subscribers at each month start equal the registry churn denominator on the source; month-end subscribers and MRR equal the registry `mrr_monthly` on the source |
 | Tests | Renewal continuity, cancellation notice, lapse and return, scheduled end after the snapshot, expired and refunded periods, overlap, unsuccessful source charge, invalid price |
+
+## silver_user_profile
+
+| Part | Contract |
+|---|---|
+| Purpose | One place for who each user is and when they first reached each lifecycle milestone, for cohorts and acquisition slices |
+| Grain | One row per `users` row, including users with no activity |
+| Key and indexes | `user_id` primary key; indexes on `signup_at` and (`acquisition_source`, `signup_at`) |
+| Columns | `user_id`; `signup_at`; `signup_date`; `signup_month`; `acquisition_source` (NULL becomes `unknown`; an unrecognised value is kept as given); `country_origin`; `country_current_snapshot`; `subscription_status_snapshot`; `first_session_at`; `first_engaged_date`; `first_paid_at`; `first_subscription_at`; `first_ppv_at`; `subscription_spells`; `is_returning_subscriber` (1 when spells > 1); `exception_status`; `exception_reason`; `build_id` |
+| Rules | Milestones are derived from other Silver tables so each rule lives in one place: first session from `silver_resolved_sessions` (resolved users only); first paid, subscription and PPV charge from `silver_payment_attempts` rows with `revenue_cents` > 0, so a later refund does not erase the milestone; spells from `silver_subscription_access`. First engaged date is the first UTC day with at least 60 watched seconds, split across days by wall-clock share as in `activation_7d`. |
+| Snapshot attributes | `_snapshot` columns are the values as of `dataset_metadata.users_snapshot_at`, not history. Use them for current-state slices only; use `silver_subscription_access` for status at a past instant. |
+| Time | UTC |
+| Lineage | `users` one-to-one; `content_views` and `playback_segments` for engagement; the three Silver tables above |
+| Exceptions | `suspicious_usable` with reasons `invalid_signup_time`, `activity_before_signup` or `unrecognised_acquisition_source` (comma-separated when several apply) |
+| Supports | Signups by month and source, 7-day activation, 30-day conversion, time to first payment, returning subscribers, acquisition and country slices |
+| Does not support | Activity counts or revenue amounts (use the activity and payment tables); historical country or status |
+| Reconciliation | Rows and keys equal `users`; an independent Python recount reproduces first valid paid charge and first identified session; monthly signups by source equal the registry `new_signups_monthly`, activation equals `activation_7d` and conversion equals `conversion_30d` on the source |
+| Tests | No activity, PPV before subscription, refunded first charge, excluded charges, cross-midnight engagement, under-60-second watching, returning subscriber, snapshot country, unknown and unrecognised source, invalid signup time, activity before signup |
