@@ -1,6 +1,6 @@
 # Data Catalog: PocketToons reference fixture
 
-**Status:** Draft for review. This catalog describes the synthetic SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 20 tables, including dataset_metadata, content_tier_history and playback_segments. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions belong in a separate future metric registry. Frozen Architecture v1 is unchanged.
+**Status:** Reviewed for the current stage. This catalog describes the synthetic PocketToons SQLite fixture, not an implemented agent or a general catalog for every product. The fixture contains 20 tables, including dataset_metadata, content_tier_history and playback_segments. The reference data model specifies the intended contract; the catalog describes available data, relationships and safe use. Metric definitions are in the [PocketToons reference metric registry](../metrics/metric-registry.md), shared across agent runtimes but not automatically applicable to another dataset. Frozen Architecture v1 is unchanged.
 
 **Reading the column lists:** Each line identifies a column and its meaning. All columns have SQLite TEXT type except amounts and completion percentages (REAL), counts, durations, positions, episode numbers and boolean flags (INTEGER), and raw_amount (no declared type). Timestamps are UTC ISO-8601 values stored as TEXT. Dates are TEXT. A question mark after a column means nullable in the current schema; other non-key columns are declared NOT NULL. SQLite text primary keys are not always explicitly declared NOT NULL, but the model and existing checker require non-null identifiers. Composite key columns are declared NOT NULL.
 
@@ -10,7 +10,7 @@ All tables below exist in newly generated fixtures. Logical Bronze/Silver/Gold a
 
 - State the reporting grain before joining. Aggregate separate one-to-many facts before combining them; do not sum a repeated transaction or session amount.
 - Identify an episode by both content_id and episode_number. Use effective start-inclusive, end-exclusive intervals for as-of joins; check that at most one applicable interval matches.
-- Event dates are derived UTC compatibility fields; the marketing spend date is a source reporting date and cannot be assumed UTC without source evidence.
+- Event dates are derived UTC compatibility fields. In this synthetic fixture the marketing spend date is a UTC reporting day; for a real source, establish its actual reporting timezone rather than assuming UTC.
 - Preserve unknown acquisition attribution; do not allocate it silently. A direct channel match is not proof of user-level marketing attribution.
 - Raw, corrected and allocated amounts are related representations, not separate payments. Refunds are positive and subtracted in revenue calculations.
 - The reference model governs intended business rules. This catalog describes actual physical availability and known gaps; discrepancies require resolution rather than an invented assumption.
