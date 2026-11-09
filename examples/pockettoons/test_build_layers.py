@@ -96,16 +96,26 @@ class BuilderTests(unittest.TestCase):
           ('p1','2026-04-20T09:00:00Z','creator','US','CA','active'),
           ('s1','2026-06-01T09:00:00Z','organic','US','US','active'),
           ('s3','2026-06-01T09:00:00Z','referral','US','US','active');
-        CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT, content_id TEXT, view_started_at TEXT);
+        CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT, content_id TEXT, episode_number INTEGER,
+          date TEXT, view_started_at TEXT, view_type TEXT, is_first_view_of_episode INTEGER,
+          free_quota_consuming INTEGER, free_quota_sequence INTEGER);
         CREATE TABLE playback_segments(segment_id TEXT PRIMARY KEY, view_id TEXT, segment_started_at TEXT,
           segment_ended_at TEXT, watch_duration_sec INTEGER);
-        INSERT INTO content_views VALUES('v_u1','u1','c1','2026-04-09T23:58:00Z'), ('v_u2','u2','c1','2026-04-11T10:00:00Z'),
-          ('v_u5','u5','c2','2026-04-14T10:00:00Z');
+        INSERT INTO content_views VALUES
+          ('v_u1','u1','c1',1,'2026-04-09','2026-04-09T23:58:00Z','free',1,1,1),
+          ('v_u2','u2','c1',1,'2026-04-11','2026-04-11T10:00:00Z','free',1,1,1),
+          ('v_u2b','u2','c2',1,'2026-04-11','2026-04-11T11:00:00Z','sub',1,0,NULL),
+          ('v_u2c','u2','c1',2,'2026-04-11','2026-04-11T12:00:00Z','sub',1,0,NULL),
+          ('v_u2d','u2','c1',2,'2026-04-11','2026-04-11T12:30:00Z','sub',0,0,NULL),
+          ('v_u5','u5','c2',1,'2026-04-14','2026-04-14T10:00:00Z','free',1,1,3);
         INSERT INTO playback_segments VALUES
           ('g_midnight','v_u1','2026-04-09T23:58:00Z','2026-04-10T00:01:00Z',180),
           ('g_u2','v_u2','2026-04-11T10:00:00Z','2026-04-11T10:01:30Z',90),
           ('g_short','v_u5','2026-04-14T10:00:00Z','2026-04-14T10:00:30Z',30);
         ''')
+        for n in range(1, 9):  # p1 uses all eight free slots on one day
+            db.execute("INSERT INTO content_views VALUES(?,?,?,?,?,?,?,?,?,?)",
+                       (f'v_q{n}', 'p1', 'c3', n, '2026-04-22', f'2026-04-22T1{n}:00:00Z', 'free', 1, 1, n))
         for table in build_layers.SOURCE_ROLES:
             if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
                              'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments'):
@@ -244,7 +254,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(rows[('u1', '2026-04-09')][:2], (0, 0))                 # watch-only day kept
         self.assertAlmostEqual(rows[('u1', '2026-04-09')][3], 120)               # 180 s split by wall-clock share
         self.assertAlmostEqual(rows[('u1', '2026-04-10')][3], 60)
-        self.assertEqual(rows[('u2', '2026-04-11')][4], 1)                       # one view started
+        self.assertEqual(rows[('u2', '2026-04-11')][4], 4)                       # four views started
         self.assertEqual(rows[('s1', '2026-06-04')][5], 1)                       # access began 06-03 01:00
         self.assertEqual(rows[('u1', '2026-04-10')][5], 0)
         self.assertEqual(rows[('u3', '2026-04-13')][6:], ('suspicious_usable', 'activity_before_signup'))
@@ -253,8 +263,32 @@ class BuilderTests(unittest.TestCase):
         self.assertNotIn(('u6', '2026-04-14'), rows)                             # ambiguous session is not attributed
         checks = json.loads(result['reconciliation'])['checks']
         activity = {k: v for k, v in checks.items() if k.startswith('silver_user_day_activity')}
-        self.assertEqual(len(activity), 11)
+        self.assertEqual(len(activity), 12)
+        quota = dict(((r[0], r[1]), r[2:]) for r in self.query(
+            'SELECT user_id, activity_date, free_quota_slots_used, exception_reason FROM silver_user_day_activity'))
+        self.assertEqual(quota[('p1', '2026-04-22')], (8, None))                 # quota hit
+        self.assertEqual(quota[('u2', '2026-04-11')], (1, None))                 # subscription views use no slot
+        self.assertEqual(quota[('u5', '2026-04-14')], (3, 'free_quota_sequence_gap'))  # slot 3 with one consuming view
         self.assertTrue(all(activity.values()))
+
+    def test_user_day_title_watch_titles_view_types_and_watch(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[:4]: r[4:] for r in self.query('''SELECT user_id, activity_date, content_id, view_type, views_started,
+            episodes_started, first_views_of_episode, watch_seconds, exception_status FROM silver_user_day_title_watch''')}
+        self.assertEqual(rows[('u2', '2026-04-11', 'c1', 'free')][:3], (1, 1, 1))
+        self.assertAlmostEqual(rows[('u2', '2026-04-11', 'c1', 'free')][3], 90)
+        self.assertEqual(rows[('u2', '2026-04-11', 'c1', 'sub')][:4], (2, 1, 1, 0.0))  # rewatch is not a first view
+        self.assertEqual(rows[('u2', '2026-04-11', 'c2', 'sub')][:2], (1, 1))         # second title same day
+        self.assertAlmostEqual(rows[('u1', '2026-04-09', 'c1', 'free')][3], 120)      # split across midnight
+        self.assertAlmostEqual(rows[('u1', '2026-04-10', 'c1', 'free')][3], 60)
+        self.assertEqual(rows[('u1', '2026-04-10', 'c1', 'free')][0], 0)              # watch-only day for the title
+        self.assertEqual(rows[('p1', '2026-04-22', 'c3', 'free')][:2], (8, 8))
+        self.assertEqual(rows[('u2', '2026-04-11', 'c1', 'free')][4], 'ok')
+        checks = json.loads(result['reconciliation'])['checks']
+        title = {k: v for k, v in checks.items() if k.startswith('silver_user_day_title_watch')}
+        self.assertEqual(len(title), 6)
+        self.assertTrue(all(title.values()))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
