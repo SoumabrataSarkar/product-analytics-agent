@@ -66,7 +66,7 @@ An active period beginning 1 October ends at 1 November at the same UTC time; th
 | session_ended_at | TEXT | Yes | End at last observed activity; NULL for an open session. |
 | last_activity_at | TEXT | No | Latest observed engagement or playback heartbeat. |
 | duration_sec | INTEGER | Yes | Elapsed seconds; NULL while open. |
-| platform | TEXT | No | ios, android, web or tv; fixture contains ios, android, web. |
+| platform | TEXT | No | ios, android, web or tv; fixture contains ios, android, web, unevenly. |
 | country_at_event | TEXT | Yes | Observed country, NULL if unavailable. |
 | device_id_hash | TEXT | Yes | Privacy-safe device identifier if available; not a person key. |
 | app_version | TEXT | Yes | App version when available. |
