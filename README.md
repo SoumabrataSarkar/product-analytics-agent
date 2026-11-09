@@ -2,7 +2,7 @@
 
 An LLM-agnostic product analytics agent using shared analytical skills, metric definitions, and evidence-backed multi-step reasoning to investigate business questions, query data, identify root causes, and recommend actions.
 
-> **Project status:** Architecture v1.0 is frozen. The PocketToons synthetic-data generator and validation checks are available; the reviewed SQLite file is local. The analytics agent, shared query tooling and evaluation are pending. This is a private repository.
+> **Project status:** Architecture v1.0 is frozen. A reference synthetic-data generator and validation checks are available, and the reviewed database is local. The analytics agent, shared query tooling and evaluation are in progress or planned.
 
 ## Start here
 
@@ -42,10 +42,10 @@ The committed [`web/index.html`](web/index.html) is a **static documentation pro
 
 ## Planned work
 
-1. Define the shared Metric Registry, starting with MAU; integrate the accepted catalog into the agent.
+1. Maintain the shared data catalog and metric registry, then integrate their definitions into the agent.
 2. Implement and reconcile Bronze/Silver/Gold SQLite transformations.
 3. Build shared bounded SQL and evidence tools.
 4. Implement the analytical skill and independent evaluation (15+ questions).
 5. Produce evidence-backed investigation output and, when requested, secure optional web integration.
 
-The framework is intended for eventual open-source publication. Keep confidential assignment material, keys and private data out of public releases and their Git history. Licensing will be decided before publication.
+The framework is intended for future open-source publication and continued improvements.
