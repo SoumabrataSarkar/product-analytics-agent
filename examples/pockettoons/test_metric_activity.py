@@ -17,7 +17,7 @@ class ActivityTests(unittest.TestCase):
         CREATE TABLE identity_links(identity_link_id TEXT, anonymous_id TEXT, user_id TEXT,
                                     session_id TEXT, linked_at TEXT);
         CREATE TABLE users(user_id TEXT, signup_at TEXT);
-        CREATE TABLE content_views(view_id TEXT, user_id TEXT);
+        CREATE TABLE content_views(view_id TEXT, user_id TEXT, content_id TEXT);
         CREATE TABLE playback_segments(segment_id TEXT, view_id TEXT, segment_started_at TEXT,
                                        segment_ended_at TEXT, watch_duration_sec INTEGER);
         ''')
@@ -31,7 +31,7 @@ class ActivityTests(unittest.TestCase):
 
     def watch(self, user, start, end, seconds):
         self.n += 1
-        self.db.execute('INSERT INTO content_views VALUES(?,?)', (f'v{self.n}', user))
+        self.db.execute('INSERT INTO content_views VALUES(?,?,?)', (f'v{self.n}', user, 'c1'))
         self.db.execute('INSERT INTO playback_segments VALUES(?,?,?,?,?)', (f'g{self.n}', f'v{self.n}', start, end, seconds))
 
     def user(self, user, signup):
