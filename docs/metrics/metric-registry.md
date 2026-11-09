@@ -13,6 +13,7 @@
 - Each quality check is marked **implemented and tested** or **proposed**.
 - A request that differs from a registered definition uses a registered alternative when one exists. Otherwise the result is labelled as an ad hoc variant, is not reported under the registered metric's name and is shown with its SQL. The evidence log records the definition used: registry id and version, or ad hoc with its SQL.
 - A proposed metric is named for future definition only; it has no approved semantics and must not be computed as if it were registered.
+- Canonical SQL must run on SQLite 3.37 or later. For example, `HAVING` needs a `GROUP BY` clause before it (required before SQLite 3.39).
 
 ## Metric map
 
@@ -90,6 +91,7 @@ resolved AS (
          COALESCE(s.user_id,
                   (SELECT MIN(l.user_id) FROM identity_links l
                    WHERE l.session_id = s.session_id
+                   GROUP BY l.session_id
                    HAVING COUNT(DISTINCT l.user_id) = 1)) AS resolved_user_id
   FROM sessions s
 ),
@@ -140,6 +142,7 @@ resolved AS (
          COALESCE(s.user_id,
                   (SELECT MIN(l.user_id) FROM identity_links l
                    WHERE l.session_id = s.session_id
+                   GROUP BY l.session_id
                    HAVING COUNT(DISTINCT l.user_id) = 1)) AS resolved_user_id
   FROM sessions s
 )
@@ -239,6 +242,7 @@ SELECT s.session_id, s.session_started_at, s.last_activity_at, s.platform, s.cou
        COALESCE(s.user_id,
                 (SELECT MIN(l.user_id) FROM identity_links l
                  WHERE l.session_id = s.session_id
+                 GROUP BY l.session_id
                  HAVING COUNT(DISTINCT l.user_id) = 1)) AS resolved_user_id
 FROM sessions s
 ```
