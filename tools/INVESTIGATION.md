@@ -7,8 +7,7 @@ query and evidence tools, and produces an evidence-backed answer.
 
 The shared investigation skill is in
 [`skills/product-analytics-investigation/SKILL.md`](../skills/product-analytics-investigation/SKILL.md).
-The skill and query commands have targeted tests. An 18-scenario evaluation and selected reruns are documented in
-`docs/evaluations/results.md`; keep evaluation files out of independent runs.
+The query, evidence, report and experimental loop tools have targeted tests. The shared skill was exercised in an 18-scenario evaluation and selected reruns: see [results](../docs/evaluations/results.md) and [the evaluation PDF](../submission/eval-results.pdf). Keep these evaluator materials out of independent investigation sessions.
 
 ## Existing tools
 
@@ -23,6 +22,10 @@ The skill and query commands have targeted tests. An 18-scenario evaluation and 
   file with one fixed template and refuses reports over 10 pages. It needs
   `reportlab` and `matplotlib`; the format is shown in
   `docs/deliverables/report-content-example.json`.
+- `investigation.py` is an experimental, model-neutral investigation loop: a
+  caller supplies a model adapter, and the loop enforces the round and
+  hypothesis limits around the query and evidence tools. It has scripted tests
+  only; the evaluated agent is the coding agent following the skill, not this loop.
 
 Run the tests from the repository root:
 
@@ -40,6 +43,5 @@ tool reduces accidental database changes but is not a complete security sandbox.
 Source-layer labels and snapshot identifiers are assertions supplied by the
 caller, not proof that routing or freshness is correct. Independently check
 metric definitions, joins, data quality, SQL, numerical results and claims.
-The skill requires end-to-end evaluation. Report output, visualizations and
-the independent evaluation suite remain work to complete.
-
+The skill requires end-to-end evaluation; results are in
+[`docs/evaluations/results.md`](../docs/evaluations/results.md).

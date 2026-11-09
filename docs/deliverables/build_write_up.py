@@ -41,7 +41,7 @@ def h2(num, text):
                    Paragraph(text, st("h", fontName="B", fontSize=10.5, leading=12))]],
                  colWidths=[8 * mm, W - 8 * mm],
                  style=[("LINEBELOW", (0, 0), (-1, -1), 0.8, C(T.INK)), ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 6)])
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 5.5)])
 
 
 def bullets(items):
@@ -147,16 +147,14 @@ def scorecard():
 def type_table():
     rows = [
         ("S", "Simple numbers and filters", "Q01 Q05 Q08 Q17 Q18", "All pass", "Exact to the user and the cent"),
-        ("S", "Vague or ambiguous questions", "Q03 Q10 Q15 Q18", "All pass", "Asked before choosing a metric, period or meaning"),
+        ("S", "Vague questions", "Q03 Q10 Q15 Q18", "All pass", "Asked, or stated a clear choice, before picking a metric, period or meaning"),
         ("S", "Unanswerable question", "Q16", "Pass", "Declined and named the data that's missing"),
         ("S", "Data-quality traps", "Q12 Q13 Q14", "All pass", "Caught both planted issues; didn't claim to have detected a reviewed one"),
         ("S", "Comparisons and lifecycle", "Q04 Q06 Q09", "All pass", "Right time basis; groups reconcile to the total"),
-        ("F", "Cohort conversion", "Q07", "Fail → Pass", "Used April, the month the subscriber base forms, as a normal baseline. "
-         "A new skill rule fixed it"),
-        ("P", "Funnel drop-off", "Q11", "Partial", "Right answer and gaps, but read April's start-up as a funnel decline; "
-         "the new rule didn't trigger here"),
-        ("F", "GM investigation", "Q02", "Fail → Pass", "v1: headline numbers and story right, but some conclusions stated more firmly than the "
-         "evidence allowed. After review, three certainty rules joined the skill; v2 and a blind rerun on the updated skill both passed"),
+        ("F", "Cohort conversion", "Q07", "Fail → Pass", "Treated April, the start-up month, as a normal baseline; a new skill rule fixed it"),
+        ("P", "Funnel drop-off", "Q11", "Partial", "Right answer, but read April's start-up as a funnel decline; the rule didn't trigger"),
+        ("F", "GM investigation", "Q02", "Fail → Pass", "v1 right on numbers but too firm on some conclusions; after three certainty rules, v2 and a "
+         "blind rerun both passed"),
     ]
     head = ["Question type", "Questions", "Result", "What happened"]
     data = [[Paragraph(c, HEAD) for c in head]]
@@ -190,23 +188,23 @@ def build(out):
 
     story += [h2("01", "What I built and why"), Spacer(1, 2 * mm), architecture(), Spacer(1, 3 * mm)]
     story += bullets([
-        "<b>Clarifies instead of assuming.</b> When the metric, period or meaning is open, it asks first and states every assumption it keeps.",
+        "<b>Clarifies instead of assuming.</b> When the metric, period or meaning is open, it asks or states a clear choice and records its assumptions.",
         "<b>Verifies the metric before computing it.</b> It confirms the metric exists and uses its approved definition and SQL from the "
         "metric registry, plus joins and known gaps from the data catalog. Unsupported requests are declined, not improvised.",
-        "<b>Maps the question to a layer for speed.</b> Gold answers standard monthly questions directly; Silver keeps per-user detail; "
-        "Bronze is only for auditing raw values. Fewer, smaller queries keep answers fast.",
+        "<b>Chooses the layer that fits.</b> Gold serves supported summaries; Silver preserves detail; Bronze provides source evidence. "
+        "Correctness and coverage take priority over speed.",
         "<b>Evidence for every number and LLM-neutral by design.</b> Each query is logged with its SQL, layer and metric version. Definitions, "
-        "rules and guardrails live in files, not prompts, so Claude Code and Codex behave the same and a lesson becomes a rule for every later run.",
+        "rules and tools are shared across runtimes; identical behavior is not guaranteed. A reference website explains the workflow.",
     ])
 
     story += [h2("02", "How it performed: 18 blind test questions, two rounds"), Spacer(1, 2 * mm), scorecard(), Spacer(1, 2 * mm),
               type_table(), Spacer(1, 1.2 * mm),
-              Paragraph("Scored against values computed beforehand from the raw tables. Correct numbers alone don't pass: a silent choice of "
+              Paragraph("Scored against expected values computed from the raw tables, not the agent's layers. Correct numbers alone don't pass: a silent choice of "
                         "definition, a missing caveat or an overstated conclusion fails. Round 2: Q02 was revised after review and rerun blind; Q07 and Q11 were rerun, "
                         "with Q01 and Q09 to check nothing broke; other results carry over. "
                         "<b>Hardest:</b> comparisons that need context the data doesn't announce, such as a start-up month.", SMALL)]
 
-    story += [h2("03", "Running it for a 20-person product team"), Spacer(1, 1.6 * mm)]
+    story += [h2("03", "Proposed rollout for a 20-person product team"), Spacer(1, 1.6 * mm)]
     lat = [[Paragraph("<b>Time to answer</b> (observed)", CELL), Paragraph("<b>Simple</b> (MAU by month): 2–3 min", CELL),
             Paragraph("<b>Normal</b> (refund impact): 5–6 min", CELL), Paragraph("<b>Complex</b> (MAU up, revenue flat): 10–12 min", CELL)]]
     story.append(Table(lat, colWidths=[W * 0.19, W * 0.24, W * 0.25, W * 0.32],
@@ -215,28 +213,29 @@ def build(out):
                               ("LEFTPADDING", (0, 0), (-1, -1), 4)]))
     story.append(Spacer(1, 1 * mm))
     story += bullets([
-        "<b>Set-up for real data:</b> first build a data catalog and metric registry for the team's warehouse; the agent relies on both.",
-        "<b>Cost (estimate):</b> running the 18 questions twice used about half of one 5-hour window on an INR 1,999-a-month Codex plan, so one "
-        "seat covers a heavy day of questions: about INR 1,999 per active analyst a month. Token cost per run wasn't measured.",
-        "<b>Lower cost and latency:</b> answer from the smallest layer that fits, with targeted queries instead of raw scans.",
-        "<b>Guardrails:</b> data is only ever read: a read-only database role on a replica plus the query tool's read-only check, row and "
-        "time limits; every figure traceable to its evidence log; sensitive columns kept out of the catalog.",
-        "<b>Freshness:</b> real data keeps arriving, unlike this static dataset. Add a freshness tracker (last load per source and layer) "
-        "that the agent checks first, warning or stopping when data is stale.",
-        "<b>Quality over time:</b> rerun the 18 questions on every change to the skill, registry or data; track pass rate, clarification "
-        "rate and query errors; review a weekly sample of real questions and turn failures into rules.",
+        "<b>How the team uses it:</b> analysts and PMs ask in plain English from Claude Code or Codex (later Slack or a web page), all "
+        "on one shared repository, so definitions and guardrails are the same for every person and model.",
+        "<b>Set-up:</b> build a data catalog and metric registry for the team's warehouse, with the analytics lead approving each "
+        "definition, then the Gold and Silver layers the agent routes to.",
+        "<b>Cost:</b> model usage and any warehouse costs; local SQLite has no query service fee. Not measured here: log tokens per question, then budget by question "
+        "type. Answering from the smallest layer that fits keeps both cost and latency down.",
+        "<b>Guardrails:</b> read-only access (database role plus the query tool's check), row and time limits, an evidence log behind "
+        "every figure, no sensitive columns in the catalog, and a question back when the ask is unclear.",
+        "<b>Freshness:</b> real data keeps arriving, unlike this dataset; provide a freshness tracker (last load per source "
+        "and layer) so the agent can warn or stop when data is stale.",
+        "<b>Quality over time:</b> a test set of questions with known answers (these 18, growing from real ones), rerun on every change "
+        "to the skill, definitions or data; track pass rate, clarification rate, query errors and user ratings; turn failures into rules.",
     ])
 
-    story += [h2("04", "With more time"), Spacer(1, 1.6 * mm)]
+    story += [h2("04", "With more time"), Spacer(1, 1.2 * mm)]
     story += bullets([
         "Run the same questions in both runtimes for a direct Claude vs Codex comparison, plus held-out questions.",
-        "Log tokens and time per run to replace the cost estimate with a measured cost per question.",
-        "A short-answer mode for simple questions; a helper that drafts the catalog for a new database; a Slack or web front end.",
+        "Measure tokens and time per question to put a real cost on each question type.",
+        "A helper that drafts the catalog and metric registry for a new database; a Slack or web front end.",
     ])
     story += [Spacer(1, 1.8 * mm), Paragraph(
-        "<b>Note on tools.</b> Claude Code (Claude Opus 5.5, medium) built the framework, ran the GM investigation and computed the answer key. "
-        "Codex (GPT Terra 6.1, medium) ran the evaluation, so the agent was tested in a runtime that didn't build it. ChatGPT (Terra 5.6, "
-        "later 6.1, medium) reviewed the GM report and evaluation decisions independently.", st("note", fontSize=7, leading=9, textColor=C(T.MUTED)))]
+        "<b>Tools:</b> Claude Code (Claude Opus 5.5, medium) built the framework, ran the GM investigation and the answer key; Codex (GPT Terra "
+        "6.1, medium) ran the evaluation; ChatGPT (Terra 5.6, later 6.1, medium) reviewed independently.", st("note", fontSize=7, leading=9, textColor=C(T.MUTED)))]
 
     doc = SimpleDocTemplate(str(out), pagesize=A4, leftMargin=M, rightMargin=M, topMargin=16 * mm, bottomMargin=9.5 * mm,
                             title="Write-up", author="Soumabrata Sarkar")
@@ -245,9 +244,12 @@ def build(out):
 
 if __name__ == "__main__":
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "submission" / "write-up.pdf"
-    build(out)
+    tmp = out.with_suffix(".tmp.pdf")
+    build(tmp)
     from pypdf import PdfReader
-    pages = len(PdfReader(str(out)).pages)
-    print(out, pages, "page(s)")
+    pages = len(PdfReader(str(tmp)).pages)
     if pages > 1:
-        raise SystemExit("write-up must fit on one page")
+        tmp.unlink()
+        raise SystemExit(f"write-up must fit on one page (got {pages}); {out} left unchanged")
+    tmp.replace(out)
+    print(out, pages, "page(s)")

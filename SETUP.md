@@ -1,11 +1,13 @@
 # Setup and reviewer guide
 
+For the shortest path from clone to first answer, use [QUICKSTART.md](QUICKSTART.md), including its copyable first prompt.
+
 This guide explains how to run the PocketToons reference investigation with the existing coding-agent workflow. The repository is private and requires authorized access. The SQLite database is distributed separately; it is not committed to GitHub.
 
 ## What you need
 
 - A local clone of this repository and permission to use it.
-- Python 3 and SQLite. The data generator uses only Python's standard library; the metric SQL requires SQLite 3.37 or newer. A local build was run with Python 3.9.6 and SQLite 3.51.0. Check your versions with:
+- Python 3.9 or newer and SQLite. The data generator uses only Python's standard library; the metric SQL requires SQLite 3.37 or newer. A local build was run with Python 3.9.6 and SQLite 3.51.0. Check your versions with:
 
   ```sh
   python3 -c "import sqlite3,sys; print('Python:', sys.version); print('SQLite:', sqlite3.sqlite_version)"
@@ -24,7 +26,7 @@ Run the remaining commands from the repository root. Do not place a database, pr
 
 ## Option A: download the reviewed database
 
-1. Obtain the authorized download link for the reviewed `pockettoons.sqlite` from the submission or project owner. A download link and access settings must be supplied separately.
+1. Download the reviewed `pockettoons.sqlite` from the [PocketToons database folder](https://drive.google.com/drive/folders/1owVdIJyOJr7BwMBqT6D8ltph1m5WOPkf?usp=drive_link) (access is granted by the project owner).
 2. Download it to a local folder, for example a sibling directory named `pockettoons-data` beside the repository. Let the download finish before opening it. Use a local copy for SQLite access, not a live database on a shared or synchronized drive.
 3. Verify the checksum supplied with the download. The reviewed snapshot associated with the initial investigation had SHA-256:
 
@@ -37,7 +39,7 @@ Run the remaining commands from the repository root. Do not place a database, pr
 
 The snapshot above contained 20 source tables, 20 Bronze views, 10 Silver tables and 8 Gold tables. The source data is fictional; the layers are built into the same SQLite file.
 
-## Option B: generate a fresh database
+## Optional: generate a separate test database
 
 The following example places the database outside the repository, in a new sibling folder. Choose a different output path if a file with this name already exists. The generator refuses to overwrite an existing database.
 
@@ -58,9 +60,29 @@ The dataset guide and generation output contain the planted synthetic story and 
 
 ## Start an investigation
 
+Use the [first-question prompt in QUICKSTART.md](QUICKSTART.md#3-ask-your-first-question). Replace its database path, output folder and question. This is the same entry point shown in the HTML reference.
+
+
 Open the repository in your authorized coding-agent runtime and ask it to read [AGENTS.md](AGENTS.md) and the shared [investigation skill](skills/product-analytics-investigation/SKILL.md). Provide your database's absolute path and permission to query it read-only. Ask a business question in plain language; the agent should inspect the appropriate catalog, metric registry and layer contracts, clarify material ambiguity and preserve evidence. It should not require you to write SQL.
 
-The [tool guide](tools/INVESTIGATION.md) describes the bounded SQL and evidence tools. The [implementation map](docs/architecture/implementation-status.md) distinguishes built components from planned features. Keep query logs and answer keys private; they may contain questions, SQL and returned data. The current tools reduce accidental writes but are not a complete security sandbox.
+For PDF reports, install the optional packages in a virtual environment with `python -m pip install -r requirements.txt` (Python 3.9 gets `reportlab<5`; reportlab 5 needs Python 3.10+). The [tool guide](tools/INVESTIGATION.md) describes the bounded SQL and evidence tools. The [implementation map](docs/architecture/implementation-status.md) distinguishes built components from planned features. Keep query logs and answer keys private; they may contain questions, SQL and returned data. The current tools reduce accidental writes but are not a complete security sandbox.
+
+## Check the installation
+
+Run the test suites from the repository root. Neither needs the downloaded database: each creates small temporary test fixtures. The fixture suite uses the standard library; seven PDF tests in the tools suite require the optional packages.
+
+```sh
+python3 -m unittest discover -s tools -p 'test_*.py'              # query, evidence, report and loop tools (29 tests)
+python3 -m unittest discover -s examples/pockettoons -p 'test_*.py'  # generator, checks, layers and metric SQL (218 tests)
+```
+
+Without the optional packages, the seven PDF tests are skipped. To run all 29 tool tests, first install the packages in a virtual environment:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
 
 ## Dataset overview
 

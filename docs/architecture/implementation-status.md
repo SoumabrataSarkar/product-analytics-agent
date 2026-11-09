@@ -13,9 +13,9 @@
 | Data storage | The source data and layers are in one local SQLite file. The reviewed file is distributed separately from the repository. |
 | Data layers | PocketToons implements 20 Bronze views, 10 Silver tables and 8 Gold tables. Bronze views expose source tables; Silver and Gold are physical tables with build metadata and reconciliation. Consult the contracts and verify the specific build rather than assuming every dataset has these layers. |
 | Routing | Use Gold only when validated and suitable for the measure, dimensions, grain, period and evidence; otherwise consider Silver or source/Bronze as needed. Correctness outranks speed. |
-| Reports | A coding agent can produce an evidence-backed report. `tools/report_pdf.py` generates the fixed-template PDF (up to 10 pages) and requires ReportLab and Matplotlib. Preserve original agent output and identify human-reviewed edits. |
-| Evaluation | A first independent-mode MAU/revenue investigation was run and reviewed; the original report had material failures and a corrected report was produced after feedback. The broader 15+ question evaluation is not yet complete. |
-| Visual explorer | The repository website is a static documentation prototype, not a connected agent or database interface. |
+| Reports | A coding agent can produce an evidence-backed report. `tools/report_pdf.py` renders it as a fixed-template PDF and refuses reports over 10 pages. Preserve original agent output and identify human-reviewed edits. |
+| Evaluation | 18 scenarios were run blind and checked against source-level references. Round 1: 15 pass, 1 partial, 2 fail. After selected reruns, the latest outcome per scenario is 17 pass, 1 partial, 0 fail; the other first-round outcomes carry forward. Q02 used reviewer source checks; Q03’s clarified weekly reference was computed after its run. See [results](../evaluations/results.md). |
+| Visual explorer | The repository website is a self-contained reference website, not a connected agent or database interface. |
 
 ## Data preparation and investigation flow
 
@@ -26,6 +26,6 @@ A downloaded reference database is a fixed snapshot; a generated database can on
 ## Known documentation and delivery boundaries
 
 - The frozen blueprint describes the design at approval time and is not a live implementation status report. Use this map, the [project status](../project-status.md) and the code for current implementation details.
-- Some older registry and catalog passages need review against the current fixture, including the MAU caveat about unidentified sessions. Do not infer the current data from an outdated caveat.
-- Investigations use a local SQLite file and the user's selected coding-agent runtime. The visual explorer is a static documentation prototype; a project onboarding/updater is a future idea.
+- The catalog and registry describe the reviewed fixture, not every possible snapshot. Verify session identity, period coverage and layer build metadata for the database used in each investigation.
+- Investigations use a local SQLite file and the user's selected coding-agent runtime. The visual explorer is a self-contained reference website; a project onboarding/updater is a future idea.
 - Reproducibility and reviewer handoff must include the exact database or verifiable source fingerprint, relevant code/definition versions, setup instructions, and authorized evidence access. Do not include private answer keys in an agent's independent evaluation context.

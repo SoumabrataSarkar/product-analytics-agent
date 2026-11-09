@@ -1254,4 +1254,3 @@ ORDER BY period_start, channel
 ## Proposed metrics
 
 None. A new metric is listed here before it is defined.
-

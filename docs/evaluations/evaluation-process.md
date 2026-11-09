@@ -1,9 +1,9 @@
 # Evaluation process
 
-**Status:** Round 1 (18 scenarios) and round 2 (4 reruns) complete. [Results](results.md); answer key and scored runs in [`evaluation-results/`](../../evaluation-results/), published after the blind runs.
+**Status:** Round 1 (18 scenarios), four Codex reruns and a fresh Q02 blind rerun are complete. [Results](results.md); answer key and scored runs in [`evaluation-results/`](../../evaluation-results/), published after the blind runs.
 **Scope:** How the analytics agent is evaluated on the PocketToons fixture, in Claude Code and Codex, using the shared investigation skill.
 
-The evaluation checks whether the agent answers product questions correctly, with traceable evidence and honest uncertainty. It compares each agent run against an answer key written **before** the run, from the source data, by a method independent of the agent's own pipeline.
+The evaluation checks whether the agent answers product questions correctly, with traceable evidence and honest uncertainty. It checks each run against source-level references computed independently of the agent’s layer pipeline. The standard method prepares the key before the run. In this evaluation, Q02 used reviewer source checks, and Q03’s clarified weekly values were computed after the run; see [results](results.md) for provenance.
 
 ## Workflow
 
@@ -19,7 +19,7 @@ flowchart TD
   I -->|rerun failed scenarios| R
   PR --> P[7 Publish<br/>expected vs actual, failure analysis, write-up]
 
-  subgraph Repository - readable by the agent
+  subgraph Evaluation process - not independent agent context
     S
     I
     P
@@ -58,9 +58,10 @@ These rules are fixed before any run and apply to every scenario:
 
 | Item | Location | Why |
 |---|---|---|
-| Scenarios, skill, tools, report generator, templates, this process | This repository | Shared by both agent runtimes; readable by the agent |
+| Skill, tools, report generator and report template | This repository | Shared by both runtimes; available during investigation |
+| Scenarios, scoring templates and this evaluation process | `docs/evaluations/` | Evaluator materials; exclude from independent investigation context |
 | Answer key, reference query logs, run records, raw and corrected reports, peer-review notes | Published in `evaluation-results/` after the blind runs; exclude from independent agent sessions | Keeps expected answers out of the agent's context during blind runs |
-| Published results and write-up | This repository, after the blind runs | Lets reviewers see expected vs actual once independence no longer matters |
+| Published results and write-up | This repository, after the blind runs | Lets reviewers inspect the completed evaluation; exclude from future independent sessions |
 
 ## Related files
 
@@ -68,4 +69,3 @@ These rules are fixed before any run and apply to every scenario:
 - [Evaluation run template](evaluation-run-template.md)
 - [Investigation report template](../deliverables/investigation-report-template.md)
 - [Project status](../project-status.md)
-

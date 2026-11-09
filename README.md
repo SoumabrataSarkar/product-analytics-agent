@@ -50,13 +50,13 @@ Gold (8 monthly marts) / Silver (10 validated detail tables) / Bronze (20 source
 Evidence ledger → quantified RCA report and recommendations
 ```
 
-The planned investigation is autonomous, with at most three rounds of up to three distinct hypotheses; it should stop early when adequately explained or ask for human direction when exhausted. It must not invent causes.
+The shared investigation skill supports autonomous analysis, with at most three rounds of up to three distinct hypotheses; it should stop early when adequately explained or ask for human direction when exhausted. It must not invent causes.
 
 The intended product is a reusable analytics framework operated through the user's own Codex or Claude Code runtime and available model. The runtime follows the shared investigation skill and uses the repository's definitions, catalog and evidence tools with the user's authorized local database. The completed scenario evaluation records selected reruns and remaining limitations; the same scenarios have not been tested in both runtimes. Runtime access depends on the user's chosen tool, model and account.
 
 ## Visual explorer
 
-The committed [`web/index.html`](web/index.html) is a **static documentation prototype** showing the directory, data flow, workflow and version history. It is not connected to the database, GitHub APIs or an AI model. Open it locally to inspect the interface. Live chat will require a separately secured execution backend or supported agent runtime.
+The committed [`web/index.html`](web/index.html) is a **self-contained reference website** with setup, a searchable document library, architecture, illustrated data concepts and evaluation. It is not connected to the database, GitHub APIs or an AI model. Download the HTML and open it in a browser; no server, build or installation is needed to read it. External document links open GitHub and require access while the repository is private. Live chat will require a separately secured execution backend or supported agent runtime.
 
 ## Data layers
 
@@ -64,10 +64,9 @@ The committed [`web/index.html`](web/index.html) is a **static documentation pro
 
 ## Remaining work
 
-1. Evaluate the agent independently on at least 15 questions with an evaluator-only answer key, in Codex and Claude Code, and improve the skill and tools from the results.
+1. Address Q11’s remaining partial result, then run held-out questions and matched questions in both runtimes. The completed 18-scenario evaluation used one runtime per scenario.
 2. Provide a machine-readable catalog and layer map for the agent.
-3. Produce evidence-backed investigation reports and the submission write-up.
+3. Measure model usage and latency systematically. Reports and the submission write-up are already available.
 4. When requested, secure optional web integration.
 
 The framework is intended for future open-source publication and continued improvements.
-

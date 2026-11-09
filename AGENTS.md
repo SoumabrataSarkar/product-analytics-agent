@@ -1,6 +1,6 @@
 # Shared coding-agent instructions
 
-This file is the common project entrypoint. Architecture v1.0 is a **frozen design**, not an implemented application.
+This file is the common project entrypoint. Architecture v1.0 is the **frozen design baseline**. For what is implemented and evaluated now, use [the implementation map](docs/architecture/implementation-status.md) and [project status](docs/project-status.md).
 
 1. Read `docs/architecture/v1.md` and relevant ADRs before making changes.
 2. For PocketToons metrics and joins, use the approved definitions in `docs/metrics/metric-registry.md` and the reference catalog at `docs/examples/pockettoons-data-catalog.md`. These files are shared across agent runtimes but are specific to the PocketToons fixture; do not assume they apply to another project. Do not invent denominators, cohorts, join keys or SQL definitions.
@@ -30,4 +30,3 @@ For user-authorized product analytics investigations, read and follow the shared
 - Future per-project catalogs, metric registries and an onboarding/updater workflow are not yet implemented. Do not move or rename files without an agreed migration; update references when one is requested.
 
 **Current project status:** Architecture v1 is frozen. For the PocketToons reference dataset, the data catalog is accepted, every metric in the registry's map is approved, and the Bronze, Silver and Gold layers are built and reconciled; the reviewed SQLite file with all layers is local. Read-only query and evidence tools and the shared investigation skill exist. An 18-scenario evaluation and selected reruns are complete for this stage; one scenario remains partial. See [project status and handoff](docs/project-status.md).
-

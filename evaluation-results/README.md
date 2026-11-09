@@ -6,7 +6,7 @@ The material behind [the evaluation results](../docs/evaluations/results.md): th
 
 ## Layout
 
-- `answer-key/`: expected values and scoring rules in four batches (`batch1`–`batch4`), each approved before any agent run. `oracle-b1/`–`oracle-b5/` hold the reference queries as evidence logs. They use the metric registry's canonical SQL on the source tables only, never the Silver/Gold tables the agent uses. `oracle-b5` extends Q03 to the weeks chosen when the agent asked for clarification.
+- `answer-key/`: expected values and scoring rules in four batches (`batch1`–`batch4`), approved before the applicable keyed runs; Q02 used reviewer source checks. `oracle-b1/`–`oracle-b5/` hold the reference queries as evidence logs. They use the metric registry's canonical SQL on the source tables only, never the Silver/Gold tables the agent uses. `oracle-b5` was computed after Q03’s run to cover the weeks chosen when the agent asked for clarification.
 - `QNN/`: one folder per scenario (IDs from [investigation-paths.md](../docs/evaluations/investigation-paths.md)).
   - `codex-run-001/`: round 1. `codex-run-002/`: round 2 (Q01, Q07, Q09, Q11 only).
   - Each run has `evaluation-record.md` (expected vs actual and the outcome), `v1-report.pdf` or `.md` (the agent's output, unedited), `v1-content.json` where the agent used the PDF generator, and `evidence.zip` (one evidence log per query, the query requests and the run note).
