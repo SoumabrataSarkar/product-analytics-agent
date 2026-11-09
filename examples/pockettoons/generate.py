@@ -398,11 +398,16 @@ def main():
                 t=timestamp(month,rng.randint(2,24),rng.randint(8,20),rng.randint(0,35))
                 rt=offset(t,rng.randint(1,4)*86400)
             if month==4 and j==39: cid,ep='c12',20
-            sid=f's_ppv_{month}_{j}'; start_session=offset(t,-120); end=offset(t,1200); vt=offset(t,120); ve=offset(vt,600); vid=f'v_ppv_{month}_{j}'
+            # Most buyers watch the paid episode to the end; one in five stops after 600s.
+            # Deterministic by purchase index so no random draw shifts later streams.
+            watched=episode_duration[(cid,ep)] if j%5!=4 else 600
+            sid=f's_ppv_{month}_{j}'; start_session=offset(t,-120); vt=offset(t,120); ve=offset(vt,watched); vid=f'v_ppv_{month}_{j}'
+            end=max(offset(t,1200),offset(ve,60))
+            span=int((dt.datetime.fromisoformat(end[:-1])-dt.datetime.fromisoformat(start_session[:-1])).total_seconds())
             country=users[i][3]; wall=offset(t,-90); checkout=offset(t,-30)
-            ppv_sessions.append((sid,uid,aid,t[:10],start_session,end,end,1320,['ios','android','web'][i%3],country))
+            ppv_sessions.append((sid,uid,aid,t[:10],start_session,end,end,span,['ios','android','web'][i%3],country))
             ppv_links.append((f'l_{sid}',aid,uid,sid,start_session,'login'))
-            ppv_views.append((vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,600,900,'ppv',round(600/900,4),0,600,1,0,None,zones[country],country))
+            ppv_views.append((vid,uid,aid,sid,cid,ep,vt[:10],vt,ve,watched,900,'ppv',round(watched/900,4),0,watched,1,0,None,zones[country],country))
             ppv_events.append((f'open_{sid}',uid,aid,start_session,'app_opened',sid,None,None,None,None,None,None,zones[country],country,start_session))
             ppv_events.append((f'paywall_{sid}',uid,aid,wall,'paywall_viewed',sid,None,None,None,cid,ep,'{"product":"ppv"}',zones[country],country,wall))
             ppv_events.append((f'checkout_{sid}',uid,aid,checkout,'checkout_started',sid,None,None,None,cid,ep,'{"product":"ppv"}',zones[country],country,checkout))
@@ -653,6 +658,31 @@ def main():
       FROM grouped
     ) UPDATE subscription_history SET subscription_status_updated_at=changes.changed_at
       FROM changes WHERE subscription_history.subscription_period_id=changes.subscription_period_id''')
+    # Logged-out browsing: about 8% extra sessions on devices that never sign in.
+    # No user, no identity link and no playback, so active-user counts are unchanged.
+    # A separate random stream keeps every other generated value identical.
+    visitor_rng=random.Random(SEED+7707)
+    starts=[r[0] for r in db.execute('SELECT session_started_at FROM sessions ORDER BY session_started_at,session_id')]
+    visitor_sessions=[]; visitor_events=[]; visitor_devices=[]; n=0
+    while len(visitor_sessions)<round(0.08*len(starts)):
+        device=f'v{n:05}'; n+=1
+        base=visitor_rng.choice(starts)
+        session_count=visitor_rng.choice([1,1,1,2,2,3])
+        platform=visitor_rng.choice(['ios','android','web','web']); country=visitor_rng.choice(list(zones))
+        first=None
+        for k in range(session_count):
+            day=dt.datetime.fromisoformat(base[:-1])+dt.timedelta(days=4*k+visitor_rng.randint(0,3),minutes=visitor_rng.randint(-50,50))
+            if day<dt.datetime(2026,4,1) or day>=dt.datetime(2026,10,1): continue
+            start=day.strftime('%Y-%m-%dT%H:%M:%SZ'); length=visitor_rng.randint(40,720); end=offset(start,length)
+            if end>='2026-10-01T00:00:00Z': continue
+            first=first or start
+            sid=f's_visitor_{device}_{k}'
+            visitor_sessions.append((sid,None,device,start[:10],start,end,end,length,platform,country))
+            visitor_events.append((f'open_{sid}',None,device,start,'app_opened',sid,None,None,None,None,None,None,zones[country],country,start))
+        if first: visitor_devices.append((device,first,None))
+    db.executemany('INSERT INTO anonymous_identities VALUES (?,?,?)',visitor_devices)
+    db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)',visitor_sessions)
+    db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',visitor_events)
     # Optional session metadata exists in the model even when a value is unknown.
     db.execute('ALTER TABLE sessions ADD COLUMN device_id_hash TEXT')
     db.execute('ALTER TABLE sessions ADD COLUMN app_version TEXT')
@@ -759,6 +789,12 @@ def main():
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',heartbeat_rows)
     # Link only paywall/checkout pairs explicitly constructed together above.
     db.execute('ALTER TABLE user_events ADD COLUMN triggering_paywall_event_id TEXT REFERENCES user_events(event_id)')
+    # Tracking gaps: about 5% of checkouts lose their paywall link and about 3% of
+    # transactions lose their checkout link (direct checkout or link not captured).
+    def tracking_gap(key,percent):
+        return int(hashlib.sha256(('tracking-gap:'+key).encode()).hexdigest()[:8],16)%100<percent
+    checkout_paywall_links=[(wall,checkout) for wall,checkout in checkout_paywall_links if not tracking_gap(checkout,5)]
+    checkout_transaction_links=[(checkout,tid) for checkout,tid in checkout_transaction_links if not tracking_gap(tid,3)]
     db.executemany('UPDATE user_events SET triggering_paywall_event_id=? WHERE event_id=?',checkout_paywall_links)
     # Link payments only to checkouts explicitly paired in the synthetic journeys above.
     db.execute('ALTER TABLE transactions ADD COLUMN checkout_event_id TEXT REFERENCES user_events(event_id)')
