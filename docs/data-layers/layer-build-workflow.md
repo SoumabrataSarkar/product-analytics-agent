@@ -24,11 +24,11 @@
 
 ## Workflow
 
-### 1. Inventory and classify the source *(PocketToons: pending)*
+### 1. Inventory and classify the source *(PocketToons: done)*
 
 List every source table and classify its role: raw event or transaction records, current-state snapshots, effective-dated histories, reference data, metadata, review or correction evidence. The role decides how a table is exposed in Bronze and how it may be used: a history is queried as of a time, a snapshot only at its declared instant, review evidence never as an extra fact.
 
-### 2. Define Bronze
+### 2. Define Bronze *(PocketToons: done)*
 
 Decide, per table, whether Bronze is a view or a copy.
 
