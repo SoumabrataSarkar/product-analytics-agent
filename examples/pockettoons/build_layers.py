@@ -1376,6 +1376,185 @@ def reconcile_kpi_monthly(db):
         and close(g[m]['engagement_rate'], g[m]['meu'] / g[m]['mau'] if g[m]['mau'] else None) for m in months)
     return checks, {'months': len(g)}
 
+# ---------------------------------------------------------------- gold_activity_segments_monthly
+
+SEGMENT_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in (
+    'mau', 'activity_family', 'funnel_and_lifecycle_group')}, sort_keys=True)
+
+ACTIVITY_SEGMENTS_SQL = """
+CREATE TABLE gold_activity_segments_monthly(
+  month TEXT NOT NULL, dimension TEXT NOT NULL CHECK(dimension IN
+    ('all','platform','country','acquisition_source','subscriber_status')),
+  value TEXT NOT NULL, active_users INTEGER NOT NULL, engaged_users INTEGER, mau INTEGER NOT NULL, active_share REAL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(month, dimension, value));
+INSERT INTO gold_activity_segments_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+touching AS (
+  SELECT m.month, r.session_id, r.resolved_user_id AS user_id, r.platform,
+         COALESCE(r.country_at_event, 'unknown') AS country, r.session_started_at
+  FROM months m JOIN silver_resolved_sessions r
+    ON r.resolved_user_id IS NOT NULL AND r.session_started_at < m.period_end AND r.last_activity_at >= m.period_start
+),
+user_month AS (
+  SELECT d.activity_month AS month, d.user_id, SUM(d.watch_seconds) AS watched,
+         COALESCE(p.acquisition_source, 'missing_user_record') AS source
+  FROM silver_user_day_activity d LEFT JOIN silver_user_profile p ON p.user_id = d.user_id
+  WHERE d.sessions_touching > 0 OR d.watch_seconds > 0
+  GROUP BY 1, 2
+),
+rows AS (
+  SELECT month, 'all' AS dimension, 'all' AS value, COUNT(DISTINCT user_id) AS active, NULL AS engaged
+  FROM touching GROUP BY month
+  UNION ALL
+  SELECT month, 'platform', platform, COUNT(DISTINCT user_id), NULL FROM touching GROUP BY month, platform
+  UNION ALL
+  SELECT month, 'country', country, COUNT(DISTINCT user_id), NULL FROM touching GROUP BY month, country
+  UNION ALL
+  SELECT t.month, 'acquisition_source', u.source, COUNT(DISTINCT t.user_id),
+         (SELECT COUNT(*) FROM user_month e WHERE e.month = t.month AND e.source = u.source AND e.watched >= 60)
+  FROM touching t JOIN user_month u ON u.month = t.month AND u.user_id = t.user_id
+  GROUP BY t.month, u.source
+  UNION ALL
+  SELECT month, 'subscriber_status', status, COUNT(DISTINCT user_id), NULL FROM (
+    SELECT t.month, t.user_id,
+           CASE WHEN EXISTS (SELECT 1 FROM silver_subscription_access a
+                             WHERE a.user_id = t.user_id AND a.grants_access = 1
+                               AND a.effective_start_at <= t.session_started_at
+                               AND (a.effective_end_at IS NULL OR a.effective_end_at > t.session_started_at))
+                THEN 'subscriber' ELSE 'non_subscriber' END AS status
+    FROM touching t)
+  GROUP BY month, status
+)
+SELECT r.month, r.dimension, r.value, r.active, r.engaged, k.mau, r.active * 1.0 / NULLIF(k.mau, 0),
+       :segment_definitions, :build_id
+FROM rows r JOIN gold_kpi_monthly k ON k.month = r.month;
+CREATE INDEX ix_gold_activity_segments_dimension ON gold_activity_segments_monthly(dimension, value, month)
+"""
+
+
+def independent_segment_recount(db):
+    """Active users per month by session country and by acquisition source, recomputed in Python from the source."""
+    months = [(m, s, e) for m, s, e in db.execute(load_sql('periods_month'), COVERAGE)]
+    links = {}
+    for session_id, user in db.execute('SELECT session_id, user_id FROM identity_links'):
+        links.setdefault(session_id, set()).add(user)
+    source = {u: s or 'unknown' for u, s in db.execute('SELECT user_id, acquisition_source FROM users')}
+    country, by_source = {}, {}
+    for session_id, user, started, last, where in db.execute(
+            'SELECT session_id, user_id, session_started_at, last_activity_at, country_at_event FROM sessions'):
+        if user is None:
+            linked = links.get(session_id, set())
+            user = next(iter(linked)) if len(linked) == 1 else None
+        if user is None:
+            continue
+        for m, start, end in months:
+            if started < end and last >= start:
+                country.setdefault((m, where or 'unknown'), set()).add(user)
+                by_source.setdefault((m, source.get(user, 'missing_user_record')), set()).add(user)
+    return ({k: len(v) for k, v in country.items()}, {k: len(v) for k, v in by_source.items()})
+
+
+def reconcile_activity_segments(db):
+    checks = {}
+    rows = {(m, d, v): (a, e, t) for m, d, v, a, e, t in db.execute(
+        'SELECT month, dimension, value, active_users, engaged_users, mau FROM gold_activity_segments_monthly')}
+    kpi = dict(db.execute('SELECT month, mau FROM gold_kpi_monthly'))
+    checks['all_equals_kpi_mau'] = all(rows.get((m, 'all', 'all'), (0,))[0] == n for m, n in kpi.items() if n)
+    platform = {(m, v): a for (m, d, v), (a, _, _) in rows.items() if d == 'platform'}
+    checks['platform_matches_registry'] = platform == {
+        (m, p): n for m, p, n in db.execute(load_sql('mau_monthly_by_platform'), COVERAGE)}
+    status = {(m, v): a for (m, d, v), (a, _, _) in rows.items() if d == 'subscriber_status'}
+    checks['subscriber_status_matches_registry'] = status == {
+        (m, s): n for m, s, n in db.execute(load_sql('mau_monthly_by_subscriber_status'), COVERAGE)}
+    country, by_source = independent_segment_recount(db)
+    checks['country_independent_recount'] = {(m, v): a for (m, d, v), (a, _, _) in rows.items() if d == 'country'} == country
+    checks['acquisition_source_independent_recount'] = {
+        (m, v): a for (m, d, v), (a, _, _) in rows.items() if d == 'acquisition_source'} == by_source
+    sources = {}
+    for (m, d, v), (a, _, _) in rows.items():
+        if d == 'acquisition_source':
+            sources[m] = sources.get(m, 0) + a
+    checks['acquisition_sources_partition_mau'] = all(sources.get(m, 0) == n for m, n in kpi.items())  # one source per user
+    exact = independent_daily_watch(db)
+    profile = dict(db.execute('SELECT user_id, acquisition_source FROM silver_user_profile'))
+    monthly = {}
+    for (user, day), seconds in exact.items():
+        monthly[(day[:7], user)] = monthly.get((day[:7], user), Fraction(0)) + seconds
+    engaged, boundary = {}, {}
+    for (m, user), seconds in monthly.items():
+        key = (m, profile.get(user, 'missing_user_record'))
+        if seconds >= 60:
+            engaged[key] = engaged.get(key, 0) + 1
+        if abs(seconds - 60) <= Fraction(1, 10**6):
+            boundary[key] = boundary.get(key, 0) + 1
+    checks['engaged_by_source_independent_recount'] = all(
+        abs((e or 0) - engaged.get((m, v), 0)) <= boundary.get((m, v), 0)
+        for (m, d, v), (_, e, _) in rows.items() if d == 'acquisition_source')
+    meu = dict(db.execute('SELECT month, meu FROM gold_kpi_monthly'))
+    engaged_total = {}
+    for (m, d, v), (_, e, _) in rows.items():
+        if d == 'acquisition_source':
+            engaged_total[m] = engaged_total.get(m, 0) + (e or 0)
+    checks['engaged_by_source_partitions_meu'] = all(engaged_total.get(m, 0) == n for m, n in meu.items())
+    checks['engaged_only_where_supported'] = all(
+        (e is None) == (d != 'acquisition_source') for (_, d, _), (_, e, _) in rows.items())
+    return checks, {'rows': len(rows)}
+
+# ---------------------------------------------------------------- gold_growth_accounting_monthly
+
+GROWTH_ACCOUNTING_SQL = """
+CREATE TABLE gold_growth_accounting_monthly(
+  month TEXT PRIMARY KEY, previous_month TEXT NOT NULL, mau INTEGER NOT NULL, previous_mau INTEGER NOT NULL,
+  new_users INTEGER NOT NULL, retained_users INTEGER NOT NULL, resurrected_users INTEGER NOT NULL,
+  churned_users INTEGER NOT NULL, quick_ratio REAL, definitions TEXT NOT NULL, build_id TEXT NOT NULL);
+INSERT INTO gold_growth_accounting_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+active AS (
+  SELECT DISTINCT activity_month AS month, user_id FROM silver_user_day_activity WHERE sessions_touching > 0
+),
+pairs AS (SELECT cur.month, cur.period_start, prev.month AS prev FROM months cur JOIN months prev ON prev.period_end = cur.period_start),
+buckets AS (
+  SELECT pr.month, pr.prev,
+    (SELECT COUNT(*) FROM active a JOIN silver_user_profile u ON u.user_id = a.user_id
+      WHERE a.month = pr.month AND u.signup_at >= pr.period_start) AS new_users,
+    (SELECT COUNT(*) FROM active a WHERE a.month = pr.month
+      AND EXISTS (SELECT 1 FROM active b WHERE b.user_id = a.user_id AND b.month = pr.prev)) AS retained_users,
+    (SELECT COUNT(*) FROM active a JOIN silver_user_profile u ON u.user_id = a.user_id
+      WHERE a.month = pr.month AND u.signup_at < pr.period_start
+        AND NOT EXISTS (SELECT 1 FROM active b WHERE b.user_id = a.user_id AND b.month = pr.prev)) AS resurrected_users,
+    (SELECT COUNT(*) FROM active b WHERE b.month = pr.prev
+      AND NOT EXISTS (SELECT 1 FROM active a WHERE a.user_id = b.user_id AND a.month = pr.month)) AS churned_users
+  FROM pairs pr
+)
+SELECT b.month, b.prev, k.mau, p.mau, b.new_users, b.retained_users, b.resurrected_users, b.churned_users,
+       (b.new_users + b.resurrected_users) * 1.0 / NULLIF(b.churned_users, 0), :growth_definitions, :build_id
+FROM buckets b JOIN gold_kpi_monthly k ON k.month = b.month JOIN gold_kpi_monthly p ON p.month = b.prev
+"""
+
+GROWTH_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in ('mau', 'growth_accounting')}, sort_keys=True)
+
+
+def reconcile_growth_accounting(db):
+    checks = {}
+    gold = [tuple(r) for r in db.execute(
+        'SELECT month, new_users, retained_users, resurrected_users, churned_users, quick_ratio, mau, previous_mau '
+        'FROM gold_growth_accounting_monthly ORDER BY month')]
+    registry = [tuple(r) for r in db.execute(load_sql('growth_accounting_monthly'), COVERAGE)]
+    checks['buckets_match_registry'] = [g[:5] for g in gold] == [r[:5] for r in registry] and all(
+        close(g[5], r[5]) for g, r in zip(gold, registry))
+    # Active users without a users row are in no bucket (as in the registry); count them so the identities stay exact.
+    missing = dict(db.execute(
+        "SELECT a.activity_month, COUNT(DISTINCT a.user_id) FROM silver_user_day_activity a "
+        "WHERE a.sessions_touching > 0 AND NOT EXISTS (SELECT 1 FROM silver_user_profile p WHERE p.user_id = a.user_id) "
+        "AND NOT EXISTS (SELECT 1 FROM silver_user_day_activity b, gold_growth_accounting_monthly g "
+        "  WHERE g.month = a.activity_month AND b.activity_month = g.previous_month AND b.user_id = a.user_id "
+        "    AND b.sessions_touching > 0) GROUP BY 1"))
+    checks['buckets_add_to_mau'] = all(g[1] + g[2] + g[3] + missing.get(g[0], 0) == g[6] for g in gold)
+    checks['mau_change_identity'] = all(g[6] - g[7] == g[1] + g[3] + missing.get(g[0], 0) - g[4] for g in gold)
+    months = [r[0] for r in db.execute(load_sql('periods_month'), COVERAGE)]
+    checks['every_month_after_the_first'] = [g[0] for g in gold] == months[1:]
+    return checks, {'rows': len(gold)}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -1402,10 +1581,14 @@ SILVER = [
 
 GOLD = [
     ('gold_kpi_monthly', KPI_MONTHLY_SQL, [], reconcile_kpi_monthly),
+    ('gold_activity_segments_monthly', ACTIVITY_SEGMENTS_SQL, ['ix_gold_activity_segments_dimension'],
+     reconcile_activity_segments),
+    ('gold_growth_accounting_monthly', GROWTH_ACCOUNTING_SQL, [], reconcile_growth_accounting),
 ]
 
 # Named parameters available to every layer script, besides :build_id and the coverage window.
-SCRIPT_PARAMS = {'kpi_definitions': KPI_DEFINITIONS}
+SCRIPT_PARAMS = {'kpi_definitions': KPI_DEFINITIONS, 'segment_definitions': SEGMENT_DEFINITIONS,
+                 'growth_definitions': GROWTH_DEFINITIONS}
 
 # Objects owned by this builder. Only these are dropped and recreated.
 LAYERS = SILVER + GOLD
