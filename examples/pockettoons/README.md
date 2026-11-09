@@ -5,6 +5,8 @@ This deterministic SQLite dataset supports product-analytics investigation and e
 ```sh
 python3 examples/pockettoons/generate.py --output pockettoons.sqlite
 python3 examples/pockettoons/check_data.py pockettoons.sqlite
+# Optional: add the data layers built so far (run on a copy first).
+python3 examples/pockettoons/build_layers.py pockettoons.sqlite
 ```
 
 The generator refuses to overwrite an existing database. The main random seed is 8126; marketing uses a separate deterministic stream seeded with 10844 so marketing variation does not change other generated records. The six analysis months are April–September 2026. There are 10,400 existing March signups; the monthly signup cohorts from April through September are 1,600, 2,201, 2,653, 2,477, 2,949, and 1,720. All times are UTC. The database has 24,000 users, 247,715 sessions, 325,149 views, and 6,618 payment/refund attempts (including 317 failed attempts: 30 PPV checkouts and 287 first renewal attempts that a later retry recovers); the file is about 0.66 GB. Activity variation uses its own deterministic stream (seed 8126 + 4409), so it does not change monthly MAU or revenue. Its 12 titles have between 20 and 39 episodes each.
