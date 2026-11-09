@@ -27,5 +27,5 @@ A downloaded reference database is a fixed snapshot; a generated database can on
 
 - The frozen blueprint describes the design at approval time and is not a live implementation status report. Use this map, the [project status](../project-status.md) and the code for current implementation details.
 - Some older registry and catalog passages need review against the current fixture, including the MAU caveat about unidentified sessions. Do not infer the current data from an outdated caveat.
-- The current assessment uses a local SQLite file and an external coding-agent runtime. The repository does not provide an autonomous hosted service, a guaranteed model connection, a live database-connected web app, or a project onboarding/updater.
+- Investigations use a local SQLite file and the user's selected coding-agent runtime. The visual explorer is a static documentation prototype; a project onboarding/updater is a future idea.
 - Reproducibility and reviewer handoff must include the exact database or verifiable source fingerprint, relevant code/definition versions, setup instructions, and authorized evidence access. Do not include private answer keys in an agent's independent evaluation context.
