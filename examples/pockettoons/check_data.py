@@ -371,11 +371,20 @@ coverage={'coverage_start':'2026-04-01T00:00:00Z','coverage_end':'2026-10-01T00:
 rows=db.execute(load_sql('mau_monthly'),coverage).fetchall()
 quarters=[v for _,v in db.execute(with_monthly(load_sql('mau_quarter_average')),coverage).fetchall()]
 print('Monthly MAU and excluded unidentified sessions:',rows)
-if len(rows)!=6 or len(quarters)!=2 or any(u for _,_,u in rows): failed+=1
-else:
-    q1,q2=quarters
-    print('Quarter-average MAU change:',round((q2/q1-1)*100,2),'%')
-    if abs(q2/q1-1.2)>0.0005: failed+=1
+# Unidentified sessions are logged-out visits: no user and no identity link. Count them independently.
+logged_out=[(m,n) for m,n in db.execute('''WITH RECURSIVE months(start) AS (SELECT :coverage_start UNION ALL
+  SELECT strftime('%Y-%m-%dT%H:%M:%SZ',start,'+1 month') FROM months WHERE strftime('%Y-%m-%dT%H:%M:%SZ',start,'+1 month')<:coverage_end)
+  SELECT substr(m.start,1,7),count(s.session_id) FROM months m LEFT JOIN sessions s ON s.user_id IS NULL
+   AND NOT EXISTS(SELECT 1 FROM identity_links l WHERE l.session_id=s.session_id)
+   AND s.session_started_at<strftime('%Y-%m-%dT%H:%M:%SZ',m.start,'+1 month') AND s.last_activity_at>=m.start
+  GROUP BY m.start ORDER BY m.start''',coverage)]
+unidentified_ok=len(rows)==6 and [(m,u) for m,_,u in rows]==logged_out
+print(('PASS' if unidentified_ok else 'FAIL'),'unidentified sessions are exactly the logged-out visits')
+failed+=not unidentified_ok
+growth_q_ok=len(quarters)==2 and abs(quarters[1]/quarters[0]-1.2)<=0.0005
+if len(quarters)==2: print('Quarter-average MAU change:',round((quarters[1]/quarters[0]-1)*100,2),'%')
+print(('PASS' if growth_q_ok else 'FAIL'),'quarter-average MAU grows about 20%')
+failed+=not growth_q_ok
 family=db.execute(load_sql('mau_from_family'),coverage).fetchall()
 family_ok=family==[(m,v) for m,v,_ in rows]
 print(('PASS' if family_ok else 'FAIL'),'activity family month block matches registry MAU')
