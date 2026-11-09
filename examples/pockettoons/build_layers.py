@@ -1555,6 +1555,173 @@ def reconcile_growth_accounting(db):
     checks['every_month_after_the_first'] = [g[0] for g in gold] == months[1:]
     return checks, {'rows': len(gold)}
 
+# ---------------------------------------------------------------- gold_cohorts
+
+COHORT_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in (
+    'mau', 'funnel_and_lifecycle_group', 'engagement_group', 'supporting_metrics')}, sort_keys=True)
+
+COHORTS_SQL = """
+CREATE TABLE gold_cohorts(
+  signup_month TEXT NOT NULL, month TEXT NOT NULL, months_since_signup INTEGER NOT NULL,
+  cohort_users INTEGER NOT NULL, retained_users INTEGER, retention_rate REAL,
+  day1_eligible INTEGER NOT NULL, day1_retained INTEGER NOT NULL, day1_retention_rate REAL,
+  day7_eligible INTEGER NOT NULL, day7_retained INTEGER NOT NULL, day7_retention_rate REAL,
+  day30_eligible INTEGER NOT NULL, day30_retained INTEGER NOT NULL, day30_retention_rate REAL,
+  activation_eligible INTEGER NOT NULL, activated_users INTEGER NOT NULL, activation_rate REAL,
+  conversion_eligible INTEGER NOT NULL, subscription_converted INTEGER NOT NULL, paid_converted INTEGER NOT NULL,
+  subscription_conversion_rate REAL, paid_conversion_rate REAL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(signup_month, months_since_signup));
+INSERT INTO gold_cohorts
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+cohort AS (
+  SELECT m.month AS signup_month, m.period_start, p.user_id, p.signup_at, p.signup_date,
+         p.first_subscription_at, p.first_paid_at
+  FROM months m JOIN silver_user_profile p ON p.signup_at >= m.period_start AND p.signup_at < m.period_end
+),
+active_days AS (SELECT user_id, activity_date FROM silver_user_day_activity WHERE sessions_touching > 0),
+engaged_days AS (SELECT user_id, activity_date FROM silver_user_day_activity WHERE watch_seconds >= 60),
+levels AS (
+  SELECT c.signup_month, COUNT(*) AS cohort_users,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+2 days') <= :coverage_end) AS d1_e,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+2 days') <= :coverage_end
+        AND EXISTS (SELECT 1 FROM active_days a WHERE a.user_id = c.user_id AND a.activity_date = date(c.signup_date, '+1 days'))) AS d1_r,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+8 days') <= :coverage_end) AS d7_e,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+8 days') <= :coverage_end
+        AND EXISTS (SELECT 1 FROM active_days a WHERE a.user_id = c.user_id AND a.activity_date = date(c.signup_date, '+7 days'))) AS d7_r,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+31 days') <= :coverage_end) AS d30_e,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+31 days') <= :coverage_end
+        AND EXISTS (SELECT 1 FROM active_days a WHERE a.user_id = c.user_id AND a.activity_date = date(c.signup_date, '+30 days'))) AS d30_r,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+7 days') <= :coverage_end) AS act_e,
+    SUM(c.signup_date || 'T00:00:00Z' >= :coverage_start AND strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_date, '+7 days') <= :coverage_end
+        AND EXISTS (SELECT 1 FROM engaged_days e WHERE e.user_id = c.user_id
+                    AND e.activity_date >= c.signup_date AND e.activity_date < date(c.signup_date, '+7 days'))) AS act_r,
+    SUM(strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_at, '+30 days') <= :coverage_end) AS conv_e,
+    SUM(strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_at, '+30 days') <= :coverage_end
+        AND COALESCE(c.first_subscription_at >= c.signup_at
+                     AND c.first_subscription_at < strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_at, '+30 days'), 0)) AS sub_c,
+    SUM(strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_at, '+30 days') <= :coverage_end
+        AND COALESCE(c.first_paid_at >= c.signup_at
+                     AND c.first_paid_at < strftime('%Y-%m-%dT%H:%M:%SZ', c.signup_at, '+30 days'), 0)) AS paid_c
+  FROM cohort c GROUP BY c.signup_month
+),
+offsets AS (
+  SELECT l.signup_month, m.month,
+         (CAST(substr(m.month, 1, 4) AS INTEGER) * 12 + CAST(substr(m.month, 6, 2) AS INTEGER))
+         - (CAST(substr(l.signup_month, 1, 4) AS INTEGER) * 12 + CAST(substr(l.signup_month, 6, 2) AS INTEGER)) AS k
+  FROM levels l JOIN months m ON m.month >= l.signup_month
+),
+retained AS (
+  SELECT o.signup_month, o.month, COUNT(DISTINCT a.user_id) AS n
+  FROM offsets o JOIN cohort c ON c.signup_month = o.signup_month
+  JOIN silver_user_day_activity a ON a.user_id = c.user_id AND a.activity_month = o.month AND a.sessions_touching > 0
+  WHERE o.k > 0 GROUP BY 1, 2
+)
+SELECT o.signup_month, o.month, o.k, l.cohort_users,
+       CASE WHEN o.k > 0 THEN COALESCE(r.n, 0) END, CASE WHEN o.k > 0 THEN COALESCE(r.n, 0) * 1.0 / l.cohort_users END,
+       l.d1_e, l.d1_r, l.d1_r * 1.0 / NULLIF(l.d1_e, 0), l.d7_e, l.d7_r, l.d7_r * 1.0 / NULLIF(l.d7_e, 0),
+       l.d30_e, l.d30_r, l.d30_r * 1.0 / NULLIF(l.d30_e, 0),
+       l.act_e, l.act_r, l.act_r * 1.0 / NULLIF(l.act_e, 0),
+       l.conv_e, l.sub_c, l.paid_c, l.sub_c * 1.0 / NULLIF(l.conv_e, 0), l.paid_c * 1.0 / NULLIF(l.conv_e, 0),
+       :cohort_definitions, :build_id
+FROM offsets o JOIN levels l ON l.signup_month = o.signup_month
+LEFT JOIN retained r ON r.signup_month = o.signup_month AND r.month = o.month
+"""
+
+
+def reconcile_cohorts(db):
+    checks = {}
+    cur = db.execute('SELECT * FROM gold_cohorts ORDER BY signup_month, months_since_signup')
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur]
+    retention = [(r['signup_month'], r['month'], r['months_since_signup'], r['cohort_users'], r['retained_users'])
+                 for r in rows if r['months_since_signup'] > 0]
+    checks['monthly_retention_matches_registry'] = retention == [
+        tuple(r[:5]) for r in db.execute(load_sql('retention_monthly_cohort'), COVERAGE)]
+    level = {r['signup_month']: r for r in rows if r['months_since_signup'] == 0}
+    day_n = {}
+    for m, n, eligible, kept, _ in db.execute(load_sql('retention_day_n'), COVERAGE):
+        day_n[(m, n)] = (eligible, kept)
+    checks['day_n_retention_matches_registry'] = all(
+        (level[m][f'day{n}_eligible'], level[m][f'day{n}_retained']) == v for (m, n), v in day_n.items()) and all(
+        level[m][f'day{n}_eligible'] == 0 for m in level for n in (1, 7, 30) if (m, n) not in day_n)
+    activation = {r[0]: tuple(r[1:3]) for r in db.execute(load_sql('activation_7d'), COVERAGE)}
+    checks['activation_matches_registry'] = all(
+        (level[m]['activation_eligible'], level[m]['activated_users']) == activation.get(m, (0, 0)) for m in level)
+    conversion = {r[0]: tuple(r[1:4]) for r in db.execute(load_sql('conversion_30d'), COVERAGE)}
+    checks['conversion_matches_registry'] = all(
+        (level[m]['conversion_eligible'], level[m]['subscription_converted'], level[m]['paid_converted'])
+        == conversion.get(m, (0, 0, 0)) for m in level)
+    checks['cohort_level_values_repeat_per_row'] = all(
+        all(r[c] == level[r['signup_month']][c] for c in cols if c.startswith(('cohort_users', 'day', 'activ', 'conversion',
+                                                                                 'subscription_', 'paid_')))
+        for r in rows)
+    signups = dict(db.execute('SELECT month, signups FROM gold_kpi_monthly'))
+    checks['cohort_size_equals_signups'] = all(level[m]['cohort_users'] == signups[m] for m in level) and all(
+        m in level for m, n in signups.items() if n)
+    return checks, {'rows': len(rows), 'cohorts': len(level)}
+
+# ---------------------------------------------------------------- gold_revenue_monthly
+
+REVENUE_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in ('revenue_group', 'supporting_metrics')}, sort_keys=True)
+
+REVENUE_MONTHLY_SQL = """
+CREATE TABLE gold_revenue_monthly(
+  month TEXT NOT NULL, revenue_type TEXT NOT NULL CHECK(revenue_type IN ('subscription','ppv','unattributed')),
+  gross_charges_cents INTEGER NOT NULL, refunds_cents INTEGER NOT NULL, net_revenue_cents INTEGER NOT NULL,
+  charges INTEGER NOT NULL, refunds INTEGER NOT NULL, payers INTEGER NOT NULL, refund_rate REAL,
+  attempts INTEGER NOT NULL, failed_attempts INTEGER NOT NULL, payment_failure_rate REAL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL, PRIMARY KEY(month, revenue_type));
+INSERT INTO gold_revenue_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+types(revenue_type) AS (VALUES ('subscription'), ('ppv'), ('unattributed')),
+booked AS (
+  SELECT m.month, t.revenue_type,
+         COALESCE(SUM(CASE WHEN a.revenue_cents > 0 THEN a.revenue_cents END), 0) AS gross,
+         COALESCE(SUM(CASE WHEN a.revenue_cents < 0 THEN -a.revenue_cents END), 0) AS refunds_cents,
+         COUNT(CASE WHEN a.revenue_cents > 0 THEN 1 END) AS charges,
+         COUNT(CASE WHEN a.revenue_cents < 0 THEN 1 END) AS refunds,
+         COUNT(DISTINCT CASE WHEN a.revenue_cents > 0 THEN a.user_id END) AS payers
+  FROM months m CROSS JOIN types t
+  LEFT JOIN silver_payment_attempts a ON a.revenue_type = t.revenue_type
+   AND a.succeeded_at >= m.period_start AND a.succeeded_at < m.period_end
+  GROUP BY m.month, t.revenue_type
+),
+attempts AS (
+  SELECT m.month, a.type AS revenue_type, COUNT(*) AS attempts, SUM(a.outcome = 'failed') AS failed
+  FROM months m JOIN silver_payment_attempts a ON a.type <> 'refund' AND a.outcome IN ('succeeded', 'failed')
+   AND a.created_at >= m.period_start AND a.created_at < m.period_end
+  GROUP BY m.month, a.type
+)
+SELECT b.month, b.revenue_type, b.gross, b.refunds_cents, b.gross - b.refunds_cents, b.charges, b.refunds, b.payers,
+       b.refunds_cents * 1.0 / NULLIF(b.gross, 0), COALESCE(t.attempts, 0), COALESCE(t.failed, 0),
+       t.failed * 1.0 / NULLIF(t.attempts, 0), :revenue_definitions, :build_id
+FROM booked b LEFT JOIN attempts t ON t.month = b.month AND t.revenue_type = b.revenue_type
+"""
+
+
+def reconcile_revenue_monthly(db):
+    checks = {}
+    rows = {(m, t): (g, r, n, c, rc, a, f) for m, t, g, r, n, c, rc, a, f in db.execute(
+        'SELECT month, revenue_type, gross_charges_cents, refunds_cents, net_revenue_cents, charges, refunds, '
+        'attempts, failed_attempts FROM gold_revenue_monthly')}
+    by_type = {(m, t): (g, r, n) for m, t, g, r, n in db.execute(load_sql('net_revenue_by_type_monthly'), COVERAGE)}
+    checks['by_type_matches_registry'] = {k: v[:3] for k, v in rows.items()} == by_type
+    kpi = {m: (g, r, n) for m, g, r, n in db.execute(
+        'SELECT month, gross_charges_cents, refunds_cents, net_revenue_cents FROM gold_kpi_monthly')}
+    totals = {}
+    for (m, _), v in rows.items():
+        totals[m] = tuple(a + b for a, b in zip(totals.get(m, (0, 0, 0)), v[:3]))
+    checks['types_add_to_kpi_revenue'] = totals == kpi
+    refund = {m: (g, r, c, n) for m, g, r, c, n, _ in db.execute(load_sql('refund_rate_monthly'), COVERAGE)}
+    counts = {}
+    for (m, _), v in rows.items():
+        counts[m] = tuple(a + b for a, b in zip(counts.get(m, (0, 0, 0, 0)), (v[0], v[1], v[3], v[4])))
+    checks['refund_counts_match_registry'] = counts == refund
+    failures = {(m, p): (a, f) for m, p, a, f, _ in db.execute(load_sql('payment_failure_rate_monthly'), COVERAGE)}
+    checks['failures_match_registry'] = {k: v[5:7] for k, v in rows.items() if v[5]} == failures
+    checks['net_equals_gross_minus_refunds'] = all(v[2] == v[0] - v[1] for v in rows.values())
+    return checks, {'rows': len(rows)}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -1584,11 +1751,14 @@ GOLD = [
     ('gold_activity_segments_monthly', ACTIVITY_SEGMENTS_SQL, ['ix_gold_activity_segments_dimension'],
      reconcile_activity_segments),
     ('gold_growth_accounting_monthly', GROWTH_ACCOUNTING_SQL, [], reconcile_growth_accounting),
+    ('gold_cohorts', COHORTS_SQL, [], reconcile_cohorts),
+    ('gold_revenue_monthly', REVENUE_MONTHLY_SQL, [], reconcile_revenue_monthly),
 ]
 
 # Named parameters available to every layer script, besides :build_id and the coverage window.
 SCRIPT_PARAMS = {'kpi_definitions': KPI_DEFINITIONS, 'segment_definitions': SEGMENT_DEFINITIONS,
-                 'growth_definitions': GROWTH_DEFINITIONS}
+                 'growth_definitions': GROWTH_DEFINITIONS, 'cohort_definitions': COHORT_DEFINITIONS,
+                 'revenue_definitions': REVENUE_DEFINITIONS}
 
 # Objects owned by this builder. Only these are dropped and recreated.
 LAYERS = SILVER + GOLD
