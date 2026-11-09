@@ -48,6 +48,9 @@ REQUIRED_COLUMNS = {
                      'country_at_event', 'checkout_event_id'},
     'payment_status_history': {'payment_status_event_id', 'txn_id', 'status', 'effective_at', 'recorded_at'},
     'dataset_metadata': {'metadata_key', 'metadata_value'},
+    'users': {'user_id', 'signup_at', 'acquisition_source', 'country_origin', 'country_current', 'subscription_status'},
+    'content_views': {'view_id', 'user_id'},
+    'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
                              'effective_end_at', 'cancelled_at', 'source_txn_id', 'plan_code'},
 }
@@ -377,6 +380,142 @@ def reconcile_subscription_access(db):
     exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_subscription_access GROUP BY 1').fetchall())
     return checks, {'source_rows': source_rows, 'spell_starts': starts, 'access_losses': losses, 'exceptions': exceptions}
 
+# ---------------------------------------------------------------- silver_user_profile
+
+ACQUISITION_SOURCES = ('organic', 'paid_search', 'paid_social', 'creator', 'referral', 'other', 'unknown')
+
+USER_PROFILE_SQL = """
+CREATE TABLE silver_user_profile(
+  user_id TEXT PRIMARY KEY, signup_at TEXT, signup_date TEXT, signup_month TEXT, acquisition_source TEXT NOT NULL,
+  country_origin TEXT, country_current_snapshot TEXT, subscription_status_snapshot TEXT,
+  first_session_at TEXT, first_engaged_date TEXT, first_paid_at TEXT, first_subscription_at TEXT, first_ppv_at TEXT,
+  subscription_spells INTEGER NOT NULL, is_returning_subscriber INTEGER NOT NULL CHECK(is_returning_subscriber IN (0,1)),
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL);
+INSERT INTO silver_user_profile
+WITH RECURSIVE segment_days(user_id, day, seg_start, seg_end, watched) AS (
+  SELECT v.user_id, date(s.segment_started_at), s.segment_started_at, s.segment_ended_at, s.watch_duration_sec
+  FROM playback_segments s JOIN content_views v ON v.view_id = s.view_id
+  UNION ALL
+  SELECT user_id, date(day, '+1 day'), seg_start, seg_end, watched FROM segment_days
+  WHERE date(day, '+1 day') < substr(seg_end, 1, 10)
+     OR (date(day, '+1 day') = substr(seg_end, 1, 10) AND substr(seg_end, 12) <> '00:00:00Z')
+),
+engaged AS (
+  SELECT user_id, MIN(day) AS first_day FROM (
+    SELECT user_id, day FROM segment_days GROUP BY user_id, day
+    HAVING SUM(watched * CASE WHEN julianday(seg_end) = julianday(seg_start) THEN 1.0
+                              ELSE (MIN(julianday(seg_end), julianday(day, '+1 day')) - MAX(julianday(seg_start), julianday(day)))
+                                   / (julianday(seg_end) - julianday(seg_start)) END) >= 60)
+  GROUP BY user_id
+),
+sessions_first AS (
+  SELECT resolved_user_id AS user_id, MIN(session_started_at) AS first_session_at
+  FROM silver_resolved_sessions WHERE resolved_user_id IS NOT NULL GROUP BY resolved_user_id
+),
+payments_first AS (
+  SELECT user_id, MIN(succeeded_at) AS first_paid_at,
+         MIN(CASE WHEN type = 'subscription' THEN succeeded_at END) AS first_subscription_at,
+         MIN(CASE WHEN type = 'ppv' THEN succeeded_at END) AS first_ppv_at
+  FROM silver_payment_attempts WHERE revenue_cents > 0 GROUP BY user_id
+),
+spells AS (SELECT user_id, COALESCE(MAX(access_spell_number), 0) AS n FROM silver_subscription_access GROUP BY user_id),
+base AS (
+  SELECT u.user_id, u.signup_at, u.acquisition_source, u.country_origin, u.country_current, u.subscription_status,
+         sf.first_session_at, e.first_day, pf.first_paid_at, pf.first_subscription_at, pf.first_ppv_at,
+         COALESCE(sp.n, 0) AS spell_count,
+         (u.signup_at IS NULL OR strftime('%Y-%m-%dT%H:%M:%SZ', u.signup_at) IS NOT u.signup_at) AS bad_signup,
+         COALESCE(sf.first_session_at < u.signup_at OR pf.first_paid_at < u.signup_at
+                  OR e.first_day < substr(u.signup_at, 1, 10), 0) AS before_signup,
+         (COALESCE(u.acquisition_source, 'unknown') NOT IN ACQUISITION_SOURCES) AS bad_source
+  FROM users u
+  LEFT JOIN sessions_first sf ON sf.user_id = u.user_id
+  LEFT JOIN engaged e ON e.user_id = u.user_id
+  LEFT JOIN payments_first pf ON pf.user_id = u.user_id
+  LEFT JOIN spells sp ON sp.user_id = u.user_id
+)
+SELECT user_id, signup_at, substr(signup_at, 1, 10), substr(signup_at, 1, 7), COALESCE(acquisition_source, 'unknown'),
+       country_origin, country_current, subscription_status,
+       first_session_at, first_day, first_paid_at, first_subscription_at, first_ppv_at,
+       spell_count, spell_count > 1,
+       CASE WHEN bad_signup OR before_signup OR bad_source THEN 'suspicious_usable' ELSE 'ok' END,
+       NULLIF(rtrim((CASE WHEN bad_signup THEN 'invalid_signup_time,' ELSE '' END)
+                    || (CASE WHEN before_signup THEN 'activity_before_signup,' ELSE '' END)
+                    || (CASE WHEN bad_source THEN 'unrecognised_acquisition_source,' ELSE '' END), ','), ''),
+       :build_id
+FROM base;
+CREATE INDEX ix_silver_user_profile_signup ON silver_user_profile(signup_at);
+CREATE INDEX ix_silver_user_profile_source_signup ON silver_user_profile(acquisition_source, signup_at)
+""".replace('ACQUISITION_SOURCES', "(" + ",".join(f"'{v}'" for v in ACQUISITION_SOURCES) + ")", 1)
+
+
+def independent_profile_recount(db):
+    """First valid paid charge and first identified session per user, recomputed in Python from the source."""
+    successes = {}
+    for txn_id, effective_at in db.execute("SELECT txn_id, effective_at FROM payment_status_history WHERE status='succeeded'"):
+        successes.setdefault(txn_id, []).append(effective_at)
+    first_paid = {}
+    for txn_id, user, kind, amount in db.execute('SELECT txn_id, user_id, type, amount_usd FROM transactions'):
+        times = successes.get(txn_id, [])
+        if kind == 'refund' or len(times) != 1 or exact_cents(amount) is None or exact_cents(amount) <= 0:
+            continue
+        if user not in first_paid or times[0] < first_paid[user]:
+            first_paid[user] = times[0]
+    links = {}
+    for session_id, user in db.execute('SELECT session_id, user_id FROM identity_links'):
+        links.setdefault(session_id, set()).add(user)
+    first_session = {}
+    for session_id, user, started in db.execute('SELECT session_id, user_id, session_started_at FROM sessions'):
+        if user is None:
+            linked = links.get(session_id, set())
+            user = next(iter(linked)) if len(linked) == 1 else None
+        if user is not None and (user not in first_session or started < first_session[user]):
+            first_session[user] = started
+    return first_paid, first_session
+
+
+def reconcile_user_profile(db):
+    checks = {}
+    source_rows = db.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+    checks['row_count_equals_source'] = db.execute('SELECT COUNT(*) FROM silver_user_profile').fetchone()[0] == source_rows
+    checks['keys_equal_source'] = db.execute(
+        'SELECT COUNT(*) FROM (SELECT user_id FROM users EXCEPT SELECT user_id FROM silver_user_profile '
+        'UNION ALL SELECT user_id FROM silver_user_profile EXCEPT SELECT user_id FROM users)').fetchone()[0] == 0
+    first_paid, first_session = independent_profile_recount(db)
+    known = {r[0] for r in db.execute('SELECT user_id FROM users')}
+    first_paid = {k: v for k, v in first_paid.items() if k in known}
+    first_session = {k: v for k, v in first_session.items() if k in known}
+    checks['independent_first_paid_recount'] = first_paid == dict(db.execute(
+        'SELECT user_id, first_paid_at FROM silver_user_profile WHERE first_paid_at IS NOT NULL'))
+    checks['independent_first_session_recount'] = first_session == dict(db.execute(
+        'SELECT user_id, first_session_at FROM silver_user_profile WHERE first_session_at IS NOT NULL'))
+    signups = db.execute(
+        "WITH s AS (SELECT signup_month, acquisition_source FROM silver_user_profile "
+        "  WHERE signup_at >= :coverage_start AND signup_at < :coverage_end) "
+        "SELECT signup_month, acquisition_source, COUNT(*) FROM s GROUP BY 1, 2 "
+        "UNION ALL SELECT signup_month, 'all', COUNT(*) FROM s GROUP BY 1 ORDER BY 1, 2", COVERAGE).fetchall()
+    registry = [r for r in db.execute(load_sql('new_signups_monthly'), COVERAGE) if not (r[1] == 'all' and r[2] == 0)]
+    checks['signups_match_registry_on_source'] = signups == registry
+    activation = db.execute(
+        "SELECT signup_month, COUNT(*), SUM(COALESCE(first_engaged_date >= signup_date "
+        "  AND first_engaged_date < date(signup_date, '+7 days'), 0)) FROM silver_user_profile "
+        "WHERE signup_date || 'T00:00:00Z' >= :coverage_start "
+        "  AND strftime('%Y-%m-%dT%H:%M:%SZ', signup_date, '+7 days') <= :coverage_end "
+        "GROUP BY 1 ORDER BY 1", COVERAGE).fetchall()
+    checks['activation_matches_registry_on_source'] = activation == [
+        tuple(r[:3]) for r in db.execute(load_sql('activation_7d'), COVERAGE)]
+    window = "strftime('%Y-%m-%dT%H:%M:%SZ', signup_at, '+30 days')"
+    conversion = db.execute(
+        f"SELECT signup_month, COUNT(*), "
+        f"  SUM(COALESCE(first_subscription_at >= signup_at AND first_subscription_at < {window}, 0)), "
+        f"  SUM(COALESCE(first_paid_at >= signup_at AND first_paid_at < {window}, 0)) "
+        f"FROM silver_user_profile WHERE signup_at >= :coverage_start AND {window} <= :coverage_end "
+        f"GROUP BY 1 ORDER BY 1", COVERAGE).fetchall()
+    checks['conversion_matches_registry_on_source'] = conversion == [
+        tuple(r[:4]) for r in db.execute(load_sql('conversion_30d'), COVERAGE)]
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_profile GROUP BY 1').fetchall())
+    return checks, {'source_rows': source_rows, 'exceptions': exceptions}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -386,6 +525,8 @@ SILVER = [
      ['ix_silver_payment_attempts_success', 'ix_silver_payment_attempts_user_success'], reconcile_payment_attempts),
     ('silver_subscription_access', SUBSCRIPTION_ACCESS_SQL,
      ['ix_silver_subscription_access_user_start'], reconcile_subscription_access),
+    ('silver_user_profile', USER_PROFILE_SQL,
+     ['ix_silver_user_profile_signup', 'ix_silver_user_profile_source_signup'], reconcile_user_profile),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
