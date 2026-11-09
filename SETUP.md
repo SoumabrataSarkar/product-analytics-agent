@@ -10,10 +10,17 @@ This guide explains how to run the PocketToons reference investigation with the 
   ```sh
   python3 -c "import sqlite3,sys; print('Python:', sys.version); print('SQLite:', sqlite3.sqlite_version)"
   ```
-- A working Codex or Claude Code environment with access to your local workspace and database. Follow that runtime's account and permission requirements. The repository does not bundle a model or guarantee a particular runtime.
+- Your own working Codex or Claude Code environment and available model, with access to the local repository and database. Follow that runtime's account and permission requirements. This framework uses that runtime for reasoning; it does not require a separate standalone model service or custom API.
 - Enough free local disk space for the database, temporary data and any backup. The reviewed layered database was approximately 680 MiB on the machine where it was prepared; sizes vary.
 
-If you do not already have a local clone, authenticate with GitHub and clone the private repository:\n\n```sh\ngit clone https://github.com/SoumabrataSarkar/product-analytics-agent.git\ncd product-analytics-agent\n```\n\nRun the remaining commands from the repository root. Do not place a database, private evidence, secrets or evaluation answer keys in a public repository.
+If you do not already have a local clone, authenticate with GitHub and clone the private repository:
+
+```sh
+git clone https://github.com/SoumabrataSarkar/product-analytics-agent.git
+cd product-analytics-agent
+```
+
+Run the remaining commands from the repository root. Do not place a database, private evidence, secrets or evaluation answer keys in a public repository.
 
 ## Option A: download the reviewed database
 
