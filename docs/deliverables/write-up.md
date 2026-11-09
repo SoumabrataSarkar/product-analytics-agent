@@ -6,7 +6,7 @@ The formatted one-page version is [`submission/write-up.pdf`](../../submission/w
 
 One investigation runs in six steps: **clarify** (metric, period, population; asks if ambiguous) → **verify the definition** (the metric exists, with its approved definition in the registry and catalog) → **route to a layer** (Gold if it fits, Silver for detail, Bronze for raw audits) → **query with evidence** (read-only, bounded, one log per query) → **test hypotheses** (up to 3 per round, 3 rounds) → **report** (pattern ≠ cause; fixed PDF template, at most 10 pages). Every run, in Claude Code or Codex, reads the same `AGENTS.md`, `SKILL.md`, data catalog and metric registry. The SQLite database holds 8 Gold tables, 10 Silver tables and 20 Bronze views, built in one transaction with 122 reconciliation checks.
 
-- **Clarifies instead of assuming.** When the metric, period or meaning is open, it asks first, as it did in all four evaluation questions that needed it, and it states every assumption it keeps.
+- **Clarifies instead of assuming.** When the metric, period or meaning is open, it asks first or states a clear choice, as it did in every evaluation question that needed it, and it states every assumption it keeps.
 - **Verifies the metric before computing it.** It checks that the metric exists and reads its approved, versioned definition and SQL in the metric registry, plus grains, joins and known gaps in the data catalog. Unsupported requests are declined, not improvised.
 - **Maps the question to a layer for speed.** Gold answers standard monthly questions in milliseconds and is reconciled; Silver keeps per-user and per-event detail; Bronze is used only to audit raw values.
 - **Evidence for every number.** Each query writes its SQL, layer, metric version and row count to its own log.
@@ -19,7 +19,7 @@ Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after review plus a blind r
 | Question type | Questions | Result | What happened |
 |---|---|---|---|
 | Simple numbers and filters | Q01 Q05 Q08 Q17 Q18 | All pass | Exact to the user and the cent |
-| Vague or ambiguous questions | Q03 Q10 Q15 Q18 | All pass | Asked before choosing a metric, period or meaning |
+| Vague or ambiguous questions | Q03 Q10 Q15 Q18 | All pass | Asked, or stated a clear choice, before picking a metric, period or meaning |
 | Unanswerable question | Q16 | Pass | Declined and named the data that's missing |
 | Data-quality traps | Q12 Q13 Q14 | All pass | Caught both planted issues |
 | Comparisons and lifecycle | Q04 Q06 Q09 | All pass | Right time basis; groups reconcile to the total |
