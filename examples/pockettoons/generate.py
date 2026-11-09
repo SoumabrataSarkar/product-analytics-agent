@@ -134,10 +134,21 @@ def main():
     payers=[]
     # Monthly subscriber departures vary (500 in total); paying counts stay at their targets.
     departures=[0,91,108,96,113,92]
+    # Independent streams: some former subscribers return, and some renewals fail before a
+    # successful retry. Neither changes monthly paying counts or revenue.
+    resub_rng=random.Random(SEED+6602); retry_rng=random.Random(SEED+6601)
+    returned=set(); spell_start={}; renewal_failures=[]
     for mindex,(_,month) in enumerate(MONTHS):
         if mindex:
-            dropped=set(sorted(current)[:departures[mindex]]); current-=dropped
+            dropped=set(sorted(current-returned)[:departures[mindex]]); current-=dropped
             for i in dropped: cancelled[i]=timestamp(month,1+(i*7)%25,1)
+            need=payer_targets[mindex]-len(current)
+            # Former subscribers whose access ended in an earlier month can come back.
+            if mindex>=2:
+                lapsed=sorted(i for i,ended in cancelled.items() if i not in current and i not in returned and ended[:7]<f'2026-{month:02}')
+                back=resub_rng.sample(lapsed,min(len(lapsed),round(need*0.12)))
+                for i in back: spell_start[i]=timestamp(month,1+(i*7)%25,1)
+                current.update(back); returned.update(back)
             pool=[i for i in range(cohort_ends[mindex]) if i not in current and i not in cancelled]
             # Later cohorts convert less, with replacements also drawn from older users.
             need=payer_targets[mindex]-len(current)
@@ -150,14 +161,21 @@ def main():
         payers.append(set(current))
         for i in sorted(current):
             uid=f'u{i:05}'; bill_day=1+(i*7)%25; start_t=timestamp(month,bill_day,1); end_month=month+1
-            end_t=timestamp(end_month,bill_day,1); subid=f'sub_{uid}'; tid=f't_sub_{month}_{uid}'
+            end_t=timestamp(end_month,bill_day,1); subid=f'sub_{uid}_2' if i in spell_start else f'sub_{uid}'; tid=f't_sub_{month}_{uid}'
             first_start.setdefault(i,start_t); last_start[i]=start_t
-            subkind='subscription_initial' if first_start[i]==start_t else 'subscription_renewal'
+            subkind='subscription_initial' if first_start[i]==start_t or spell_start.get(i)==start_t else 'subscription_renewal'
+            if subkind=='subscription_renewal' and retry_rng.random()<0.07:
+                # The first renewal attempt fails; an automatic retry succeeds a little later.
+                failed_at=offset(start_t,-(retry_rng.randint(3600,36000) if bill_day>1 else retry_rng.randint(600,3000)))
+                ftid='failed_'+tid
+                renewal_failures.append((ftid,uid,failed_at[:10],'subscription','subscription_renewal',9.99,'credit_debit_card','failed',failed_at,None,ftid,'demo','USD',9.99,None,subid,9.99,0,users[i][3]))
             txns.append((tid,uid,start_t[:10],'subscription',subkind,9.99,'credit_debit_card','succeeded',start_t,None,tid,'demo','USD',9.99,None,subid,9.99,0,users[i][3]))
             statuses.append((f'p_{tid}',tid,'succeeded',start_t,start_t,f'provider_{tid}'))
             histories.append((f'h_{month}_{uid}',subid,uid,start_t,end_t,start_t,'active','monthly_9_99',tid,None,start_t))
     db.executemany('INSERT INTO transactions VALUES ('+','.join('?'*19)+')',txns)
     db.executemany('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',statuses)
+    db.executemany('INSERT INTO transactions VALUES ('+','.join('?'*19)+')',renewal_failures)
+    db.executemany('INSERT INTO payment_status_history VALUES (?,?,?,?,?,?)',[(f'p_{r[0]}',r[0],'failed',r[8],r[8],f'provider_{r[0]}') for r in renewal_failures])
     db.executemany('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',histories)
     for i, expired_at in cancelled.items():
         uid=f'u{i:05}'
@@ -189,7 +207,9 @@ def main():
     # Relative local-hour weights: light overnight use, a midday rise and an evening peak.
     local_hour_weights=[2,1,0.5,0.3,0.3,0.5,1,2,2.5,2.5,2.5,3,4,3.5,3,3,3.5,4.5,6,8,10,10,8,5]
     intensity=[activity_rng.lognormvariate(0,0.9) for _ in users]
-    initial_paid_at={row[1]:row[8] for row in txns if row[4]=='subscription_initial'}
+    initial_paid_at={}
+    for row in txns:
+        if row[4]=='subscription_initial': initial_paid_at.setdefault(row[1],[]).append(row[8])
     def poisson(lam):
         limit=pow(2.718281828459045,-lam); k=0; prod=activity_rng.random()
         while prod>limit: k+=1; prod*=activity_rng.random()
@@ -246,8 +266,8 @@ def main():
                 platform=['ios','android','web'][(i+1)%3 if second else i%3]
                 span=duration+(7200 if i%5==0 and not browse else 0)
                 blocked=[]
-                if uid in initial_paid_at and initial_paid_at[uid][:10]==timestamp(month,d)[:10]:
-                    paid=initial_paid_at[uid]; blocked.append((offset(paid,-1920),offset(paid,2880)))
+                for paid in initial_paid_at.get(uid,[]):
+                    if paid[:10]==timestamp(month,d)[:10]: blocked.append((offset(paid,-1920),offset(paid,2880)))
                 st=pick_start(country,month,d,span,blocked); end=offset(st,duration)
                 suffix='' if n==0 else f'_{n}'
                 sid=f's{month}_{i:05}{suffix}'
@@ -453,6 +473,10 @@ def main():
         if v[11]!='free' or int(s[1][1:])%17 or ppv_exposure_events[month_key]>=270: continue
         ppv_exposure_events[month_key]+=2+(int(s[1][1:])%3==0)
         observed=offset(s[4],30); cid='c01'; episode=13
+        # A user who already holds this PPV episode is not shown its paywall.
+        if db.execute('''SELECT 1 FROM transaction_content_attribution a JOIN transactions t ON t.txn_id=a.txn_id
+            WHERE t.user_id=? AND a.content_id=? AND a.episode_number=? AND a.entitlement_start_at<=?
+              AND (a.entitlement_end_at IS NULL OR a.entitlement_end_at>?)''',(s[1],cid,episode,observed,observed)).fetchone(): continue
         funnel.append((f'nonbuyer_wall_{s[0]}',s[1],s[2],observed,'paywall_viewed',s[0],None,None,None,cid,episode,'{"product":"ppv"}',None,s[9],observed))
         funnel.append((f'nonbuyer_block_{s[0]}',s[1],s[2],observed,'playback_blocked',s[0],None,None,None,cid,episode,'{"reason":"premium_requires_payment"}',None,s[9],observed))
         if int(s[1][1:])%3==0:
@@ -541,7 +565,11 @@ def main():
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',quota_events)
     # Some checkout attempts fail; they are not revenue and grant no entitlement.
     failed_txns=[]
-    checkouts=db.execute("SELECT event_id,user_id,session_id,event_at,country_at_event FROM user_events WHERE event_name='checkout_started' AND event_id LIKE 'nonbuyer_checkout_%' ORDER BY event_id LIMIT 30").fetchall()
+    # Five failed attempts per month, spread across the analysis period.
+    checkouts=db.execute('''SELECT event_id,user_id,session_id,event_at,country_at_event FROM (
+        SELECT e.*,ROW_NUMBER() OVER (PARTITION BY substr(e.event_at,1,7) ORDER BY e.event_id) n
+        FROM user_events e WHERE e.event_name='checkout_started' AND e.event_id LIKE 'nonbuyer_checkout_%')
+      WHERE n<=5 ORDER BY event_id''').fetchall()
     for event_id,uid,sid,created,country in checkouts:
         tid='failed_'+event_id
         row=(tid,uid,created[:10],'ppv','ppv_episode_purchase',1.99,'credit_debit_card','failed',created,sid,tid,'demo','USD',1.99,None,None,1.99,0,country)
@@ -593,6 +621,10 @@ def main():
         if uid in refunded_users: continue
         db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                    (f'h_expired_{uid}',f'sub_{uid}',uid,expired_at,None,expired_at,'expired','monthly_9_99',None,None,expired_at))
+    # A returning subscriber's ended state lasts until the new subscription starts.
+    for i,started in spell_start.items():
+        db.execute("""UPDATE subscription_history SET effective_end_at=? WHERE user_id=? AND effective_end_at IS NULL
+                      AND status IN ('expired','refunded') AND effective_start_at<?""",(started,f'u{i:05}',started))
     # Keep the status-change instant across adjacent intervals with the same status.
     db.execute('''WITH ordered AS (
       SELECT subscription_period_id,user_id,status,effective_start_at,
@@ -617,7 +649,7 @@ def main():
     refund_ids=[r[0] for r in ppv+sub_refunds if r[3]=='refund']
     for index,tid in enumerate(refund_ids):
         db.execute('UPDATE transactions SET refund_reason=? WHERE txn_id=?',(reasons[index%len(reasons)],tid))
-    all_txns=txns+ppv+sub_refunds+failed_txns
+    all_txns=txns+ppv+sub_refunds+failed_txns+renewal_failures
     raw=[]; quality=[]
     for n,row in enumerate(all_txns):
         tid,amount,t=row[0],row[5],row[8]
