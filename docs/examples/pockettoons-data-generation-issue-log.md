@@ -62,7 +62,7 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** Comparing cohorts with equal artificial sizes looks unrealistic. Comparing conversion over unequal or incompletely observed windows can misstate the conversion difference.
 
-**Resolution:** Cohort sizes vary. Conversion is compared over a complete, equal 30-day observation window. May–June: 96 of 4,854 signups (1.98%); July–August: 31 of 5,426 (0.57%). The March signup cohort has incomplete observation before April and is excluded from that comparison. The association is not proof of causation.
+**Resolution:** Cohort sizes vary. Conversion is compared over a complete, equal 30-day observation window. May–June: 95 of 4,854 signups (1.96%); July–August: 30 of 5,426 (0.55%). The March signup cohort has incomplete observation before April and is excluded from that comparison. The association is not proof of causation.
 
 ### Accidental country/channel correlation
 
@@ -74,13 +74,19 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** Paywall events recorded only for purchasers yield artificially high conversion. Missing checkout events also prevent a complete funnel.
 
-**Resolution:** Subscription and PPV paywall/checkout events carry a product label. The fixture includes purchasers and non-purchasers: 4,800 subscription-paywall sessions have no in-session purchase, and 1,631 of those start checkout. Every successful PPV purchase and initial subscription has a preceding matching checkout; initial subscriptions also link to a session and subsequent viewing.
+**Resolution:** Subscription and PPV paywall/checkout events carry a product label. The fixture includes purchasers and non-purchasers: 4,800 subscription-paywall sessions have no in-session purchase, and 1,590 of those start checkout. PPV paywalls without a purchase are spread across every analysis month rather than concentrated in the first months. Every successful PPV purchase and initial subscription has a preceding matching checkout; initial subscriptions also link to a session and subsequent viewing.
 
 ### Browsing and resume behavior
 
 **Issue and impact:** If every session has a view, app activity and viewing activity become indistinguishable. A repeat view at position zero does not demonstrate resume behavior.
 
 **Resolution:** The fixture includes 5,273 browsing-only sessions and repeat views with playback-position continuity. Session duration, playback duration and completion are separate measures.
+
+### Subscriber departures
+
+**Issue and impact:** Exactly 100 subscribers left in every month, an implausibly constant churn count.
+
+**Resolution:** Monthly departures vary (91, 108, 96, 113 and 92 from May to September; 500 in total). Paying counts per month keep their targets, so monthly subscription revenue is unchanged; replacement subscribers absorb the variation, which slightly changes the 30-day conversion counts.
 
 ### Cancellation and refund timing
 
