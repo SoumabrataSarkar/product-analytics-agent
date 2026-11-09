@@ -394,6 +394,12 @@ if bad_money or duplicate_success:
 else:
     revenue_cents=db.execute("SELECT substr(p.effective_at,1,7),sum(CASE WHEN t.type='refund' THEN -usd_cents(t.amount_usd) ELSE usd_cents(t.amount_usd) END) FROM transactions t JOIN payment_status_history p USING(txn_id) WHERE p.status='succeeded' GROUP BY 1 ORDER BY 1").fetchall()
     print('Monthly net revenue:',[(month,f'{Decimal(cents)/100:.2f}') for month,cents in revenue_cents])
+    registry_revenue=db.execute(load_sql('net_revenue_monthly'),coverage).fetchall()
+    by_type=db.execute(load_sql('net_revenue_by_type_monthly'),coverage).fetchall()
+    revenue_ok=[(m,net) for m,_,_,net in registry_revenue]==revenue_cents and all(
+        net==sum(t[4] for t in by_type if t[0]==m) for m,_,_,net in registry_revenue)
+    print(('PASS' if revenue_ok else 'FAIL'),'registry net revenue and type split reconcile to independent cents')
+    failed+=not revenue_ok
     if len(revenue_cents)!=6 or sum(v for _,v in revenue_cents[:3])==0 or abs(sum(v for _,v in revenue_cents[3:])/sum(v for _,v in revenue_cents[:3])-1)>0.02: failed+=1
 monthly=db.execute("SELECT substr(s.session_started_at,1,7),count(DISTINCT CASE WHEN u.acquisition_source='paid_social' THEN s.user_id END),count(DISTINCT CASE WHEN u.acquisition_source='unknown' THEN s.user_id END) FROM sessions s JOIN users u USING(user_id) GROUP BY 1 ORDER BY 1").fetchall()
 print('Monthly paid-social active users and unknown-source users:',monthly)
