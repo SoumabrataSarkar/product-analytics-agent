@@ -6,7 +6,7 @@
 
 | Component | Current state and boundary |
 |---|---|
-| Agent runtime | Codex or Claude Code follows the shared [investigation skill](../../skills/product-analytics-investigation/SKILL.md). Model availability, local-file access and permissions depend on the selected runtime. The experimental Python investigation loop is not a turnkey model-backed agent. |
+| Agent runtime | The user operates this framework through their own Codex or Claude Code runtime and available model, following the shared [investigation skill](../../skills/product-analytics-investigation/SKILL.md). Model availability, local-file access and permissions depend on that runtime. No separate standalone model service or custom API is required for this workflow. |
 | Catalog and definitions | The [catalog](../examples/pockettoons-data-catalog.md), [registry](../metrics/metric-registry.md) and [layer contracts](../data-layers/pockettoons-layer-contracts.md) describe the PocketToons example. They are shared across runtimes, not universal definitions for other datasets. |
 | Reasoning and stopping | The shared skill instructs the coding agent to clarify material ambiguity, investigate evidence-led hypotheses, and observe stopping rules. These instructions are not a deterministic or independently verified guarantee of reasoning. |
 | Read-only queries and evidence | [Query and evidence tools](../../tools/INVESTIGATION.md) execute bounded SQLite reads and record SQL, context and optional results. Layer and snapshot labels are supplied by the caller and must be verified; this is not a complete security sandbox. |
