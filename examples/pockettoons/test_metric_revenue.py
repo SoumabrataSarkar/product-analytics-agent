@@ -77,9 +77,27 @@ class RevenueTests(unittest.TestCase):
         ppv = self.txn('u2', 'ppv', 1.99, ('succeeded', '2026-04-04T10:00:00Z'))
         self.txn('u2', 'refund', 1.99, ('succeeded', '2026-04-05T10:00:00Z'), related=ppv)
         split = {r[1]: r[2:] for r in self.rows('net_revenue_by_type_monthly')}
-        self.assertEqual(split, {'subscription': (999, 0, 999), 'ppv': (199, 199, 0)})
+        self.assertEqual(split, {'subscription': (999, 0, 999), 'ppv': (199, 199, 0), 'unattributed': (0, 0, 0)})
         self.assertEqual(sum(v[2] for v in split.values()), self.net()['2026-04'][2])
         self.assertTrue(sub)
+
+    def test_invalid_amounts_and_double_success_are_excluded_not_rounded(self):
+        self.txn('u1', 'ppv', 9.995, ('succeeded', '2026-04-04T10:00:00Z'))
+        self.txn('u1', 'ppv', 0, ('succeeded', '2026-04-04T10:00:00Z'))
+        self.txn('u1', 'ppv', -1.99, ('succeeded', '2026-04-04T10:00:00Z'))
+        self.txn('u1', 'ppv', 'unavailable', ('succeeded', '2026-04-04T10:00:00Z'))
+        self.txn('u1', 'ppv', 1.99, ('succeeded', '2026-04-04T10:00:00Z'), ('succeeded', '2026-04-05T10:00:00Z'))
+        self.txn('u1', 'ppv', 1.99, ('succeeded', '2026-04-06T10:00:00Z'))
+        self.assertEqual(self.net()['2026-04'], (199, 0, 199))
+
+    def test_refund_of_missing_or_failed_charge_is_unattributed_but_reduces_net(self):
+        failed = self.txn('u1', 'ppv', 1.99, ('failed', '2026-04-04T10:00:00Z'))
+        self.txn('u1', 'refund', 1.99, ('succeeded', '2026-04-05T10:00:00Z'), related=failed)
+        self.txn('u2', 'refund', 1.99, ('succeeded', '2026-04-05T10:00:00Z'), related='missing')
+        self.txn('u3', 'subscription', 9.99, ('succeeded', '2026-04-03T01:00:00Z'))
+        split = {r[1]: r[4] for r in self.rows('net_revenue_by_type_monthly')}
+        self.assertEqual(split, {'subscription': 999, 'ppv': 0, 'unattributed': -398})
+        self.assertEqual(self.net()['2026-04'][2], 601)
 
     def test_quarter_is_sum_of_three_complete_months(self):
         for month in ('04', '05', '06'):

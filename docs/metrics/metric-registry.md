@@ -420,7 +420,7 @@ FROM buckets
 ORDER BY period_start
 ```
 
-### Revenue group: net revenue, subscription and PPV net revenue, ARPU, ARPPU        version: 1.0   status: approved
+### Revenue group: net revenue, subscription and PPV net revenue, ARPU, ARPPU        version: 1.1   status: approved
 
 | id | Name | Formula (per complete UTC month) |
 |---|---|---|
@@ -432,7 +432,7 @@ ORDER BY period_start
 
 1. **Business meaning.** Money the product earned in a month after refunds, how it splits between subscriptions and PPV, and how much it earned per active and per paying user.
 2. **Population.** Transactions in `transactions`. A *paying user* is a user with at least one successful subscription or PPV charge in the month, whether or not it is later refunded. ARPU uses the `mau` population.
-3. **Qualifying rule.** A transaction counts only if it has a `succeeded` event in `payment_status_history`, and it counts at that event's `effective_at`, not at creation time and not by the current `transactions.status`. Failed attempts count for nothing. Refunds are stored as positive amounts and subtracted. A refund counts in the month it succeeds, not in its original charge's month. A refund is assigned to the type of the charge it refunds through `related_txn_id`.
+3. **Qualifying rule.** A transaction counts only if it has a `succeeded` event in `payment_status_history`, and it counts at that event's `effective_at`, not at creation time and not by the current `transactions.status`. Failed attempts count for nothing. Refunds are stored as positive amounts and subtracted. A refund counts in the month it succeeds, not in its original charge's month. A refund is assigned to the type of the charge it refunds through `related_txn_id`; a refund whose original charge is missing or never succeeded is `unattributed` and still reduces net revenue. A transaction counts only if its `amount_usd` is numeric, positive and exact to the cent, and it has exactly one `succeeded` event; otherwise it is excluded from revenue, not rounded or guessed, and is listed as an exception in Silver.
 4. **Formula.** Net = Σ successful charges − Σ successful refunds, computed in exact integer cents from the curated `amount_usd`. ARPU and ARPPU divide net revenue in USD by a distinct user count; a zero denominator reports NULL.
 5. **Grain and time.** Bookings basis: a payment counts in full when it succeeds; a subscription payment is not spread across the days it covers. One value per complete UTC month inside the coverage window. Quarter revenue is the sum of its three complete months.
 6. **Sources and layers.** Current fixture: `transactions`, `payment_status_history`; ARPU also uses the `mau` sources. Planned (not implemented): a Silver successful-transaction table and a Gold monthly revenue mart.
@@ -446,12 +446,18 @@ ORDER BY period_start
 ```sql
 -- metric: succeeded_transactions
 SELECT t.txn_id, t.user_id, t.type, p.effective_at AS succeeded_at,
-       CASE WHEN t.type = 'refund' THEN o.type ELSE t.type END AS revenue_type,
+       CASE WHEN t.type <> 'refund' THEN t.type
+            WHEN o.txn_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM payment_status_history q WHERE q.txn_id = o.txn_id AND q.status = 'succeeded')
+            THEN o.type ELSE 'unattributed' END AS revenue_type,
        CAST(ROUND(t.amount_usd * 100) AS INTEGER) AS amount_cents,
        t.country_at_event
 FROM transactions t
 JOIN payment_status_history p ON p.txn_id = t.txn_id AND p.status = 'succeeded'
 LEFT JOIN transactions o ON o.txn_id = t.related_txn_id
+WHERE typeof(t.amount_usd) IN ('integer', 'real') AND t.amount_usd > 0
+  AND abs(t.amount_usd * 100 - ROUND(t.amount_usd * 100)) < 0.000001
+  AND (SELECT COUNT(*) FROM payment_status_history d WHERE d.txn_id = t.txn_id AND d.status = 'succeeded') = 1
 ```
 
 ```sql
@@ -476,7 +482,7 @@ SELECT p.period AS month, t.revenue_type,
        COALESCE(SUM(CASE WHEN s.type = 'refund' THEN s.amount_cents END), 0) AS refunds_cents,
        COALESCE(SUM(CASE WHEN s.type = 'refund' THEN -s.amount_cents ELSE s.amount_cents END), 0) AS net_revenue_cents
 FROM periods p
-CROSS JOIN (SELECT 'subscription' AS revenue_type UNION ALL SELECT 'ppv') t
+CROSS JOIN (SELECT 'subscription' AS revenue_type UNION ALL SELECT 'ppv' UNION ALL SELECT 'unattributed') t
 LEFT JOIN succeeded_transactions s
   ON s.revenue_type = t.revenue_type
  AND s.succeeded_at >= p.period_start AND s.succeeded_at < p.period_end
@@ -484,7 +490,7 @@ GROUP BY p.period_start, t.revenue_type
 ORDER BY p.period_start, t.revenue_type
 ```
 
-`subscription_net_revenue` and `ppv_net_revenue` are the `subscription` and `ppv` rows of `net_revenue_by_type_monthly`.
+`subscription_net_revenue` and `ppv_net_revenue` are the `subscription` and `ppv` rows of `net_revenue_by_type_monthly`; the `unattributed` row holds refunds that cannot be assigned to a successful original charge, so the three rows add to net revenue.
 
 ```sql
 -- metric: net_revenue_quarterly
