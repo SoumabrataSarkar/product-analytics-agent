@@ -54,6 +54,7 @@ that the following assignment categories are covered.
 | Ambiguous question | Missing metric or time period; clarification expected | |
 | Unanswerable question | Unsupported attribution or missing data | |
 | Data quality | Missing source, suspicious amount or invalid record | |
+| Layer selection | Choose a validated layer with sufficient detail and evidence; inspect raw records when needed | |
 
 Include held-out variants, boundary cases and realistic follow-ups. Exclude
 unsupported or unavailable cases from the executed denominator and mark them
@@ -111,6 +112,9 @@ rounding and a justified tolerance **before** comparing. A correct number with
 the wrong population, timeframe, source or unsupported reasoning does not
 automatically pass. An appropriate clarification or abstention can pass when
 that is the expected behavior.
+For layer-routing cases, evaluate the suitability of the chosen available,
+validated layer and the explanation, not a fixed requirement to query Bronze.
+Check that material ambiguity is clarified rather than silently assumed.
 
 ## Aggregate and failure analysis
 
