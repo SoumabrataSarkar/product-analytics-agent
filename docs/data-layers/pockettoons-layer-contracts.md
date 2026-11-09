@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly`, `gold_activity_segments_monthly` and `gold_growth_accounting_monthly` are approved and implemented, and the other Gold tables are planned.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly`, `gold_activity_segments_monthly`, `gold_growth_accounting_monthly`, `gold_cohorts` and `gold_revenue_monthly` are approved and implemented, and the other Gold tables are planned.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -229,7 +229,7 @@ Gold tables read Silver only. Each has one row per complete UTC month inside the
 | Aggregation | Distinct-user counts and rates are not additive across months: a quarter is recomputed from Silver, never summed from these rows. Cents and day sums add across months. |
 | Lineage | `silver_user_day_activity`, `silver_resolved_sessions`, `silver_user_profile`, `silver_payment_attempts`, `silver_subscription_access` |
 | Supports | Q01, Q02, Q04, Q10 and headline context for every other question |
-| Does not support | Segments (`gold_activity_segments_monthly`); revenue by type (`gold_revenue_monthly`, planned) |
+| Does not support | Segments (`gold_activity_segments_monthly`); revenue by type (`gold_revenue_monthly`) |
 | Reconciliation | One row per complete month; MAU and unidentified sessions, MEU, gross, refunds and net revenue, paying users by product, ARPU, ARPPU, subscribers at start and end, net adds, churn, MRR, cancellation requests and signups (all and unknown source) equal the registry on the source; monthly DAU and DEU day sums equal independent recounts (exact fractions for watch time); stored rates equal their counts |
 | Tests | Every month present including one without activity, unidentified sessions, zero denominator gives NULL, definition versions recorded |
 
@@ -264,3 +264,35 @@ Gold tables read Silver only. Each has one row per complete UTC month inside the
 | Does not support | Activity-level slices (a user's bucket would depend on the slice); user-level slices are not pre-computed in v1 |
 | Reconciliation | Buckets and quick ratio equal `growth_accounting_monthly` on the source; both identities hold, counting active users without a users row separately; one row for every month after the first |
 | Tests | First month absent, five rows for six months |
+
+## gold_cohorts
+
+| Part | Contract |
+|---|---|
+| Purpose | How each signup cohort retains, activates and converts |
+| Grain | One row per signup month inside the coverage window and month since signup (0 = the signup month, up to the last coverage month) |
+| Key | (`signup_month`, `months_since_signup`) primary key |
+| Columns | `signup_month`; `month`; `months_since_signup`; `cohort_users`; `retained_users`; `retention_rate`; `day1_eligible`; `day1_retained`; `day1_retention_rate`; `day7_eligible`; `day7_retained`; `day7_retention_rate`; `day30_eligible`; `day30_retained`; `day30_retention_rate`; `activation_eligible`; `activated_users`; `activation_rate`; `conversion_eligible`; `subscription_converted`; `paid_converted`; `subscription_conversion_rate`; `paid_conversion_rate`; `definitions`; `build_id` |
+| Rules | The cohort is every user who signed up in the month, active or not. Monthly retention (`retention_monthly_cohort`): active in the later month; it is NULL at month 0, which exists so every cohort, including the last, has a row for its cohort-level values. Day-N retention, 7-day activation and 30-day conversion follow `retention_day_n`, `activation_7d` and `conversion_30d`: only users whose whole window falls inside the coverage window are eligible, and a cohort with no eligible users has NULL rates. |
+| Aggregation | Cohort-level columns repeat on every row of the cohort: read them from one row, never sum them across rows. Retained users are distinct per row and are not summed across months. |
+| Lineage | `silver_user_profile`, `silver_user_day_activity`; `gold_kpi_monthly` for the signup check |
+| Supports | Q07 and cohort retention questions |
+| Does not support | Cohorts by acquisition source or other slices (built from Silver on request); weekly cohorts |
+| Reconciliation | Monthly retention equals `retention_monthly_cohort`; day-1, day-7 and day-30 eligible and retained users equal `retention_day_n`; activation equals `activation_7d`; conversion equals `conversion_30d` on the source; cohort-level values repeat identically per row; cohort sizes equal `gold_kpi_monthly.signups` |
+| Tests | Month 0 without retention, cohort values repeated per row |
+
+## gold_revenue_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | Where revenue comes from and what reduces it: by subscription, PPV and unattributed refunds |
+| Grain | One row per complete month and revenue type (`subscription`, `ppv`, `unattributed`), including empty types |
+| Key | (`month`, `revenue_type`) primary key |
+| Columns | `month`; `revenue_type`; `gross_charges_cents`; `refunds_cents`; `net_revenue_cents`; `charges`; `refunds`; `payers`; `refund_rate` (refund cents ÷ gross cents); `attempts`; `failed_attempts`; `payment_failure_rate`; `definitions`; `build_id` |
+| Rules | Revenue group v1.1: charges book at success; a refund books at its success under its original purchase's type, or `unattributed` when the original is missing or never succeeded; invalid amounts are excluded. Payment attempts and failures follow `payment_failure_rate_monthly`: non-refund transactions with a final succeeded or failed outcome, by creation month. |
+| Aggregation | Cents, charges, refunds and attempts add across types and months; payers do not (one user can pay for both products). |
+| Lineage | `silver_payment_attempts`; `gold_kpi_monthly` for the total check |
+| Supports | Q08, Q09 |
+| Does not support | Revenue by title or episode (attribution tables, from Silver or source on request) |
+| Reconciliation | Gross, refunds and net by type equal `net_revenue_by_type_monthly`; the types add to `gold_kpi_monthly` revenue; monthly charge and refund counts and cents equal `refund_rate_monthly`; attempts and failures by product equal `payment_failure_rate_monthly` on the source; net = gross − refunds |
+| Tests | Eighteen rows including empty types, unattributed refunds, a charge booked at its later success |
