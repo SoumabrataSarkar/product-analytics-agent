@@ -150,13 +150,18 @@ class BuilderTests(unittest.TestCase):
           ('2026-04-11','paid_search',9.995,500,10,'2026-04-12T02:00:00Z'),
           ('2026-04-12','paid_search',3.10,300,6,'2026-04-13T02:00:00Z');
         ''')
+        db.executescript('''
+        CREATE TABLE payment_quality_review(txn_id TEXT PRIMARY KEY, issue TEXT, corrected_amount_usd REAL, reason TEXT,
+          reviewed_at TEXT);
+        INSERT INTO payment_quality_review VALUES('t_late','100x unit error',1.99,'Provider sent cents.',NULL);
+        ''')
         for n in range(1, 9):  # p1 uses all eight free slots on one day
             db.execute("INSERT INTO content_views VALUES(?,?,?,?,?,?,?,?,?,?)",
                        (f'v_q{n}', 'p1', 'c3', n, '2026-04-22', f'2026-04-22T1{n}:00:00Z', 'free', 1, 1, n))
         for table in build_layers.SOURCE_ROLES:
             if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
                              'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments',
-                             'content_episodes', 'user_events', 'marketing_spend'):
+                             'content_episodes', 'user_events', 'marketing_spend', 'payment_quality_review'):
                 db.execute(f'CREATE TABLE "{table}"(id TEXT)')
         db.commit()
         db.close()
@@ -392,6 +397,7 @@ class BuilderTests(unittest.TestCase):
         self.assertIn(('silver_resolved_sessions', 's_two', 'ambiguous_identity_link'), listed)
         self.assertIn(('silver_resolved_sessions', 's_mismatch', 'link_user_mismatch'), listed)
         self.assertNotIn('s_none', {k for t, k, _, _ in rows})                                 # anonymous is not a fault
+        self.assertIn(('silver_payment_attempts', 't_late', 'source_amount_corrected_on_review'), listed)  # raw review
         statuses = {(t, k): s for t, k, s, _ in rows}
         self.assertEqual(statuses[('silver_marketing_daily', '2026-04-11|paid_search')], 'excluded')
         self.assertEqual(self.query('SELECT COUNT(DISTINCT build_id) FROM silver_quality_exceptions'), [(1,)])
