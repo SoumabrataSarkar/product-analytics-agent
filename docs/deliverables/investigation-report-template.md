@@ -10,6 +10,15 @@ Prepare a board-ready PDF or slides of **at most 10 pages/slides**. Keep the
 raw agent output and its evidence. If the board-ready version is edited,
 include both the raw output and edited version in the submission.
 
+Agent investigations produce the PDF with `tools/report_pdf.py`, which applies
+one fixed template: cover, contents with "how to read" and glossary, and the
+chapters 01 The answer (executive answer), 02 How we investigated (scope and
+the investigation path), 03 What happened (baseline and decomposition), 04 Why
+it happened (driver investigation), 05 Data quality and limits, 06 What to do
+next (recommendations) and an evidence appendix. The generator refuses a
+report longer than 10 pages. `report-content-example.json` in this folder
+shows the content format with invented numbers.
+
 ## Suggested flow
 
 Use fewer sections when they do not add value; the limit is a maximum, not a

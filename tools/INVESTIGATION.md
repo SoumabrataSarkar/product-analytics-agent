@@ -20,6 +20,10 @@ not yet provide a verified turnkey investigation experience.
   it is not automatically verified.
 - `evidence_query.py` invokes both tools for a single query from JSON on
   standard input and creates a new local evidence log for that query.
+- `report_pdf.py` renders the investigation report PDF from a JSON content
+  file with one fixed template and refuses reports over 10 pages. It needs
+  `reportlab` and `matplotlib`; the format is shown in
+  `docs/deliverables/report-content-example.json`.
 - `investigation.py` is an experimental, model-neutral Python loop exercised
   with scripted callbacks in tests. It is not the Codex or Claude Code skill,
   and it does not provide a ready-to-use model connection.

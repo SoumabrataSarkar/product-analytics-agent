@@ -110,3 +110,15 @@ contribution, association, and demonstrated causation. Use charts when they
 clarify the answer, with labels, units, periods, sources and data-quality
 caveats. Do not imply an unbuilt chart or output file exists. Ask before
 writing to an external system or sharing data beyond the authorized scope.
+
+Deliver the report as a PDF of at most 10 pages, built with
+`tools/report_pdf.py` from a content file in the format of
+`docs/deliverables/report-content-example.json`, following
+`docs/deliverables/investigation-report-template.md`. The generator fixes the
+layout and refuses longer reports; shorten the content rather than changing
+the template. Write for a business reader: plain words, terms explained in the
+glossary, every number tied to its check, comparison periods named exactly,
+and amounts compared on the same time basis. Mark a hypothesis supported only
+for what the evidence shows (a pattern is not a mechanism) and inconclusive
+when the evidence cannot rule it in or out. Keep the content file and the PDF
+with the private evidence logs, not in the repository.
