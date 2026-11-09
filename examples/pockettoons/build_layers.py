@@ -23,7 +23,9 @@ from metric_registry import REGISTRY, load_sql
 HERE = Path(__file__).resolve()
 # Coverage window documented in the dataset contract (README and data model).
 COVERAGE = {'coverage_start': '2026-04-01T00:00:00Z', 'coverage_end': '2026-10-01T00:00:00Z'}
-DEFINITIONS = {'mau': '1.1', 'revenue_group': '1.1', 'funnel_and_lifecycle_group': '1.0', 'supporting_metrics': '1.1'}
+DEFINITIONS = {'mau': '1.1', 'activity_family': '1.0', 'stickiness_and_engagement_rate': '1.0',
+               'growth_accounting': '1.0', 'revenue_group': '1.1', 'funnel_and_lifecycle_group': '1.0',
+               'engagement_group': '1.0', 'supporting_metrics': '1.1'}
 
 # Source tables exposed in Bronze, with their role (see the layer contracts).
 SOURCE_ROLES = {
@@ -1198,6 +1200,182 @@ def reconcile_quality_exceptions(db):
     summary = {f'{t}.{r}': n for (t, s, r), n in sorted(actual.items())}
     return checks, {'rows': sum(actual.values()), 'by_table_reason': summary}
 
+# ================================================================ Gold
+# Gold tables read Silver only, cover complete UTC months inside the coverage window,
+# store counts alongside every rate, and record the definition versions they used.
+
+GOLD_MONTHS_CTE = """months(month, period_start, period_end, days) AS (
+  SELECT substr(period_start, 1, 7), period_start, period_end,
+         CAST(julianday(period_end) - julianday(period_start) AS INTEGER)
+  FROM (WITH RECURSIVE p(period_start) AS (
+          SELECT :coverage_start UNION ALL
+          SELECT strftime('%Y-%m-%dT%H:%M:%SZ', period_start, '+1 month') FROM p
+          WHERE strftime('%Y-%m-%dT%H:%M:%SZ', period_start, '+1 month') < :coverage_end)
+        SELECT period_start, strftime('%Y-%m-%dT%H:%M:%SZ', period_start, '+1 month') AS period_end FROM p
+        WHERE strftime('%Y-%m-%dT%H:%M:%SZ', period_start, '+1 month') <= :coverage_end)
+)"""
+
+# ---------------------------------------------------------------- gold_kpi_monthly
+
+KPI_DEFINITIONS = json.dumps({k: DEFINITIONS[k] for k in (
+    'mau', 'activity_family', 'stickiness_and_engagement_rate', 'revenue_group',
+    'funnel_and_lifecycle_group', 'supporting_metrics')}, sort_keys=True)
+
+KPI_MONTHLY_SQL = """
+CREATE TABLE gold_kpi_monthly(
+  month TEXT PRIMARY KEY, period_start TEXT NOT NULL, period_end TEXT NOT NULL, days INTEGER NOT NULL,
+  mau INTEGER NOT NULL, unidentified_sessions INTEGER NOT NULL,
+  dau_day_sum INTEGER NOT NULL, average_dau REAL NOT NULL, stickiness REAL,
+  meu INTEGER NOT NULL, engagement_rate REAL, deu_day_sum INTEGER NOT NULL, average_deu REAL NOT NULL, engaged_stickiness REAL,
+  signups INTEGER NOT NULL, unknown_source_signups INTEGER NOT NULL,
+  gross_charges_cents INTEGER NOT NULL, refunds_cents INTEGER NOT NULL, net_revenue_cents INTEGER NOT NULL,
+  paying_users INTEGER NOT NULL, subscription_payers INTEGER NOT NULL, ppv_payers INTEGER NOT NULL,
+  arpu_usd REAL, arppu_usd REAL,
+  subscribers_at_start INTEGER NOT NULL, subscribers_at_end INTEGER NOT NULL, net_adds INTEGER NOT NULL,
+  churned_subscribers INTEGER NOT NULL, churn_rate REAL, mrr_cents INTEGER NOT NULL,
+  cancellation_requests INTEGER NOT NULL, cancellation_request_rate REAL,
+  definitions TEXT NOT NULL, build_id TEXT NOT NULL);
+INSERT INTO gold_kpi_monthly
+WITH RECURSIVE """ + GOLD_MONTHS_CTE + """,
+active AS (
+  SELECT activity_month AS month, COUNT(DISTINCT user_id) AS mau FROM silver_user_day_activity
+  WHERE sessions_touching > 0 GROUP BY 1
+),
+daily AS (
+  SELECT activity_month AS month, SUM(sessions_touching > 0) AS dau_sum, SUM(watch_seconds >= 60) AS deu_sum
+  FROM silver_user_day_activity GROUP BY 1
+),
+engaged AS (
+  SELECT month, COUNT(*) AS meu FROM (
+    SELECT activity_month AS month, user_id FROM silver_user_day_activity
+    GROUP BY 1, 2 HAVING SUM(watch_seconds) >= 60)
+  GROUP BY month
+),
+unidentified AS (
+  SELECT m.month, COUNT(r.session_id) AS n FROM months m
+  JOIN silver_resolved_sessions r ON r.resolved_user_id IS NULL
+   AND r.session_started_at < m.period_end AND r.last_activity_at >= m.period_start
+  GROUP BY m.month
+),
+signups AS (
+  SELECT m.month, COUNT(p.user_id) AS n, COALESCE(SUM(p.acquisition_source = 'unknown'), 0) AS unknown_n FROM months m
+  JOIN silver_user_profile p ON p.signup_at >= m.period_start AND p.signup_at < m.period_end
+  GROUP BY m.month
+),
+revenue AS (
+  SELECT m.month,
+         COALESCE(SUM(CASE WHEN a.revenue_cents > 0 THEN a.revenue_cents END), 0) AS gross,
+         COALESCE(SUM(CASE WHEN a.revenue_cents < 0 THEN -a.revenue_cents END), 0) AS refunds,
+         COALESCE(SUM(a.revenue_cents), 0) AS net,
+         COUNT(DISTINCT CASE WHEN a.revenue_cents > 0 THEN a.user_id END) AS payers,
+         COUNT(DISTINCT CASE WHEN a.revenue_cents > 0 AND a.type = 'subscription' THEN a.user_id END) AS sub_payers,
+         COUNT(DISTINCT CASE WHEN a.revenue_cents > 0 AND a.type = 'ppv' THEN a.user_id END) AS ppv_payers
+  FROM months m
+  LEFT JOIN silver_payment_attempts a ON a.succeeded_at >= m.period_start AND a.succeeded_at < m.period_end
+  GROUP BY m.month
+),
+access AS (SELECT * FROM silver_subscription_access WHERE grants_access = 1),
+subscribers AS (
+  SELECT m.month,
+         (SELECT COUNT(DISTINCT a.user_id) FROM access a WHERE a.effective_start_at <= m.period_start
+            AND (a.effective_end_at IS NULL OR a.effective_end_at > m.period_start)) AS at_start,
+         (SELECT COUNT(DISTINCT a.user_id) FROM access a WHERE a.effective_start_at <= m.period_end
+            AND (a.effective_end_at IS NULL OR a.effective_end_at > m.period_end)) AS at_end,
+         (SELECT COUNT(DISTINCT s.user_id) FROM access s WHERE s.effective_start_at <= m.period_start
+            AND (s.effective_end_at IS NULL OR s.effective_end_at > m.period_start)
+            AND NOT EXISTS (SELECT 1 FROM access e WHERE e.user_id = s.user_id AND e.effective_start_at <= m.period_end
+                              AND (e.effective_end_at IS NULL OR e.effective_end_at > m.period_end))) AS churned,
+         (SELECT COALESCE(SUM(price), 0) FROM (
+            SELECT MAX(a.price_cents) AS price FROM access a WHERE a.effective_start_at <= m.period_end
+              AND (a.effective_end_at IS NULL OR a.effective_end_at > m.period_end) GROUP BY a.user_id)) AS mrr,
+         (SELECT COUNT(DISTINCT h.user_id) FROM silver_subscription_access h WHERE h.status = 'cancel_at_period_end'
+            AND h.cancelled_at >= m.period_start AND h.cancelled_at < m.period_end) AS cancellations
+  FROM months m
+)
+SELECT m.month, m.period_start, m.period_end, m.days,
+       COALESCE(a.mau, 0), COALESCE(u.n, 0),
+       COALESCE(d.dau_sum, 0), COALESCE(d.dau_sum, 0) * 1.0 / m.days, COALESCE(d.dau_sum, 0) * 1.0 / m.days / NULLIF(a.mau, 0),
+       COALESCE(e.meu, 0), COALESCE(e.meu, 0) * 1.0 / NULLIF(a.mau, 0),
+       COALESCE(d.deu_sum, 0), COALESCE(d.deu_sum, 0) * 1.0 / m.days, COALESCE(d.deu_sum, 0) * 1.0 / m.days / NULLIF(e.meu, 0),
+       COALESCE(g.n, 0), COALESCE(g.unknown_n, 0),
+       r.gross, r.refunds, r.net, r.payers, r.sub_payers, r.ppv_payers,
+       r.net / 100.0 / NULLIF(a.mau, 0), r.net / 100.0 / NULLIF(r.payers, 0),
+       s.at_start, s.at_end, s.at_end - s.at_start, s.churned, s.churned * 1.0 / NULLIF(s.at_start, 0), s.mrr,
+       s.cancellations, s.cancellations * 1.0 / NULLIF(s.at_start, 0),
+       :kpi_definitions, :build_id
+FROM months m
+LEFT JOIN active a ON a.month = m.month
+LEFT JOIN daily d ON d.month = m.month
+LEFT JOIN engaged e ON e.month = m.month
+LEFT JOIN unidentified u ON u.month = m.month
+LEFT JOIN signups g ON g.month = m.month
+JOIN revenue r ON r.month = m.month
+JOIN subscribers s ON s.month = m.month
+"""
+
+
+def close(a, b):
+    return (a is None and b is None) or (a is not None and b is not None and abs(a - b) <= 1e-9 * max(1, abs(b)))
+
+
+def reconcile_kpi_monthly(db):
+    checks = {}
+    gold = {r[0]: r for r in db.execute('SELECT * FROM gold_kpi_monthly ORDER BY month')}
+    cols = [r[1] for r in db.execute('PRAGMA table_info(gold_kpi_monthly)')]
+    g = {m: dict(zip(cols, r)) for m, r in gold.items()}
+    months = [r[0] for r in db.execute(load_sql('periods_month'), COVERAGE)]
+    checks['one_row_per_complete_month'] = sorted(g) == months
+
+    def registry(name):
+        cur = db.execute(load_sql(name), COVERAGE)
+        names = [d[0] for d in cur.description]
+        return [dict(zip(names, r)) for r in cur]
+
+    checks['mau_matches_registry'] = [(m, g[m]['mau'], g[m]['unidentified_sessions']) for m in months] == [
+        (r['month'], r['mau'], r['unidentified_sessions']) for r in registry('mau_monthly')]
+    checks['meu_matches_registry'] = [(m, g[m]['meu']) for m in months] == [(r['month'], r['meu']) for r in registry('meu')]
+    # Daily DAU and DEU re-run in the registry take minutes; check the day sums against independent recounts instead.
+    active, _ = independent_day_activity_recount(db)
+    exact = independent_daily_watch(db)
+    for m in months:
+        dau = sum(1 for _, day in active if day[:7] == m)
+        deu = sum(1 for (_, day), v in exact.items() if day[:7] == m and v >= 60)
+        boundary = sum(1 for (_, day), v in exact.items() if day[:7] == m and abs(v - 60) <= Fraction(1, 10**6))
+        checks[f'dau_day_sum_independent_{m}'] = g[m]['dau_day_sum'] == dau
+        checks[f'deu_day_sum_independent_{m}'] = abs(g[m]['deu_day_sum'] - deu) <= boundary
+    revenue = {r['month']: r for r in registry('net_revenue_monthly')}
+    checks['revenue_matches_registry'] = all(
+        (g[m]['gross_charges_cents'], g[m]['refunds_cents'], g[m]['net_revenue_cents']) ==
+        (revenue[m]['gross_charges_cents'], revenue[m]['refunds_cents'], revenue[m]['net_revenue_cents']) for m in months)
+    payers = {r['month']: r for r in registry('paying_users_monthly')}
+    checks['paying_users_match_registry'] = all(
+        (g[m]['paying_users'], g[m]['subscription_payers'], g[m]['ppv_payers']) ==
+        (payers[m]['paying_users'], payers[m]['subscription_payers'], payers[m]['ppv_payers']) for m in months)
+    arpu = {r['month']: r['arpu_usd'] for r in registry('arpu')}
+    arppu = {r['month']: r['arppu_usd'] for r in registry('arppu')}
+    checks['arpu_arppu_match_registry'] = all(close(g[m]['arpu_usd'], arpu[m]) and close(g[m]['arppu_usd'], arppu[m])
+                                              for m in months)
+    subs = {r['month']: r for r in registry('active_subscribers_monthly')}
+    churn = {r['month']: r for r in registry('subscriber_churn_monthly')}
+    mrr = {r['month']: r for r in registry('mrr_monthly')}
+    cancel = {r['month']: r for r in registry('cancellation_request_rate_monthly')}
+    checks['subscribers_match_registry'] = all(
+        (g[m]['subscribers_at_start'], g[m]['subscribers_at_end'], g[m]['net_adds']) ==
+        (subs[m]['subscribers_at_start'], subs[m]['subscribers_at_end'], subs[m]['net_adds']) for m in months)
+    checks['churn_matches_registry'] = all(g[m]['churned_subscribers'] == churn[m]['churned']
+                                           and close(g[m]['churn_rate'], churn[m]['churn_rate']) for m in months)
+    checks['mrr_matches_registry'] = all(g[m]['mrr_cents'] == mrr[m]['mrr_cents'] for m in months)
+    checks['cancellations_match_registry'] = all(g[m]['cancellation_requests'] == cancel[m]['cancellation_requests']
+                                                 for m in months)
+    signups = {r['month']: r['signups'] for r in registry('new_signups_monthly') if r['acquisition_source'] == 'all'}
+    unknown = {r['month']: r['signups'] for r in registry('new_signups_monthly') if r['acquisition_source'] == 'unknown'}
+    checks['signups_match_registry'] = all(g[m]['signups'] == signups.get(m, 0) and
+                                           g[m]['unknown_source_signups'] == unknown.get(m, 0) for m in months)
+    checks['rates_equal_their_counts'] = all(
+        close(g[m]['stickiness'], g[m]['average_dau'] / g[m]['mau'] if g[m]['mau'] else None)
+        and close(g[m]['engagement_rate'], g[m]['meu'] / g[m]['mau'] if g[m]['mau'] else None) for m in months)
+    return checks, {'months': len(g)}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -1222,10 +1400,18 @@ SILVER = [
      ['ix_silver_quality_exceptions_reason'], reconcile_quality_exceptions),
 ]
 
+GOLD = [
+    ('gold_kpi_monthly', KPI_MONTHLY_SQL, [], reconcile_kpi_monthly),
+]
+
+# Named parameters available to every layer script, besides :build_id and the coverage window.
+SCRIPT_PARAMS = {'kpi_definitions': KPI_DEFINITIONS}
+
 # Objects owned by this builder. Only these are dropped and recreated.
+LAYERS = SILVER + GOLD
 OWNED_VIEWS = [f'bronze_{table}' for table in SOURCE_ROLES]
-OWNED_TABLES = [name for name, *_ in SILVER]
-OWNED_INDEXES = [index for _, _, indexes, _ in SILVER for index in indexes]
+OWNED_TABLES = [name for name, *_ in LAYERS]
+OWNED_INDEXES = [index for _, _, indexes, _ in LAYERS for index in indexes]
 
 
 def now():
@@ -1262,7 +1448,7 @@ def reconcile(db):
         db.execute(f'SELECT COUNT(*) FROM bronze_{t}').fetchone()[0] == db.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
         for t in SOURCE_ROLES)}
     details = {}
-    for name, _, _, reconcile_table in SILVER:
+    for name, _, _, reconcile_table in LAYERS:
         table_checks, table_details = reconcile_table(db)
         checks.update({f'{name}.{key}': ok for key, ok in table_checks.items()})
         details[name] = table_details
@@ -1272,7 +1458,7 @@ def reconcile(db):
 def run_script(db, script, build_id):
     for statement in script.strip().split(';\n'):
         if statement.strip():
-            db.execute(statement, {'build_id': build_id, **COVERAGE})
+            db.execute(statement, {'build_id': build_id, **COVERAGE, **SCRIPT_PARAMS})
 
 
 def write_log(db, record):
@@ -1298,7 +1484,7 @@ def build(path):
         for view in OWNED_VIEWS:
             db.execute(f'DROP VIEW IF EXISTS {view}')
             db.execute(f'CREATE VIEW {view} AS SELECT * FROM "{view[len("bronze_"):]}"')
-        for _, script, _, _ in SILVER:
+        for _, script, _, _ in LAYERS:
             run_script(db, script, build_id)
         checks, details = reconcile(db)
         record['reconciliation'] = json.dumps({'checks': checks, 'details': details})
