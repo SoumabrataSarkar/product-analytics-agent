@@ -48,14 +48,38 @@ class BuilderTests(unittest.TestCase):
             ('r_of_failed', 'u4', 'refund', 1.99, 't_failed_charge', [('succeeded', '2026-04-09T10:00:00Z')]),
             ('r_missing', 'u5', 'refund', 1.99, 'nowhere', [('succeeded', '2026-04-09T10:00:00Z')]),
             ('r_ok', 'u1', 'refund', 9.99, 't_ok', [('succeeded', '2026-04-10T10:00:00Z')]),
+            ('sub_paid', 's1', 'subscription', 9.99, None, [('succeeded', '2026-06-03T01:00:00Z')]),
         ]
         for tid, user, kind, amount, related, statuses in payments:
             db.execute('INSERT INTO transactions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
                        (tid, user, kind, kind + '_x', amount, 'card', statuses[0][1], None, related, None, 9.99, 'US', None))
             for k, (status, at) in enumerate(statuses):
                 db.execute('INSERT INTO payment_status_history VALUES(?,?,?,?,?)', (f'{tid}_{k}', tid, status, at, at))
+        db.execute("INSERT INTO transactions VALUES('sub_badprice','s6','subscription','subscription_initial',9.99,'card','2026-06-04T01:00:00Z',NULL,NULL,NULL,9.995,'US',NULL)")
+        db.execute("INSERT INTO payment_status_history VALUES('sub_badprice_0','sub_badprice','succeeded','2026-06-04T01:00:00Z','2026-06-04T01:00:00Z')")
+        db.executescript('''
+        CREATE TABLE subscription_history(subscription_period_id TEXT PRIMARY KEY, subscription_id TEXT, user_id TEXT,
+          status TEXT, effective_start_at TEXT, effective_end_at TEXT, cancelled_at TEXT, source_txn_id TEXT, plan_code TEXT);
+        CREATE TABLE dataset_metadata(metadata_key TEXT PRIMARY KEY, metadata_value TEXT);
+        INSERT INTO dataset_metadata VALUES('users_snapshot_at','2026-09-30T23:59:59Z');
+        INSERT INTO subscription_history VALUES
+          ('renew_1','sub1','s1','active','2026-06-03T01:00:00Z','2026-07-03T01:00:00Z',NULL,'sub_paid','p'),
+          ('renew_2','sub1','s1','active','2026-07-03T01:00:00Z','2026-08-03T01:00:00Z',NULL,'sub_paid','p'),
+          ('notice_1','sub2','s2','active','2026-06-03T01:00:00Z','2026-06-10T00:00:00Z',NULL,'sub_paid','p'),
+          ('notice_2','sub2','s2','cancel_at_period_end','2026-06-10T00:00:00Z','2026-07-03T01:00:00Z','2026-06-10T00:00:00Z','sub_paid','p'),
+          ('lapse','sub3','s3','active','2026-06-03T01:00:00Z','2026-07-03T01:00:00Z',NULL,'sub_paid','p'),
+          ('lapse_expired','sub3','s3','expired','2026-07-03T01:00:00Z','2026-08-10T01:00:00Z',NULL,NULL,'p'),
+          ('return','sub3b','s3','active','2026-08-10T01:00:00Z','2026-09-10T01:00:00Z',NULL,'sub_paid','p'),
+          ('scheduled','sub4','s4','active','2026-09-05T01:00:00Z','2026-10-05T01:00:00Z',NULL,'sub_paid','p'),
+          ('overlap_a','sub5','s5','active','2026-06-03T01:00:00Z','2026-07-03T01:00:00Z',NULL,'sub_paid','p'),
+          ('overlap_b','sub5','s5','active','2026-06-20T01:00:00Z','2026-07-20T01:00:00Z',NULL,'sub_paid','p'),
+          ('unpaid','sub7','s7','active','2026-06-03T01:00:00Z','2026-07-03T01:00:00Z',NULL,'t_failed_charge','p'),
+          ('bad_price','sub6','s6','active','2026-06-04T01:00:00Z','2026-07-04T01:00:00Z',NULL,'sub_badprice','p'),
+          ('refunded','sub8','s8','refunded','2026-06-05T01:00:00Z',NULL,NULL,NULL,'p');
+        ''')
         for table in build_layers.SOURCE_ROLES:
-            if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history'):
+            if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
+                             'subscription_history', 'dataset_metadata'):
                 db.execute(f'CREATE TABLE "{table}"(id TEXT)')
         db.execute("INSERT INTO users VALUES('u1')")
         db.commit()
@@ -129,6 +153,28 @@ class BuilderTests(unittest.TestCase):
         self.assertTrue(checks['silver_payment_attempts.net_revenue_matches_registry_on_source'])
         april = self.query("SELECT SUM(revenue_cents) FROM silver_payment_attempts WHERE succeeded_at LIKE '2026-04%'")
         self.assertEqual(april, [(999 - 199 - 199 - 999,)])
+
+    def test_subscription_access_spells_losses_and_exceptions(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[0]: r[1:] for r in self.query('''SELECT subscription_period_id, grants_access, starts_access_spell,
+            ends_access_spell, access_spell_number, price_cents, exception_status, exception_reason
+            FROM silver_subscription_access''')}
+        self.assertEqual(rows['renew_1'][:4], (1, 1, 0, 1))       # renewal continues the spell
+        self.assertEqual(rows['renew_2'][:4], (1, 0, 1, 1))       # loss only at the real end
+        self.assertEqual(rows['notice_1'][2], 0)                   # cancellation notice is not a loss
+        self.assertEqual(rows['notice_2'][:3], (1, 0, 1))
+        self.assertEqual(rows['lapse'][2], 1)
+        self.assertEqual(rows['lapse_expired'][:4], (0, 0, 0, None))
+        self.assertEqual(rows['return'][:4], (1, 1, 1, 2))         # second spell
+        self.assertEqual(rows['scheduled'][2], 0)                  # ends after the snapshot: scheduled, not a loss
+        self.assertEqual(rows['overlap_b'][5:], ('suspicious_usable', 'overlapping_access'))
+        self.assertEqual(rows['unpaid'][5:], ('suspicious_usable', 'source_charge_not_successful'))
+        self.assertEqual(rows['bad_price'][4:], (None, 'suspicious_usable', 'invalid_list_price'))
+        self.assertEqual(rows['refunded'][:2], (0, 0))
+        self.assertEqual(rows['renew_1'][4:], (999, 'ok', None))
+        checks = json.loads(result['reconciliation'])['checks']
+        self.assertTrue(all(v for k, v in checks.items() if k.startswith('silver_subscription_access')))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
