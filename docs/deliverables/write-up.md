@@ -35,7 +35,7 @@ Time to answer (observed): simple 2–3 min, normal 5–6 min, complex 10–12 m
 
 - **How the team uses it:** analysts and PMs ask in plain English from Claude Code or Codex (later Slack or a web page), all on one shared repository, so definitions and guardrails are the same for every person and model.
 - **Set-up:** build a data catalog and metric registry for the team's warehouse, with the analytics lead approving each definition, then the Gold and Silver layers the agent routes to.
-- **Cost:** mostly model tokens, which grow with question complexity and how much the agent reads; queries cost next to nothing. Not measured here: log tokens per question first, then budget by question type. Keep it down by answering from the smallest layer that fits, pre-building common questions into Gold and giving simple questions a short answer, which also cuts latency.
+- **Cost:** mostly model tokens; queries are nearly free. Not measured here: log tokens per question, then budget by question type. Answering from the smallest layer that fits keeps both cost and latency down.
 - **Guardrails:** read-only access (database role plus the query tool's check), row and time limits, an evidence log behind every figure, no sensitive columns in the catalog, and a question back when the ask is unclear.
 - **Freshness:** real data keeps arriving, unlike this dataset; the agent first checks a freshness tracker (last load per source and layer) and warns or stops when data is stale.
 - **Quality over time:** a test set of questions with known answers (these 18, growing from real ones), rerun on every change to the skill, definitions or data; track pass rate, clarification rate, query errors and user ratings; turn failures into rules.

@@ -217,9 +217,8 @@ def build(out):
         "on one shared repository, so definitions and guardrails are the same for every person and model.",
         "<b>Set-up:</b> build a data catalog and metric registry for the team's warehouse, with the analytics lead approving each "
         "definition, then the Gold and Silver layers the agent routes to.",
-        "<b>Cost:</b> mostly model tokens, which grow with question complexity and how much the agent reads; queries cost next to nothing. "
-        "Not measured here: log tokens per question first, then budget by question type. Keep it down by answering from the smallest "
-        "layer that fits, pre-building common questions into Gold and giving simple questions a short answer, which also cuts latency.",
+        "<b>Cost:</b> mostly model tokens; queries are nearly free. Not measured here: log tokens per question, then budget by question "
+        "type. Answering from the smallest layer that fits keeps both cost and latency down.",
         "<b>Guardrails:</b> read-only access (database role plus the query tool's check), row and time limits, an evidence log behind "
         "every figure, no sensitive columns in the catalog, and a question back when the ask is unclear.",
         "<b>Freshness:</b> real data keeps arriving, unlike this dataset; the agent first checks a freshness tracker (last load per source "
@@ -245,9 +244,12 @@ def build(out):
 
 if __name__ == "__main__":
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "submission" / "write-up.pdf"
-    build(out)
+    tmp = out.with_suffix(".tmp.pdf")
+    build(tmp)
     from pypdf import PdfReader
-    pages = len(PdfReader(str(out)).pages)
-    print(out, pages, "page(s)")
+    pages = len(PdfReader(str(tmp)).pages)
     if pages > 1:
-        raise SystemExit("write-up must fit on one page")
+        tmp.unlink()
+        raise SystemExit(f"write-up must fit on one page (got {pages}); {out} left unchanged")
+    tmp.replace(out)
+    print(out, pages, "page(s)")
