@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity` and `silver_user_day_title_watch` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch` and `silver_user_episodes` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -141,6 +141,24 @@
 | Lineage | `content_views` and `playback_segments`; `users` for exceptions |
 | Exceptions | `suspicious_usable` with reasons `user_not_in_users` or `unrecognised_view_type` |
 | Supports | Title reach, watch time by title and by entitlement, views per viewer, first views of an episode, PPV and subscription watching |
-| Does not support | Episode completion and series continuation (`silver_user_episodes`, planned); free-quota use (`silver_user_day_activity`) |
+| Does not support | Episode completion and series continuation (`silver_user_episodes`); free-quota use (`silver_user_day_activity`) |
 | Reconciliation | Per user-day, watch seconds and views equal `silver_user_day_activity`; views equal the source; monthly title reach equals `title_reach_monthly`, views and viewers equal `views_per_viewer_monthly` and watch seconds equal `watch_time_monthly` on the source |
 | Tests | Two titles on one day, one title under two view types, rewatch that is not a first view, split across midnight, watch-only day for a title, eight-slot free day |
+
+## silver_user_episodes
+
+| Part | Contract |
+|---|---|
+| Purpose | Episode completion and series continuation without re-merging playback positions for every question |
+| Grain | One row per user, `content_id` and `episode_number` the user has started |
+| Key and indexes | (`user_id`, `content_id`, `episode_number`) primary key; index on `first_start_at` |
+| Columns | `user_id`; `content_id`; `episode_number`; `first_start_at`; `first_start_month`; `window_end_at` (first start + 7 days); `window_complete` (1 when `window_end_at` ≤ the coverage end); `first_view_type` (entitlement of the first view); `views_in_window`; `covered_sec`; `episode_duration_sec` (NULL when the episode is not in the catalog); `has_next_episode`; `started_next_episode_in_window`; `exception_status`; `exception_reason`; `build_id` |
+| Rules | `covered_sec` is the union of playback-position intervals from views started inside the window, so rewinds and rewatches are not double-counted. Completion is not stored: completed means `covered_sec` ≥ 0.9 × `episode_duration_sec`, so the threshold can change without a rebuild. Continuation is stored as a fact: the user started episode n + 1 of the same title within the window, whatever the completion. |
+| Registry use | Completion rate: rows with `window_complete` = 1 and a known duration, by `first_start_month`. Continuation rate: completed rows with `has_next_episode` = 1 and `window_complete` = 1. |
+| Time | UTC; the window is half-open `[first_start_at, window_end_at)` |
+| Lineage | `content_views`, `playback_segments`, `content_episodes`; `users` for exceptions |
+| Exceptions | `suspicious_usable` with reasons `user_not_in_users`, `episode_not_in_catalog` or `coverage_exceeds_duration` |
+| Supports | Episode completion rate, series continuation rate, completion by entitlement, views per user-episode, binge and drop-off analysis by episode number |
+| Does not support | Watch time (`silver_user_day_title_watch`); completion for a later rewatch window (only the first 7 days are measured) |
+| Reconciliation | Rows equal distinct user-episodes in `content_views`; an independent Python interval merge reproduces `covered_sec` for every row; monthly completion equals `episode_completion_monthly` and continuation equals `series_continuation_monthly` on the source |
+| Tests | Completed episode with the next started, rewind overlap, view after the window, no segments, last episode, window past the coverage end, episode not in the catalog, coverage longer than the episode |
