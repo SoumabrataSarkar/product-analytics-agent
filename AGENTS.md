@@ -20,6 +20,7 @@ This file is the common project entrypoint. Architecture v1.0 is a **frozen desi
 - `docs/architecture/` contains the frozen shared architecture and decision records.
 - `docs/examples/pockettoons-reference-data-model-v1.md` and `docs/examples/pockettoons-data-catalog.md` describe the PocketToons reference data.
 - `docs/metrics/metric-registry.md` currently defines metrics and SQL for the PocketToons fixture, shared by supported agent runtimes. It is not a universal registry for other datasets.
+- `docs/data-layers/layer-build-workflow.md` is the dataset-independent method for building Bronze/Silver/Gold layers; `docs/data-layers/pockettoons-layer-contracts.md` holds the PocketToons layer table contracts.
 - `examples/pockettoons/` holds the example generator, checks and tests; `docs/evaluations/` holds evaluation designs; `web/` holds the static explorer.
 - Future per-project catalogs, metric registries and an onboarding/updater workflow are not yet implemented. Do not move or rename files while the current registry work is in progress; agree on a migration and update references when requested.
 
