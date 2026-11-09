@@ -458,6 +458,31 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(len(gold), 11)
         self.assertTrue(all(gold.values()))
 
+    def test_gold_funnel_content_and_marketing_monthly(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        funnel = {r[:2]: r[2:] for r in self.query('''SELECT month, product, paywalls, paywalls_with_checkout,
+            paywalls_with_purchase, exposed_users, mau FROM gold_funnel_monthly''')}
+        self.assertEqual(funnel[('2026-06', 'subscription')][:3], (1, 1, 1))      # pw_buy: two checkouts, one purchase
+        self.assertEqual(funnel[('2026-04', 'all')][:4], (3, 1, 0, 2))           # unidentified viewer not counted as exposed
+        self.assertEqual(funnel[('2026-04', 'bundle')][0], 1)                     # unrecognised product kept as its own row
+        self.assertIsNone(funnel[('2026-04', 'ppv')][4])                         # MAU and exposure rate only on 'all'
+        content = {r[:2]: r[2:] for r in self.query('''SELECT month, content_id, views, free_viewer_days, quota_hit_days
+            FROM gold_content_monthly''')}
+        self.assertEqual(content[('2026-04', 'c3')][0], 8)
+        self.assertEqual(content[('2026-04', 'all')][1:], (4, 1))                # quota on the 'all' row only
+        self.assertIsNone(content[('2026-04', 'c3')][1])
+        marketing = {r[:2]: r[2:] for r in self.query('''SELECT month, channel, spend_cents, excluded_spend_days, clicks,
+            cpc_usd, signups FROM gold_marketing_monthly''')}
+        self.assertEqual(marketing[('2026-04', 'paid_social')][:3], (1234 + 500, 0, 70))
+        self.assertEqual(marketing[('2026-04', 'paid_search')][1:4], (1, 16, None))   # invalid day: no cost metrics
+        self.assertEqual(marketing[('2026-04', 'organic')][0], None)              # unpaid channel has no spend
+        checks = json.loads(result['reconciliation'])['checks']
+        gold = {k: v for k, v in checks.items()
+                if k.startswith(('gold_funnel_monthly', 'gold_content_monthly', 'gold_marketing_monthly'))}
+        self.assertEqual(len(gold), 15)
+        self.assertTrue(all(gold.values()))
+
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
         build_layers.build(self.path)
