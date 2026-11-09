@@ -205,10 +205,10 @@
 | Grain | One row per flagged Silver row and exception reason; a row with two reasons appears twice |
 | Key and indexes | (`table_name`, `row_key`, `exception_reason`) primary key; index on (`exception_reason`, `table_name`) |
 | Columns | `table_name`; `row_key` (the row's primary key as text, parts joined with `|`); `exception_status` (`excluded` or `suspicious_usable`); `exception_reason`; `build_id` |
-| Rules | Built last, from every Silver table with exception columns. From `silver_resolved_sessions`, ambiguous identity links (`ambiguous_identity_link`) and links naming a different user (`link_user_mismatch`) are listed as `suspicious_usable`; anonymous sessions without a link are normal browsing and are not listed. A flagged row without a reason is listed as `unspecified`. |
-| Lineage | All other Silver tables |
+| Rules | Built last, from every Silver table with exception columns. From `silver_resolved_sessions`, ambiguous identity links (`ambiguous_identity_link`) and links naming a different user (`link_user_mismatch`) are listed as `suspicious_usable`; anonymous sessions without a link are normal browsing and are not listed. Payments in `payment_quality_review`, whose raw source amount was corrected on review, are listed against `silver_payment_attempts` with reason `source_amount_corrected_on_review`: the curated amount is usable and the review time is unknown. A flagged row without a reason is listed as `unspecified`. |
+| Lineage | All other Silver tables; `payment_quality_review` |
 | Supports | Exception counts by table, reason and status; the rows behind any flagged figure, by joining `row_key` back to its table |
 | Does not support | Faults no Silver rule detects |
-| Reconciliation | Counts per table, status and reason equal each table's own flagged rows split by reason; every flagged row is listed exactly once per reason |
-| Tests | Multiple reasons split into rows, composite keys, session-resolution problems, anonymous sessions excluded, `excluded` status carried |
-| Current data | The PocketToons source currently has no flagged rows. A small, documented set of realistic faults is planned for the final rebuild. |
+| Reconciliation | Counts per table, status and reason equal each table's own flagged rows split by reason plus the reviewed payments; every flagged row and reviewed payment is listed exactly once per reason |
+| Tests | Multiple reasons split into rows, composite keys, session-resolution problems, anonymous sessions excluded, reviewed payment correction, `excluded` status carried |
+| Current data | 13 rows: the reviewed raw payment corrections (seven 100× unit errors and six non-numeric source amounts). Curated tables are clean by design, so no Silver rule fires on them; logged-out sessions are normal browsing and are not listed. |
