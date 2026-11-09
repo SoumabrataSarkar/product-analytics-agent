@@ -55,6 +55,7 @@ REQUIRED_COLUMNS = {
     'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec',
                           'position_start_sec', 'position_end_sec'},
     'content_episodes': {'content_id', 'episode_number', 'episode_duration_sec'},
+    'marketing_spend': {'date', 'channel', 'spend_usd', 'impressions', 'clicks', 'loaded_at'},
     'user_events': {'event_id', 'user_id', 'event_at', 'event_name', 'session_id', 'content_id', 'episode_number',
                     'event_properties_json', 'triggering_paywall_event_id'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
@@ -1036,6 +1037,84 @@ def reconcile_paywall_funnel(db):
     exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_paywall_funnel GROUP BY 1').fetchall())
     return checks, {'rows': source, 'exceptions': exceptions}
 
+# ---------------------------------------------------------------- silver_marketing_daily
+
+MARKETING_DAILY_SQL = """
+CREATE TABLE silver_marketing_daily(
+  date TEXT NOT NULL, month TEXT NOT NULL, channel TEXT NOT NULL, has_spend_row INTEGER NOT NULL CHECK(has_spend_row IN (0,1)),
+  spend_cents INTEGER, impressions INTEGER, clicks INTEGER, signups INTEGER NOT NULL, new_paying_users INTEGER NOT NULL,
+  loaded_at TEXT,
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','excluded','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL, PRIMARY KEY(date, channel));
+INSERT INTO silver_marketing_daily
+WITH spend AS (
+  SELECT date, channel, spend_usd, impressions, clicks, loaded_at,
+         CASE WHEN typeof(spend_usd) IN ('integer', 'real') AND spend_usd >= 0
+                   AND abs(spend_usd * 100 - ROUND(spend_usd * 100)) < 0.000001
+              THEN CAST(ROUND(spend_usd * 100) AS INTEGER) END AS cents
+  FROM marketing_spend
+),
+signups AS (
+  SELECT signup_date AS date, acquisition_source AS channel, COUNT(*) AS n
+  FROM silver_user_profile WHERE signup_date IS NOT NULL GROUP BY 1, 2
+),
+payers AS (
+  SELECT substr(first_paid_at, 1, 10) AS date, acquisition_source AS channel, COUNT(*) AS n
+  FROM silver_user_profile WHERE first_paid_at IS NOT NULL GROUP BY 1, 2
+),
+keys AS (SELECT date, channel FROM spend UNION SELECT date, channel FROM signups UNION SELECT date, channel FROM payers)
+SELECT k.date, substr(k.date, 1, 7), k.channel, s.date IS NOT NULL, s.cents, s.impressions, s.clicks,
+       COALESCE(g.n, 0), COALESCE(p.n, 0), s.loaded_at,
+       CASE WHEN s.date IS NOT NULL AND s.cents IS NULL THEN 'excluded'
+            WHEN s.clicks > s.impressions OR s.clicks < 0 OR s.impressions < 0 THEN 'suspicious_usable'
+            ELSE 'ok' END,
+       CASE WHEN s.date IS NOT NULL AND s.cents IS NULL THEN 'invalid_spend'
+            WHEN s.clicks < 0 OR s.impressions < 0 THEN 'negative_count'
+            WHEN s.clicks > s.impressions THEN 'clicks_exceed_impressions' END,
+       :build_id
+FROM keys k
+LEFT JOIN spend s ON s.date = k.date AND s.channel = k.channel
+LEFT JOIN signups g ON g.date = k.date AND g.channel = k.channel
+LEFT JOIN payers p ON p.date = k.date AND p.channel = k.channel;
+CREATE INDEX ix_silver_marketing_daily_channel_date ON silver_marketing_daily(channel, date)
+"""
+
+
+def reconcile_marketing_daily(db):
+    checks = {}
+    source = db.execute('SELECT spend_usd FROM marketing_spend').fetchall()
+    source_cents = [exact_cents(r[0]) for r in source]
+    checks['spend_rows_equal_source'] = db.execute(
+        'SELECT COUNT(*) FROM silver_marketing_daily WHERE has_spend_row = 1').fetchone()[0] == len(source)
+    checks['independent_decimal_spend_recount'] = db.execute(
+        'SELECT COALESCE(SUM(spend_cents), 0) FROM silver_marketing_daily').fetchone()[0] == sum(
+        c for c in source_cents if c is not None and c >= 0)
+    checks['signups_equal_profile'] = db.execute('SELECT SUM(signups) FROM silver_marketing_daily').fetchone()[0] == db.execute(
+        'SELECT COUNT(*) FROM silver_user_profile WHERE signup_date IS NOT NULL').fetchone()[0]
+    checks['new_payers_equal_profile'] = db.execute(
+        'SELECT SUM(new_paying_users) FROM silver_marketing_daily').fetchone()[0] == db.execute(
+        'SELECT COUNT(*) FROM silver_user_profile WHERE first_paid_at IS NOT NULL').fetchone()[0]
+    window = "date >= substr(:coverage_start, 1, 10) AND date < substr(:coverage_end, 1, 10) AND has_spend_row = 1"
+    ctr = db.execute(
+        f"SELECT month, channel, SUM(clicks), SUM(impressions) FROM silver_marketing_daily WHERE {window} GROUP BY 1, 2 "
+        f"UNION ALL SELECT month, 'all', SUM(clicks), SUM(impressions) FROM silver_marketing_daily WHERE {window} GROUP BY 1 "
+        f"ORDER BY 1, 2", COVERAGE).fetchall()
+    checks['ctr_matches_registry_on_source'] = ctr == [tuple(r[:4]) for r in db.execute(load_sql('marketing_ctr_monthly'), COVERAGE)]
+    efficiency = db.execute(
+        f"SELECT m.month, m.channel, CASE WHEN SUM(m.exception_status = 'excluded') = 0 THEN SUM(m.spend_cents) END, SUM(m.clicks), "
+        f"  (SELECT COALESCE(SUM(x.signups), 0) FROM silver_marketing_daily x WHERE x.month = m.month AND x.channel = m.channel), "
+        f"  (SELECT COALESCE(SUM(x.new_paying_users), 0) FROM silver_marketing_daily x WHERE x.month = m.month AND x.channel = m.channel) "
+        f"FROM silver_marketing_daily m WHERE {window.replace('date', 'm.date').replace('has_spend_row', 'm.has_spend_row')} "
+        f"GROUP BY 1, 2 ORDER BY 1, 2", COVERAGE).fetchall()
+    registry = [tuple(r[:6]) for r in db.execute(load_sql('marketing_efficiency_monthly'), COVERAGE)]
+    # Where a channel-month has invalid spend, the registry rounds it and Silver excludes it: compare the rest only.
+    checks['efficiency_matches_registry_on_source'] = len(efficiency) == len(registry) and all(
+        s[:2] == r[:2] and s[3:] == r[3:] and (s[2] is None or s[2] == r[2]) for s, r in zip(efficiency, registry))
+    rows = db.execute('SELECT COUNT(*) FROM silver_marketing_daily').fetchone()[0]
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_marketing_daily GROUP BY 1').fetchall())
+    channels = dict(db.execute('SELECT channel, COUNT(*) FROM silver_marketing_daily GROUP BY 1').fetchall())
+    return checks, {'rows': rows, 'channels': channels, 'exceptions': exceptions}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -1054,6 +1133,8 @@ SILVER = [
     ('silver_user_episodes', USER_EPISODES_SQL, ['ix_silver_user_episodes_start'], reconcile_user_episodes),
     ('silver_paywall_funnel', PAYWALL_FUNNEL_SQL,
      ['ix_silver_paywall_funnel_time', 'ix_silver_paywall_funnel_user_time'], reconcile_paywall_funnel),
+    ('silver_marketing_daily', MARKETING_DAILY_SQL,
+     ['ix_silver_marketing_daily_channel_date'], reconcile_marketing_daily),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
