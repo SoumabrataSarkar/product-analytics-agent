@@ -191,10 +191,24 @@ def main():
             request=offset(started,rng.randint(3600,max_delay))
             db.execute('UPDATE subscription_history SET effective_end_at=? WHERE subscription_period_id=?',(request,period))
             db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',(period+'_cancel',subid,uid,request,ended,request,'cancel_at_period_end','monthly_9_99',txnid,request,request))
+    # Subscribers leaving in October request cancellation in September; their access
+    # continues to the October renewal date, after the data ends.
+    october_rng=random.Random(SEED+6603); october_pending={}
+    for i in sorted(current-returned)[:95]:
+        uid=f'u{i:05}'
+        row=db.execute("SELECT subscription_period_id,subscription_id,effective_start_at,effective_end_at,source_txn_id FROM subscription_history WHERE user_id=? AND substr(effective_start_at,1,7)='2026-09' AND status='active'",(uid,)).fetchone()
+        if not row: continue
+        period,subid,started,ended,txnid=row
+        cutoff=timestamp(9,30,21)
+        request=offset(started,october_rng.randint(3600,int((dt.datetime.strptime(cutoff,'%Y-%m-%dT%H:%M:%SZ')-dt.datetime.strptime(started,'%Y-%m-%dT%H:%M:%SZ')).total_seconds())))
+        db.execute('UPDATE subscription_history SET effective_end_at=? WHERE subscription_period_id=?',(request,period))
+        db.execute('INSERT INTO subscription_history VALUES (?,?,?,?,?,?,?,?,?,?,?)',(period+'_cancel',subid,uid,request,ended,request,'cancel_at_period_end','monthly_9_99',txnid,request,request))
+        october_pending[i]=request
     for i in first_start:
-        status='active' if i in current else 'expired'
+        status=('cancel_at_period_end' if i in october_pending else 'active') if i in current else 'expired'
         end_at = timestamp(10, 1+(i*7)%25, 1) if i in current else cancelled.get(i)
-        db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],end_at,last_start[i] if i in current else cancelled.get(i),f'u{i:05}'))
+        updated=october_pending.get(i,last_start[i]) if i in current else cancelled.get(i)
+        db.execute('UPDATE users SET subscription_status=?, subscription_start=?, subscription_end=?,updated_at=? WHERE user_id=?',(status,last_start[i],end_at,updated,f'u{i:05}'))
     seen=set(); sessions=[]; views=[]; view_pairs=[]; events=[]; links=[]; spend=[]
     extra_sessions=[]; extra_views=[]; extra_view_pairs=[]; extra_session_ids=set()
     episode_duration={(e[0],e[1]):e[3] for e in episodes}
