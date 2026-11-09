@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-11-09 (Asia/Kolkata).  
 **Repository:** `SoumabrataSarkar/product-analytics-agent` (private).  
-**Current focus:** Extend the shared Metric Registry beyond the approved MAU definition.
+**Current focus:** Continue the shared Metric Registry across product metrics and business questions.
 
 This is a progress and handoff record. The data catalog, reference data model and frozen architecture remain the authoritative sources for their respective contracts.
 
@@ -58,7 +58,7 @@ Git history contains the exact timestamps and full changes. The user also report
 ## Instructions for the next collaborator
 
 - Read `AGENTS.md`, `CLAUDE.md`, the frozen `docs/architecture/v1.md`, relevant ADRs, `docs/examples/pockettoons-data-catalog.md` and `docs/examples/pockettoons-reference-data-model-v1.md`.
-- Begin with the Metric Registry and propose MAU first. Explain the problem and recommendation in short, simple language; ask the user to confirm material choices before locking them in. Work one item at a time.
+- Continue the Metric Registry from its current progress, prioritizing metrics and business questions with the user. Explain the problem and recommendation in short, simple language; ask the user to confirm material choices before locking them in. Work one item at a time.
 - Keep shared analytical definitions model-neutral. Do not implement separate Claude-only metric logic, silently invent metric semantics, or reopen accepted catalog tables without a concrete issue.
 - Distinguish implemented code and tests from proposed behavior; do not claim the agent or data layers already work.
 - Do not edit frozen Architecture v1. Any architecture change requires the documented ADR/version process.
