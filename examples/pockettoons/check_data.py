@@ -437,6 +437,11 @@ else:
     conversion_ok=registry_cohorts=={name:(users,payers) for name,users,payers in cohorts}
     print(('PASS' if conversion_ok else 'FAIL'),'registry 30-day subscription conversion reconciles to cohort comparison')
     failed+=not conversion_ok
+watch_months=db.execute(load_sql('watch_time_monthly'),coverage).fetchall()
+segment_total=db.execute('SELECT sum(watch_duration_sec) FROM playback_segments WHERE segment_started_at>=? AND segment_ended_at<=?',(coverage['coverage_start'],coverage['coverage_end'])).fetchone()[0]
+watch_ok=len(watch_months)==6 and abs(sum(w[1] for w in watch_months)-segment_total)<0.01
+print(('PASS' if watch_ok else 'FAIL'),'registry watch time reconciles to playback segments')
+failed+=not watch_ok
 browse=db.execute("WITH v AS (SELECT DISTINCT session_id FROM content_views) SELECT count(*) FROM sessions s LEFT JOIN v USING(session_id) WHERE v.session_id IS NULL").fetchone()[0]
 print('Browsing-only sessions:',browse)
 if browse<1: failed+=1
