@@ -126,7 +126,7 @@ def investigate(*, question: str, database: str | Path, snapshot_id: str,
             "queries": queries, "log_path": str(log_path), "history": history}
 
 
-def cli_adapter(command: list[str], timeout_seconds: float = 60.0) -> Model:
+def cli_adapter(command: list[str], timeout_seconds: float = 120.0) -> Model:
     """Use a caller-configured local process: JSON stdin, JSON stdout, no shell."""
     import subprocess
 
