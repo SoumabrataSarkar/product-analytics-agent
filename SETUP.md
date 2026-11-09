@@ -13,7 +13,7 @@ This guide explains how to run the PocketToons reference investigation with the 
 - A working Codex or Claude Code environment with access to your local workspace and database. Follow that runtime's account and permission requirements. The repository does not bundle a model or guarantee a particular runtime.
 - Enough free local disk space for the database, temporary data and any backup. The reviewed layered database was approximately 680 MiB on the machine where it was prepared; sizes vary.
 
-Run the commands below from the repository root. Do not place a database, private evidence, secrets or evaluation answer keys in a public repository.
+If you do not already have a local clone, authenticate with GitHub and clone the private repository:\n\n```sh\ngit clone https://github.com/SoumabrataSarkar/product-analytics-agent.git\ncd product-analytics-agent\n```\n\nRun the remaining commands from the repository root. Do not place a database, private evidence, secrets or evaluation answer keys in a public repository.
 
 ## Option A: download the reviewed database
 
