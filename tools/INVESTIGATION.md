@@ -5,9 +5,11 @@ asks a question; the coding agent follows the shared investigation instructions,
 consults the relevant data catalog and metric registry, uses the read-only
 query and evidence tools, and produces an evidence-backed answer.
 
-The shared investigation skill and its integration with those tools are
-**not yet complete or independently evaluated**. The current repository does
-not yet provide a turnkey investigation experience.
+The shared investigation skill is in
+[`skills/product-analytics-investigation/SKILL.md`](../skills/product-analytics-investigation/SKILL.md).
+Its instructions and query command have targeted tests, but they have not yet
+been independently evaluated in a full investigation. The repository does
+not yet provide a verified turnkey investigation experience.
 
 ## Existing tools
 
@@ -16,6 +18,8 @@ not yet provide a turnkey investigation experience.
 - `evidence_log.py` records query context and outcomes to a new local file,
   separate from the database. The caller supplies the snapshot identifier;
   it is not automatically verified.
+- `evidence_query.py` invokes both tools for a single query from JSON on
+  standard input and creates a new local evidence log for that query.
 - `investigation.py` is an experimental, model-neutral Python loop exercised
   with scripted callbacks in tests. It is not the Codex or Claude Code skill,
   and it does not provide a ready-to-use model connection.
@@ -36,5 +40,5 @@ tool reduces accidental database changes but is not a complete security sandbox.
 Source-layer labels and snapshot identifiers are assertions supplied by the
 caller, not proof that routing or freshness is correct. Independently check
 metric definitions, joins, data quality, SQL, numerical results and claims.
-The skill, report output, visualizations and independent evaluation remain
-work to complete.
+The skill requires end-to-end evaluation. Report output, visualizations and
+the independent evaluation suite remain work to complete.
