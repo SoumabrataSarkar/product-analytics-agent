@@ -1,77 +1,40 @@
-# Investigation loop: early foundation
+# Investigation tools
 
-The loop connects a caller-supplied model adapter to the bounded read-only
-SQLite tool and an evidence log. It is an early implementation, not a
-validated analytical agent. A GPT-6.1 Terra adapter is provided but has not
-been live-validated in this environment. Independent evaluation, chart
-generation and report rendering are not included.
+The intended runtime is **Codex or Claude Code**. A user opens the project and
+asks a question; the coding agent follows the shared investigation instructions,
+consults the relevant data catalog and metric registry, uses the read-only
+query and evidence tools, and produces an evidence-backed answer.
 
-Run tests from the repository root:
+The shared investigation skill and its integration with those tools are
+**not yet complete or independently evaluated**. The current repository does
+not yet provide a turnkey investigation experience.
+
+## Existing tools
+
+- `safe_query.py` runs one bounded, read-only SQLite query. Its default
+  timeout is 30 seconds per query; results may be truncated at the row limit.
+- `evidence_log.py` records query context and outcomes to a new local file,
+  separate from the database. The caller supplies the snapshot identifier;
+  it is not automatically verified.
+- `investigation.py` is an experimental, model-neutral Python loop exercised
+  with scripted callbacks in tests. It is not the Codex or Claude Code skill,
+  and it does not provide a ready-to-use model connection.
+
+Run the tests from the repository root:
 
 ```sh
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
-## GPT-6.1 Terra
+## Safety and evidence
 
-The adapter `tools/openai_terra_adapter.py` uses the OpenAI Responses API
-with model ID `gpt-6.1-terra`, structured outputs and `store: false`.
-It uses Python's standard library and reads `OPENAI_API_KEY` from the local
-process environment; never paste a key into the repository or evidence log.
-API access, model eligibility and billing are separate configuration concerns.
-Model requests can incur charges. Check current pricing and account access.
+SQL, questions, parameters, results and evidence files can contain sensitive
+information. Use only authorized datasets; store evidence privately and do not
+commit data, logs, keys or confidential assignment material. The read-only
+tool reduces accidental database changes but is not a complete security sandbox.
 
-After securely configuring the environment variable in the same shell, use
-the CLI command below. The catalog, registry, question and all query results
-passed to the model leave the local machine for OpenAI. Only use data you are
-authorized to share. Responses API storage is disabled in this request;
-consult the provider's current data controls for all retention details.
-
-```sh
-python3 tools/investigation.py --database /path/to/fixture.sqlite \
-  --question 'Your business question' --snapshot-id 'verified-by-caller' \
-  --catalog docs/examples/pockettoons-data-catalog.md \
-  --registry docs/metrics/metric-registry.md \
-  --log /private/path/new-evidence.jsonl \
-  --adapter python3 tools/openai_terra_adapter.py
-```
-
-The model is not a validator: independently check SQL, source quality,
-calculations, claims and charts. The structured response schema limits output
-shape, not factual correctness. Account access, live API behavior, actual
-cost, model performance and investigation accuracy require live verification.
-
-## Adapter interface
-
-The CLI invokes a local command without a shell. The command must read one JSON
-object from standard input and write one JSON action object to standard output
-on each invocation. It receives the question, dataset-specific catalog and
-registry, current query budget and the history of earlier results. It can
-return a `query`, `clarify` or `finish` action as described in the
-`system` field of the request.
-
-```sh
-python3 tools/investigation.py --database /path/to/fixture.sqlite \
-  --question 'Your business question' --snapshot-id 'verified-by-caller' \
-  --catalog docs/examples/pockettoons-data-catalog.md \
-  --registry docs/metrics/metric-registry.md \
-  --log /private/path/new-evidence.jsonl \
-  --adapter /path/to/your-model-adapter
-```
-
-The supplied snapshot ID and source-layer labels are caller/model assertions,
-not verified hashes or proof of correct routing. The system prompt is
-guidance, not an enforcement mechanism for analytical correctness: inspect SQL,
-definitions, evidence and conclusions. The loop caps query attempts at nine,
-limits the model's stated hypothesis rounds, and applies the query tool's
-read-only, row and per-query time limits. It stops on a model error or an
-evidence/database error and does not invent a successful answer.
-
-The log includes SQL, question, parameters and query results for traceability.
-The adapter receives the same potentially sensitive data and may send it to an
-external model depending on its implementation. Use only an approved runtime,
-avoid confidential data, choose a private log location, and do not commit
-logs, database files, keys or assignment material. A new log file is required.
-
-The evidence log alone is not a finished report. A completed response is
-model-generated and still needs independent factual and numerical validation.
+Source-layer labels and snapshot identifiers are assertions supplied by the
+caller, not proof that routing or freshness is correct. Independently check
+metric definitions, joins, data quality, SQL, numerical results and claims.
+The skill, report output, visualizations and independent evaluation remain
+work to complete.
