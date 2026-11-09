@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly`, `gold_activity_segments_monthly`, `gold_growth_accounting_monthly`, `gold_cohorts` and `gold_revenue_monthly` are approved and implemented, and the other Gold tables are planned.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly`, `gold_activity_segments_monthly`, `gold_growth_accounting_monthly`, `gold_cohorts`, `gold_revenue_monthly`, `gold_funnel_monthly`, `gold_content_monthly` and `gold_marketing_monthly` are approved and implemented: Gold v1 is complete.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -215,7 +215,7 @@
 
 ## Gold rules
 
-Gold tables read Silver only. Each has one row per complete UTC month inside the coverage window (with further dimensions where stated), including months without activity. Every rate is stored with its numerator and denominator; a zero denominator gives NULL. Each row records the registry definition versions it used in `definitions` (JSON) and its `build_id`.
+Gold tables read Silver only, except where a contract names a Bronze view because the needed records are not in any Silver grain. Each has one row per complete UTC month inside the coverage window (with further dimensions where stated), including months without activity. Every rate is stored with its numerator and denominator; a zero denominator gives NULL. Each row records the registry definition versions it used in `definitions` (JSON) and its `build_id`.
 
 ## gold_kpi_monthly
 
@@ -296,3 +296,51 @@ Gold tables read Silver only. Each has one row per complete UTC month inside the
 | Does not support | Revenue by title or episode (attribution tables, from Silver or source on request) |
 | Reconciliation | Gross, refunds and net by type equal `net_revenue_by_type_monthly`; the types add to `gold_kpi_monthly` revenue; monthly charge and refund counts and cents equal `refund_rate_monthly`; attempts and failures by product equal `payment_failure_rate_monthly` on the source; net = gross − refunds |
 | Tests | Eighteen rows including empty types, unattributed refunds, a charge booked at its later success |
+
+## gold_funnel_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | Paywall → checkout → purchase conversion, exposure, and how much of the funnel cannot be traced |
+| Grain | One row per complete month and product (the paywall's labelled product, NULL as `unknown`, unrecognised values kept), plus `all` |
+| Key | (`month`, `product`) primary key |
+| Columns | `month`; `product`; `paywalls`; `paywalls_with_checkout`; `paywalls_with_purchase`; `paywall_to_checkout_rate`; `checkout_to_purchase_rate`; `paywall_to_purchase_rate`; `exposed_users`; `mau` and `exposure_rate` (`all` row only); `checkouts_without_paywall_link`; `in_app_purchases`; `in_app_purchases_without_checkout_link`; `definitions`; `build_id` |
+| Rules | Paywall rows follow `silver_paywall_funnel` (`paywall_funnel_monthly`): a paywall counts as checked out or purchased through its captured links only. Exposure follows `paywall_exposure_monthly`: distinct identified paywall viewers ÷ MAU. Checkouts without a paywall link are counted by checkout month and product label from the Bronze `user_events` view, because Silver's grain is the paywall view. In-app purchases are successful subscription and PPV charges made in a session; renewals are off-session and excluded; those without a checkout link are the untraceable ones. |
+| Aggregation | Paywall, checkout and purchase counts add across products to `all`; exposed users do not. |
+| Lineage | `silver_paywall_funnel`, `silver_payment_attempts`, `bronze_user_events`; `gold_kpi_monthly` for MAU |
+| Supports | Q11 |
+| Does not support | Attribution of untraced purchases to a paywall; time-window attribution |
+| Reconciliation | Paywalls, checkouts and purchases by product equal `paywall_funnel_monthly`; exposed users and MAU equal `paywall_exposure_monthly` on the source; products add to `all`; unlinked checkouts equal the source events |
+| Tests | Two checkouts with one purchase, unidentified viewer not exposed, unrecognised product row, MAU only on `all` |
+
+## gold_content_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | Which titles are watched, how much, and whether episodes are finished and followed |
+| Grain | One row per complete month and `content_id`, plus `all` |
+| Key | (`month`, `content_id`) primary key |
+| Columns | `month`; `content_id`; `viewers`; `views`; `watch_seconds`; `watch_hours`; `user_episodes_started`; `user_episodes_completed`; `episode_completion_rate`; `completed_with_next_episode`; `continued`; `series_continuation_rate`; `free_viewer_days`, `quota_hit_days` and `free_quota_hit_rate` (`all` row only); `definitions`; `build_id` |
+| Rules | Engagement group v1.0. Viewers and views count by view start; watch seconds are split by wall clock. Completion and continuation count user-episodes by the month of first start, only when the 7-day window is complete and the episode is catalogued; completed = coverage ≥ 90% of the episode. Free-quota hits are per user and UTC day across all titles, so they are on the `all` row only. |
+| Aggregation | Views, watch time and user-episode counts add across titles to `all`; viewers do not. |
+| Lineage | `silver_user_day_title_watch`, `silver_user_episodes`, `silver_user_day_activity` |
+| Supports | Q12 |
+| Does not support | Episode-level detail by month (from `silver_user_episodes` on request); completion for windows ending after the coverage window |
+| Reconciliation | Title reach equals `title_reach_monthly`; views and viewers equal `views_per_viewer_monthly`; watch seconds equal `watch_time_monthly`; completion equals `episode_completion_monthly`; continuation equals `series_continuation_monthly`; quota equals `free_quota_hit_monthly` on the source; titles add to `all`; quota values only on `all` |
+| Tests | Title views, quota on `all` only |
+
+## gold_marketing_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | Spend efficiency by channel and paid versus unpaid acquisition |
+| Grain | One row per complete month and channel (spend channels and acquisition sources, including `organic` and `unknown`) |
+| Key | (`month`, `channel`) primary key |
+| Columns | `month`; `channel`; `spend_days`; `excluded_spend_days`; `spend_cents`; `impressions`; `clicks`; `ctr`; `cpc_usd`; `signups`; `new_paying_users`; `cost_per_signup_usd`; `cac_usd`; `definitions`; `build_id` |
+| Rules | Sums of `silver_marketing_daily`. Unpaid channels have NULL spend, impressions and clicks. When a month has excluded spend days, `spend_cents` is the valid days' total and CPC, cost per signup and CAC are NULL, because the cost is incomplete. Attribution is the user's acquisition source; CAC is the month's spend ÷ that month's new payers from the channel, not a cohort CAC. |
+| Aggregation | Spend, clicks, signups and new payers add across channels and months; rates do not. |
+| Lineage | `silver_marketing_daily`; `gold_kpi_monthly` for the signup check |
+| Supports | Q14 |
+| Does not support | Campaign or click-level attribution (Q16), cohort CAC or payback |
+| Reconciliation | Clicks and impressions equal `marketing_ctr_monthly`; spend, clicks, signups and new payers equal `marketing_efficiency_monthly` on the source (spend only where no day is excluded); channel signups add to `gold_kpi_monthly.signups` |
+| Tests | Valid spend, an excluded day with no cost metrics, unpaid channel without spend |
