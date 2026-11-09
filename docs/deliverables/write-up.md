@@ -12,34 +12,38 @@ One investigation runs in six steps: **clarify** (metric, period, population; as
 - **Evidence for every number.** Each query writes its SQL, layer, metric version and row count to its own log.
 - **LLM-neutral by design.** Definitions, rules and guardrails live in files, not prompts, so Claude Code and Codex behave the same and a failure becomes a rule that every later run reads. Trade-off: no UI; quality depends on the agent following the skill.
 
-**Tools.** Claude Code (Claude Opus 5.5, medium) built the framework, ran the GM investigation and computed the answer key. Codex (GPT Terra 6.1, medium) ran 17 of 18 evaluation runs. ChatGPT (Terra 5.6, later 6.1, medium) was the independent reviewer.
+## 02 How it performed: 18 blind test questions, two rounds
 
-## 02 Where it breaks: before and after one improvement round
+Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q07 and Q11 rerun, Q01 and Q09 as regression checks): 16 pass, 1 partial, 1 fail.
 
-| Failure mode | Where | Round 1 | What changed | Round 2 |
-|---|---|---|---|---|
-| Stating a cause the data can't prove; mixed comparison periods | GM report v1 (Q02) | Fail | Skill rules: pattern ≠ cause; exact periods; quantify or say "unknown" | Not seen again in 17 later runs |
-| First month used as a normal baseline (subscriber base starts at zero) | Q07 cohorts | Fail | Rule: check for a start-up period before using it as a baseline | Pass |
-| Same, in a trend description | Q11 funnel | Partial | (same rule) | Partial: rule didn't trigger |
-| Harmless registry-version warning repeated | All runs | 18 of 18 | Change verified as docs-only and recorded | 3 of 4 |
-| **Overall, 18 questions (pass / partial / fail)** | | **15 / 1 / 2** | | **16 / 1 / 1** |
+| Question type | Questions | Result | What happened |
+|---|---|---|---|
+| Simple numbers and filters | Q01 Q05 Q08 Q17 Q18 | All pass | Exact to the user and the cent |
+| Vague or ambiguous questions | Q03 Q10 Q15 Q18 | All pass | Asked before choosing a metric, period or meaning |
+| Unanswerable question | Q16 | Pass | Declined and named the data that's missing |
+| Data-quality traps | Q12 Q13 Q14 | All pass | Caught both planted issues |
+| Comparisons and lifecycle | Q04 Q06 Q09 | All pass | Right time basis; groups reconcile to the total |
+| Cohort conversion | Q07 | Fail → Pass | Used April, the month the subscriber base forms, as a normal baseline; a new skill rule fixed it |
+| Funnel drop-off | Q11 | Partial | Right answer and gaps, but read April's start-up as a funnel decline; the new rule didn't trigger here |
+| GM investigation | Q02 | Fail → rules | Headline numbers and story right; some conclusions stated more firmly than the evidence allowed. Three certainty rules followed; the issue didn't recur in 17 later runs |
 
-**Hardest:** comparisons that need context the data doesn't announce, such as a start-up month. **Strongest:** ambiguity and traps. Details: [evaluation results](../evaluations/results.md).
+**Hardest:** comparisons that need context the data doesn't announce, such as a start-up month. Details: [evaluation results](../evaluations/results.md).
 
 ## 03 Running it for a 20-person product team
 
-| Question type | Example | Time to answer (observed) |
-|---|---|---|
-| Simple | MAU by month; US subscribers | 2–3 minutes |
-| Normal | Refund impact; funnel drop-off | 5–6 minutes |
-| Complex | MAU up 20% but revenue flat: why? | 10–12 minutes, report included |
+Time to answer (observed): simple 2–3 min, normal 5–6 min, complex 10–12 min.
 
-- **Access and guardrails:** a read-only role on a warehouse replica; the query tool's limits stay on; sensitive columns kept out of the catalog (not built yet).
-- **Cost:** not measured here; log tokens per run before setting a per-question budget.
-- **Quality over time:** the 18 questions become a regression suite, rerun whenever the skill, registry or data model changes; track pass rate, clarification rate and query errors; review a weekly sample of real questions.
+- **Set-up for real data:** first build a data catalog and metric registry for the team's warehouse; the agent relies on both.
+- **Cost (estimate):** running the 18 questions twice used about half of one 5-hour window on an INR 1,999-a-month Codex plan, so one seat covers a heavy day of questions: about INR 1,999 per active analyst a month. Token cost per run wasn't measured.
+- **Lower cost and latency:** answer from the smallest layer that fits, with targeted queries instead of raw scans.
+- **Guardrails:** data is only ever read: a read-only database role on a replica plus the query tool's read-only check, row and time limits; every figure traceable to its evidence log; sensitive columns kept out of the catalog.
+- **Freshness:** real data keeps arriving, unlike this static dataset. Add a freshness tracker (last load per source and layer) that the agent checks first, warning or stopping when data is stale.
+- **Quality over time:** rerun the 18 questions on every change to the skill, registry or data; track pass rate, clarification rate and query errors; review a weekly sample of real questions and turn failures into rules.
 
 ## 04 With more time
 
-- Make the start-up check apply whenever the first month looks unusual, not only when choosing a baseline (the remaining Q11 issue).
-- Run the same questions in both runtimes for a direct Claude vs Codex comparison; add held-out questions.
-- Measure cost per run; a short-answer mode for simple questions; a machine-readable catalog; a simple UI.
+- Run the same questions in both runtimes for a direct Claude vs Codex comparison, plus held-out questions.
+- Log tokens and time per run to replace the cost estimate with a measured cost per question.
+- A short-answer mode for simple questions; a helper that drafts the catalog for a new database; a Slack or web front end.
+
+*Note on tools:* Claude Code (Claude Opus 5.5, medium) built the framework, ran the GM investigation and computed the answer key. Codex (GPT Terra 6.1, medium) ran the evaluation. ChatGPT (Terra 5.6, later 6.1, medium) reviewed the GM report and evaluation decisions independently.
