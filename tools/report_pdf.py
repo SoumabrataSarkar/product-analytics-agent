@@ -68,11 +68,11 @@ TEXT_W = PAGE_W - 2 * MARGIN
 CHAPTERS = [  # number, title, content sections, starts a new page
     ("01", "The answer", ["executive"], True),
     ("02", "How we investigated", ["scope", "workflow"], True),
-    ("03", "What happened", ["baseline", "decomposition"], True),
-    ("04", "Why it happened", ["drivers"], True),
+    ("03", "What happened", ["baseline", "decomposition"], False),
+    ("04", "Why it happened", ["drivers"], False),
     ("05", "Data quality and limits", ["data_quality", "limitations"], False),
     ("06", "What to do next", ["recommendations"], False),
-    ("A", "Evidence appendix", ["appendix"], True),
+    ("A", "Evidence appendix", ["appendix"], False),
 ]
 SUBHEAD = {"scope": "What data we used", "workflow": "Investigation path",
            "baseline": "The movement", "decomposition": "Who drove it", "drivers": None,
@@ -525,10 +525,15 @@ def build(content: dict, out: Path) -> int:
         first = False
         story += [ChapterOpener(number, title), Spacer(1, 4)]
         for key in present:
+            blocks = [render(b) for b in secs[key]["blocks"]]
             if SUBHEAD.get(key):
-                story.append(P(SUBHEAD[key], "sub"))
-            for b in secs[key]["blocks"]:
-                story += render(b)
+                head = P(SUBHEAD[key], "sub")
+                if blocks and secs[key]["blocks"][0]["type"] == "chart":
+                    blocks[0] = [KeepTogether([head] + blocks[0])]  # a subheading never sits apart from its chart
+                else:
+                    story.append(head)
+            for items in blocks:
+                story += items
     doc.multiBuild(story)
     if doc.pages_drawn > MAX_PAGES:
         Path(out).unlink(missing_ok=True)
