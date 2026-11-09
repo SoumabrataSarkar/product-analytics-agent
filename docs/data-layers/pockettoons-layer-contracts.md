@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete; Gold is not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly` is approved and implemented, and the other Gold tables are planned.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -212,3 +212,23 @@
 | Reconciliation | Counts per table, status and reason equal each table's own flagged rows split by reason plus the reviewed payments; every flagged row and reviewed payment is listed exactly once per reason |
 | Tests | Multiple reasons split into rows, composite keys, session-resolution problems, anonymous sessions excluded, reviewed payment correction, `excluded` status carried |
 | Current data | 13 rows: the reviewed raw payment corrections (seven 100× unit errors and six non-numeric source amounts). Curated tables are clean by design, so no Silver rule fires on them; logged-out sessions are normal browsing and are not listed. |
+
+## Gold rules
+
+Gold tables read Silver only. Each has one row per complete UTC month inside the coverage window (with further dimensions where stated), including months without activity. Every rate is stored with its numerator and denominator; a zero denominator gives NULL. Each row records the registry definition versions it used in `definitions` (JSON) and its `build_id`.
+
+## gold_kpi_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | One row of headline metrics per month: activity, engagement, signups, revenue, payers and subscriptions, with coverage counts the agent must report |
+| Grain | One row per complete UTC month |
+| Key | `month` primary key |
+| Columns | `month`; `period_start`; `period_end`; `days`; `mau`; `unidentified_sessions`; `dau_day_sum`; `average_dau`; `stickiness`; `meu`; `engagement_rate`; `deu_day_sum`; `average_deu`; `engaged_stickiness`; `signups`; `unknown_source_signups`; `gross_charges_cents`; `refunds_cents`; `net_revenue_cents`; `paying_users`; `subscription_payers`; `ppv_payers`; `arpu_usd`; `arppu_usd`; `subscribers_at_start`; `subscribers_at_end`; `net_adds`; `churned_subscribers`; `churn_rate`; `mrr_cents`; `cancellation_requests`; `cancellation_request_rate`; `definitions`; `build_id` |
+| Rules | Registry definitions throughout. Average DAU and DEU are the month's daily counts summed and divided by the month's days (days without activity count as zero). Money is integer cents; refunds are positive and subtracted from gross. Subscribers are measured at the month's start and next month's start; churned subscribers had access at the start and none at the end. |
+| Aggregation | Distinct-user counts and rates are not additive across months: a quarter is recomputed from Silver, never summed from these rows. Cents and day sums add across months. |
+| Lineage | `silver_user_day_activity`, `silver_resolved_sessions`, `silver_user_profile`, `silver_payment_attempts`, `silver_subscription_access` |
+| Supports | Q01, Q02, Q04, Q10 and headline context for every other question |
+| Does not support | Segments (`gold_activity_segments_monthly`, planned); revenue by type (`gold_revenue_monthly`, planned) |
+| Reconciliation | One row per complete month; MAU and unidentified sessions, MEU, gross, refunds and net revenue, paying users by product, ARPU, ARPPU, subscribers at start and end, net adds, churn, MRR, cancellation requests and signups (all and unknown source) equal the registry on the source; monthly DAU and DEU day sums equal independent recounts (exact fractions for watch time); stored rates equal their counts |
+| Tests | Every month present including one without activity, unidentified sessions, zero denominator gives NULL, definition versions recorded |
