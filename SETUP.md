@@ -10,7 +10,7 @@ This guide explains how to run the PocketToons reference investigation with the 
   ```sh
   python3 -c "import sqlite3,sys; print('Python:', sys.version); print('SQLite:', sqlite3.sqlite_version)"
   ```
-- Your own working Codex or Claude Code environment and available model, with access to the local repository and database. Follow that runtime's account and permission requirements. This framework uses that runtime for reasoning; it does not require a separate standalone model service or custom API.
+- Your own working Codex or Claude Code environment and available model, with access to the local repository and database. Follow that runtime's account and permission requirements. The selected coding agent performs the reasoning using the framework's shared instructions and tools.
 - Enough free local disk space for the database, temporary data and any backup. The reviewed layered database was approximately 680 MiB on the machine where it was prepared; sizes vary.
 
 If you do not already have a local clone, authenticate with GitHub and clone the private repository:
