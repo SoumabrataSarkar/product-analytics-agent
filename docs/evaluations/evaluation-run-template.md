@@ -7,7 +7,7 @@ after running an agent on a fixed, validated dataset; do not invent values.
 
 Evaluate whether a coding-agent runtime can answer varied product questions
 using the shared investigation skill, selected data catalog, metric registry,
-read-only query tool and evidence. The current repository contains draft
+read-only query tool and evidence. The current repository contains 16
 [investigation scenarios](investigation-paths.md); this template is the
 evaluator's format, not evidence that those scenarios have been run.
 
@@ -41,7 +41,7 @@ permitted context, budgets and oracle; record any unavoidable differences.
 
 Use at least 15 varied questions. Reference existing scenario IDs where
 appropriate, but validate or revise their prerequisites against the current
-registry and final snapshot. The draft scenario list alone does not guarantee
+registry and final snapshot. The scenario list alone does not guarantee
 that the following assignment categories are covered.
 
 | Coverage | Example test direction | Scenario IDs / additional IDs |
