@@ -2,12 +2,12 @@
 
 **Scope:** Shared, model-neutral metric definitions for the analytics agent. Claude Code and Codex use the same definitions; runtime-specific instructions must not redefine them.
 
-**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group, the engagement group and the supporting metrics. Every metric in the metric map is defined. The Gold/Silver tables named in a definition are planned unless stated otherwise; the registry is not yet integrated with a working agent.
+**Status of this registry:** Template agreed. Metric definitions are added one at a time and are approved individually by the user. Approved: `mau`, the activity family (`dau`, `wau`, `deu`, `weu`, `meu`), `stickiness`, `engaged_stickiness`, `engagement_rate`, `growth_accounting_monthly` and the revenue group (`net_revenue`, `subscription_net_revenue`, `ppv_net_revenue`, `arpu`, `arppu`) and the funnel and lifecycle group, the engagement group and the supporting metrics. Every metric in the metric map is defined. Canonical SQL runs on the source tables; the Silver and Gold tables in the [PocketToons layer contracts](../data-layers/pockettoons-layer-contracts.md) reproduce these definitions and are reconciled against this SQL at every build. The registry is not yet integrated with an evaluated end-to-end agent.
 
 ## Registry rules
 
 - Each metric has an `id`, a `version` and a `status`. `draft` means under review and not to be relied on. `approved` means the user has accepted the definition. A material change to an approved definition increases its version.
-- Canonical SQL runs against the current PocketToons SQLite fixture tables unless it names a planned layer table, which is marked as planned.
+- Canonical SQL runs against the current PocketToons SQLite fixture tables and must run on SQLite 3.37 or later. Layer tables that reproduce a definition are named in its sources-and-layers field.
 - The registry contains definitions only. Expected values for the synthetic fixture belong in tests or evaluation files kept outside the agent's investigation context.
 - Table meanings, keys and joins come from the [data catalog](../examples/pockettoons-data-catalog.md) and the [reference data model](../examples/pockettoons-reference-data-model-v1.md). A metric definition must not contradict them.
 - Each quality check is marked **implemented and tested** or **proposed**.
@@ -51,7 +51,7 @@ The registry targets a bounded core set for this product rather than every possi
 3. Activity / event rule  Exactly what qualifies.
 4. Formula                Numerator and denominator, or the count/sum with no denominator.
 5. Grain and time         Reporting period, timestamp used, time zone, period boundaries, partial periods.
-6. Sources and layers     Current fixture tables; planned Silver/Gold tables marked as planned.
+6. Sources and layers     Current fixture tables; the Silver/Gold tables that reproduce the definition.
 7. Canonical SQL          Runnable against the current fixture.
 8. Filters / dimensions   Supported slices and how an entity is assigned to a slice.
 9. Null, status and refund rules
@@ -74,7 +74,7 @@ The registry targets a bounded core set for this product rather than every possi
 
 5. **Grain and time.** One value per complete UTC calendar month, `[month start, next month start)`. A session counts in every month its active span touches; a user counts at most once per month. Only months fully inside the data's activity coverage window are reported. A partial month is labelled month-to-date and is not compared with complete months or used in a quarter average.
 
-6. **Sources and layers.** Current fixture: `sessions`, `identity_links`. Planned (not implemented): a Silver resolved-session table and a Gold monthly MAU mart at month grain.
+6. **Sources and layers.** Current fixture: `sessions`, `identity_links`. Layers: `silver_resolved_sessions`, `silver_user_day_activity`; `gold_kpi_monthly` (`mau`, `unidentified_sessions`) and `gold_activity_segments_monthly` (platform and subscriber-status slices).
 
 7. **Canonical SQL.** Parameters: `:coverage_start` and `:coverage_end` are the activity coverage window as UTC month-start timestamps in fixture format, with `:coverage_end` exclusive. Output: one row per complete month with `mau` and the count of unidentified sessions that were excluded.
 
@@ -183,7 +183,7 @@ ORDER BY m.month_start, r.platform
 3. **Qualifying rule.** *Active:* a session whose span from `session_started_at` to `last_activity_at` (both inclusive) overlaps the period. *Engaged:* at least 60 seconds of watch time within the period, summed over all of the user's playback segments. A segment's `watch_duration_sec` is allocated to periods in proportion to the share of its wall-clock interval inside each period; a zero-length segment is allocated to the period containing it.
 4. **Formula.** Distinct count of qualifying users per period; no denominator.
 5. **Grain and time.** One value per complete UTC day, complete ISO week or complete UTC month, half-open `[start, next start)`. Only periods fully inside the activity coverage window are reported; a week that starts or ends outside it is not reported. Week labels are the Monday start date.
-6. **Sources and layers.** Current fixture: `sessions`, `identity_links` (active); `content_views`, `playback_segments` (engaged). Planned (not implemented): Silver resolved sessions and period-allocated watch time; Gold daily, weekly and monthly activity marts.
+6. **Sources and layers.** Current fixture: `sessions`, `identity_links` (active); `content_views`, `playback_segments` (engaged). Layers: `silver_user_day_activity` (session-active days and day-split watch seconds); `gold_kpi_monthly` (MAU, MEU, monthly sums of daily DAU and DEU). Daily and weekly values are computed from Silver.
 7. **Canonical SQL.** The building blocks and metric blocks below. Parameters are the same coverage window as `mau`.
 8. **Filters and dimensions.** Same rules as `mau`. For engaged metrics, activity-level slices use the view's or session's attributes.
 9. **Null, status and refund rules.** As `mau`; payment and subscription state do not affect activity or engagement.
@@ -381,7 +381,7 @@ ORDER BY a.month
    - *churned:* active in M−1 and not active in M.
 4. **Formula.** MAU(M) = new + retained + resurrected, and MAU(M) − MAU(M−1) = new + resurrected − churned. Quick ratio = (new + resurrected) ÷ churned, NULL when churned is zero.
 5. **Grain and time.** One row per complete month M whose previous month is also complete inside the coverage window, so the first coverage month is not reported.
-6. **Sources and layers.** `sessions`, `identity_links`, `users`. Planned: a Gold monthly growth-accounting mart.
+6. **Sources and layers.** `sessions`, `identity_links`, `users`. Layers: `gold_growth_accounting_monthly`, from `silver_user_day_activity` and `silver_user_profile`.
 7. **Canonical SQL.** Below.
 8. **Filters and dimensions.** User-level fixed dimensions only (`acquisition_source`, signup month); activity-level slices are not supported because a user's bucket would depend on the slice.
 9. **Null, status and refund rules.** As `mau`.
@@ -439,7 +439,7 @@ ORDER BY period_start
 3. **Qualifying rule.** A transaction counts only if it has a `succeeded` event in `payment_status_history`, and it counts at that event's `effective_at`, not at creation time and not by the current `transactions.status`. Failed attempts count for nothing. Refunds are stored as positive amounts and subtracted. A refund counts in the month it succeeds, not in its original charge's month. A refund is assigned to the type of the charge it refunds through `related_txn_id`; a refund whose original charge is missing or never succeeded is `unattributed` and still reduces net revenue. A transaction counts only if its `amount_usd` is numeric, positive and exact to the cent, and it has exactly one `succeeded` event; otherwise it is excluded from revenue, not rounded or guessed, and is listed as an exception in Silver.
 4. **Formula.** Net = Σ successful charges − Σ successful refunds, computed in exact integer cents from the curated `amount_usd`. ARPU and ARPPU divide net revenue in USD by a distinct user count; a zero denominator reports NULL.
 5. **Grain and time.** Bookings basis: a payment counts in full when it succeeds; a subscription payment is not spread across the days it covers. One value per complete UTC month inside the coverage window. Quarter revenue is the sum of its three complete months.
-6. **Sources and layers.** Current fixture: `transactions`, `payment_status_history`; ARPU also uses the `mau` sources. Planned (not implemented): a Silver successful-transaction table and a Gold monthly revenue mart.
+6. **Sources and layers.** Current fixture: `transactions`, `payment_status_history`; ARPU also uses the `mau` sources. Layers: `silver_payment_attempts`; `gold_kpi_monthly` and `gold_revenue_monthly` (by revenue type).
 7. **Canonical SQL.** Below. Parameters are the same coverage window as `mau`. Money columns are integer cents.
 8. **Filters and dimensions.** Revenue is additive: subscription and PPV net revenue add to net revenue, and slices by `transactions.country_at_event`, payment method or user-level fixed dimensions add to the total. A refund is sliced by its own transaction's attributes, except revenue type, which comes from the refunded charge. Per-episode PPV revenue uses the attribution tables as described in the catalog, never repeated transaction amounts.
 9. **Null, status and refund rules.** As in the qualifying rule. Raw provider amounts in `raw_payment_source` are never used; reviewed corrections are already reflected in `amount_usd`.
@@ -558,7 +558,7 @@ ORDER BY r.month
    - Churn: one row per complete month whose next month start is within the coverage window (≤ coverage end).
    - Funnel: paywalls by their `event_at` month; later checkout and purchase steps are credited to the paywall's month. Paywalls late in the last month may convert after the data ends.
    - CTR: `marketing_spend.date` months.
-6. **Sources and layers.** `users`, `transactions`, `payment_status_history`, `subscription_history`, `sessions`, `identity_links`, `user_events`, `marketing_spend`. Planned (not implemented): Gold cohort, subscriber-state and funnel marts.
+6. **Sources and layers.** `users`, `transactions`, `payment_status_history`, `subscription_history`, `sessions`, `identity_links`, `user_events`, `marketing_spend`. Layers: `silver_user_profile`, `silver_subscription_access`, `silver_paywall_funnel`, `silver_marketing_daily`; `gold_cohorts`, `gold_kpi_monthly` (subscribers, churn, MRR), `gold_funnel_monthly`, `gold_marketing_monthly`.
 7. **Canonical SQL.** Below; parameters as for `mau`.
 8. **Filters and dimensions.** Cohort metrics slice by user-level fixed dimensions (acquisition source, signup month). The funnel slices by product (`event_properties_json.product`). CTR slices by channel. Subscriber status at an instant follows the population rule.
 9. **Null, status and refund rules.** A later refund does not undo a conversion or a funnel purchase; it is reflected in revenue metrics. Unknown acquisition source is its own slice.
@@ -767,7 +767,7 @@ ORDER BY 1, 2
    - *Paywall exposure:* at least one `paywall_viewed` event in the month.
 4. **Formulas.** As in the table; a zero denominator reports NULL. Views are attempts (`view_id`), not segments or heartbeats.
 5. **Grain and time.** Complete UTC months. Watch time is split across periods by wall-clock share. Views, viewers, title reach and paywall exposure use event or view start time. User-episodes belong to the month of the first start and are eligible only when the 7-day window ends inside the coverage window; free viewer-days belong to their UTC date's month.
-6. **Sources and layers.** `content_views`, `playback_segments`, `content_episodes`, `user_events`, `sessions`, `identity_links`. Planned (not implemented): Gold watch-time, user-episode and quota marts.
+6. **Sources and layers.** `content_views`, `playback_segments`, `content_episodes`, `user_events`, `sessions`, `identity_links`. Layers: `silver_user_day_title_watch`, `silver_user_episodes`, `silver_user_day_activity` (free-quota slots), `silver_paywall_funnel`; `gold_content_monthly` and `gold_funnel_monthly` (exposure).
 7. **Canonical SQL.** Below; parameters as for `mau`.
 8. **Filters and dimensions.** Title (`content_id`), view type (free, subscription, PPV), platform and country from the view or session. Titles and view types can overlap per user; watch seconds are additive across titles and view types.
 9. **Null, status and refund rules.** Engagement does not depend on payment state; a refunded PPV view's watch time still counts. Views without segments contribute no watch time or coverage.
@@ -964,7 +964,7 @@ ORDER BY p.period_start
    - *New paying user:* the user's earliest successful subscription or PPV charge falls in the month.
 4. **Formulas.** As in the table; a zero denominator reports NULL. Money is computed in integer cents.
 5. **Grain and time.** Complete UTC months. Activation cohorts need days 0–6 inside the coverage window and a signup date inside it. Resubscription is by the month of access loss and needs the 60-day window to end inside the coverage window. Cost per signup and CAC are same-month blended ratios; spend is not lagged to later conversions.
-6. **Sources and layers.** `users`, `sessions`, `identity_links`, `content_views`, `playback_segments`, `transactions`, `payment_status_history`, `subscription_history`, `marketing_spend`. Planned (not implemented): corresponding Gold marts.
+6. **Sources and layers.** `users`, `sessions`, `identity_links`, `content_views`, `playback_segments`, `transactions`, `payment_status_history`, `subscription_history`, `marketing_spend`. Layers: the Silver tables of their groups; `gold_kpi_monthly`, `gold_cohorts`, `gold_revenue_monthly` and `gold_marketing_monthly`.
 7. **Canonical SQL.** Below; parameters as for `mau`.
 8. **Filters and dimensions.** Signups, activation, paying users and CAC slice by user-level fixed dimensions. Session metrics slice by platform and country. Payment failure slices by product and payment method.
 9. **Null, status and refund rules.** MRR and subscriber counts ignore refunds except where a refund ends access. Failed attempts are never revenue.
