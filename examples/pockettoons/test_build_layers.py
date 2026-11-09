@@ -1,4 +1,4 @@
-"""Tests for the layer builder and the silver_resolved_sessions contract."""
+"""Tests for the layer builder and the Silver table contracts."""
 import json
 import sqlite3
 import tempfile
@@ -49,6 +49,8 @@ class BuilderTests(unittest.TestCase):
             ('r_missing', 'u5', 'refund', 1.99, 'nowhere', [('succeeded', '2026-04-09T10:00:00Z')]),
             ('r_ok', 'u1', 'refund', 9.99, 't_ok', [('succeeded', '2026-04-10T10:00:00Z')]),
             ('sub_paid', 's1', 'subscription', 9.99, None, [('succeeded', '2026-06-03T01:00:00Z')]),
+            ('p_ppv', 'p1', 'ppv', 1.99, None, [('succeeded', '2026-04-21T10:00:00Z')]),
+            ('p_sub', 'p1', 'subscription', 9.99, None, [('succeeded', '2026-04-25T10:00:00Z')]),
         ]
         for tid, user, kind, amount, related, statuses in payments:
             db.execute('INSERT INTO transactions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -77,11 +79,32 @@ class BuilderTests(unittest.TestCase):
           ('bad_price','sub6','s6','active','2026-06-04T01:00:00Z','2026-07-04T01:00:00Z',NULL,'sub_badprice','p'),
           ('refunded','sub8','s8','refunded','2026-06-05T01:00:00Z',NULL,NULL,NULL,'p');
         ''')
+        db.executescript('''
+        CREATE TABLE users(user_id TEXT PRIMARY KEY, signup_at TEXT, acquisition_source TEXT, country_origin TEXT,
+          country_current TEXT, subscription_status TEXT);
+        INSERT INTO users VALUES
+          ('u1','2026-04-01T09:00:00Z','organic','US','US','active'),
+          ('u2','2026-04-11T09:00:00Z','paid_search','PH','PH','none'),
+          ('u3','2026-04-20T00:00:00Z',NULL,'PH','PH','none'),
+          ('u4','2026-04-15 10:00:00','organic','US','US','none'),
+          ('u5','2026-04-14T09:00:00Z','paid_social','MX','MX','none'),
+          ('u7','2026-05-05T09:00:00Z','tiktok','US','US','none'),
+          ('p1','2026-04-20T09:00:00Z','creator','US','CA','active'),
+          ('s1','2026-06-01T09:00:00Z','organic','US','US','active'),
+          ('s3','2026-06-01T09:00:00Z','referral','US','US','active');
+        CREATE TABLE content_views(view_id TEXT PRIMARY KEY, user_id TEXT);
+        CREATE TABLE playback_segments(segment_id TEXT PRIMARY KEY, view_id TEXT, segment_started_at TEXT,
+          segment_ended_at TEXT, watch_duration_sec INTEGER);
+        INSERT INTO content_views VALUES('v_u1','u1'), ('v_u2','u2'), ('v_u5','u5');
+        INSERT INTO playback_segments VALUES
+          ('g_midnight','v_u1','2026-04-09T23:58:00Z','2026-04-10T00:01:00Z',180),
+          ('g_u2','v_u2','2026-04-11T10:00:00Z','2026-04-11T10:01:30Z',90),
+          ('g_short','v_u5','2026-04-14T10:00:00Z','2026-04-14T10:00:30Z',30);
+        ''')
         for table in build_layers.SOURCE_ROLES:
             if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
-                             'subscription_history', 'dataset_metadata'):
+                             'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments'):
                 db.execute(f'CREATE TABLE "{table}"(id TEXT)')
-        db.execute("INSERT INTO users VALUES('u1')")
         db.commit()
         db.close()
 
@@ -112,14 +135,14 @@ class BuilderTests(unittest.TestCase):
         views = {r[0] for r in self.query("SELECT name FROM sqlite_master WHERE type='view'")}
         self.assertEqual(views, {f'bronze_{t}' for t in build_layers.SOURCE_ROLES})
         self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_sessions'), [(6,)])
-        self.assertEqual(self.query('SELECT id FROM bronze_users'), [('u1',)])
+        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_users'), [(9,)])
 
     def test_later_source_change_is_detectable_from_the_build_fingerprint(self):
         result = build_layers.build(self.path)
         db = sqlite3.connect(self.path)
-        db.execute("INSERT INTO users VALUES('u_new')")
+        db.execute("INSERT INTO users VALUES('u_new','2026-05-01T00:00:00Z','organic','US','US','none')")
         db.commit()
-        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_users'), [(2,)])  # a view shows current source
+        self.assertEqual(self.query('SELECT COUNT(*) FROM bronze_users'), [(10,)])  # a view shows current source
         recorded = json.loads(result['source_fingerprint'])['users']
         self.assertNotEqual(build_layers.fingerprint(db)['users'], recorded)
         db.close()
@@ -152,7 +175,7 @@ class BuilderTests(unittest.TestCase):
         self.assertTrue(checks['silver_payment_attempts.independent_decimal_cents_recount'])
         self.assertTrue(checks['silver_payment_attempts.net_revenue_matches_registry_on_source'])
         april = self.query("SELECT SUM(revenue_cents) FROM silver_payment_attempts WHERE succeeded_at LIKE '2026-04%'")
-        self.assertEqual(april, [(999 - 199 - 199 - 999,)])
+        self.assertEqual(april, [(999 - 199 - 199 - 999 + 199 + 999,)])  # last two: p1's PPV and subscription
 
     def test_subscription_access_spells_losses_and_exceptions(self):
         result = build_layers.build(self.path)
@@ -175,6 +198,34 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(rows['renew_1'][4:], (999, 'ok', None))
         checks = json.loads(result['reconciliation'])['checks']
         self.assertTrue(all(v for k, v in checks.items() if k.startswith('silver_subscription_access')))
+
+    def test_user_profile_milestones_snapshots_and_exceptions(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[0]: r[1:] for r in self.query('''SELECT user_id, acquisition_source, first_session_at, first_engaged_date,
+            first_paid_at, first_subscription_at, first_ppv_at, subscription_spells, is_returning_subscriber,
+            exception_status, exception_reason, signup_month, country_current_snapshot FROM silver_user_profile''')}
+        self.assertEqual(len(rows), 9)                                   # one row per user, active or not
+        self.assertEqual(rows['u1'][1:6], ('2026-04-10T10:00:00Z', '2026-04-09', '2026-04-03T01:00:00Z',
+                                           '2026-04-03T01:00:00Z', None))  # refund later does not erase the milestone
+        self.assertEqual(rows['u2'][2:6], ('2026-04-11', '2026-05-01T00:01:00Z', None, '2026-05-01T00:01:00Z'))
+        self.assertIsNone(rows['u5'][2])                                 # 30 s is not engaged
+        self.assertEqual(rows['p1'][3:6], ('2026-04-21T10:00:00Z', '2026-04-25T10:00:00Z', '2026-04-21T10:00:00Z'))
+        self.assertEqual(rows['p1'][11], 'CA')                           # snapshot value, not origin
+        self.assertEqual(rows['u7'][1:8], (None, None, None, None, None, 0, 0))  # no activity at all
+        self.assertEqual(rows['s3'][6:8], (2, 1))                        # returning subscriber
+        self.assertEqual(rows['s1'][6:8], (1, 0))
+        self.assertEqual(rows['u3'][0], 'unknown')
+        self.assertIsNone(rows['u3'][3])                                 # excluded charges are not a first payment
+        self.assertEqual(rows['u3'][8:10], ('suspicious_usable', 'activity_before_signup'))
+        self.assertEqual(rows['u4'][8:10], ('suspicious_usable', 'invalid_signup_time'))
+        self.assertEqual(rows['u7'][8:10], ('suspicious_usable', 'unrecognised_acquisition_source'))
+        self.assertEqual(rows['u7'][0], 'tiktok')                        # kept as given, only flagged
+        self.assertEqual(rows['u1'][8:10], ('ok', None))
+        checks = json.loads(result['reconciliation'])['checks']
+        profile = {k: v for k, v in checks.items() if k.startswith('silver_user_profile')}
+        self.assertEqual(len(profile), 7)
+        self.assertTrue(all(profile.values()))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
