@@ -1,6 +1,6 @@
 # Evaluation process
 
-**Status:** Process in use. The answer key covers all 16 scenarios and is held outside the repository. Agent runs are in progress; results are published here only after the blind runs are complete.
+**Status:** Process in use. The answer key covers all 18 scenarios and is held outside the repository. Agent runs are in progress; results are published here only after the blind runs are complete.
 **Scope:** How the analytics agent is evaluated on the PocketToons fixture, in Claude Code and Codex, using the shared investigation skill.
 
 The evaluation checks whether the agent answers product questions correctly, with traceable evidence and honest uncertainty. It compares each agent run against an answer key written **before** the run, from the source data, by a method independent of the agent's own pipeline.
@@ -9,7 +9,7 @@ The evaluation checks whether the agent answers product questions correctly, wit
 
 ```mermaid
 flowchart TD
-  S[1 Scenarios<br/>16 questions in investigation-paths.md] --> K[2 Answer key<br/>expected values, traps, scoring rules]
+  S[1 Scenarios<br/>18 questions in investigation-paths.md] --> K[2 Answer key<br/>expected values, traps, scoring rules]
   S --> R[3 Blind agent run<br/>fresh session, question only]
   R --> O[Report PDF + evidence logs]
   K --> SC[4 Score<br/>Pass / Partial / Fail / Not run]
@@ -30,7 +30,7 @@ flowchart TD
   end
 ```
 
-1. **Scenarios.** [`investigation-paths.md`](investigation-paths.md) defines 16 questions: aggregates, comparisons, cohorts, multi-step investigations, data-quality traps, an ambiguous request (expects a clarifying question) and an unanswerable one (expects a clear decline). It describes routes and success criteria; it is not an answer key.
+1. **Scenarios.** [`investigation-paths.md`](investigation-paths.md) defines 18 questions: aggregates, filtered queries, comparisons, cohorts, multi-step investigations, data-quality traps, an ambiguous request (expects a clarifying question) and an unanswerable one (expects a clear decline). It describes routes and success criteria; it is not an answer key.
 2. **Answer key.** For each scenario that has numbers, the evaluator records the expected values, the traps a good answer must report and the behaviour that fails. The values come from the metric registry's canonical SQL run **read-only on the source tables only**, never on the Silver or Gold tables the agent uses, so the key does not repeat the agent's pipeline. Every reference query is logged. The key is reviewed and approved in small topic groups (activity; revenue and lifecycle; content and data quality). Behaviour-only scenarios use their success criteria directly.
 3. **Blind agent run.** Each scenario runs in a **fresh** session (Claude Code and Codex separately) that receives only the question, the database path and "independent mode". The agent follows the [shared investigation skill](../../skills/product-analytics-investigation/SKILL.md): read-only queries through [`tools/evidence_query.py`](../../tools/INVESTIGATION.md), one evidence log per query, and for a requested report a PDF built with `tools/report_pdf.py` (at most 10 pages).
 4. **Score.** The evaluator compares the run with the answer key using the outcome rules in the [evaluation run template](evaluation-run-template.md) and records the result. Numbers and behaviour both count: a run with correct numbers still fails if it claims a cause from an association, mislabels comparison periods or skips a material data-quality caveat.
