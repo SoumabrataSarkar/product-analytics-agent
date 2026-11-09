@@ -54,7 +54,7 @@ I authorize you to read and query this file. Do not modify, regenerate, or overw
 
 Read AGENTS.md and follow the shared product analytics investigation skill. Read the architecture, data catalog, metric registry, and layer contracts. Check the database build status and available Bronze, Silver, and Gold objects; record the snapshot and versions. Use the repository's read-only query and evidence tools for material checks. Ask me if missing information could change the answer; do not invent definitions.
 
-Work independently: do not read docs/evaluations/, previous investigation reports, answer keys, the generator's answer-bearing README, or question-specific investigation guides.
+Work independently: do not read docs/evaluations/, evaluation-results/, submission/, previous investigation reports, answer keys, the generator's answer-bearing README, or question-specific investigation guides.
 
 Question: [Insert your product question here, including the comparison periods and population if known.]
 
@@ -65,6 +65,6 @@ The agent may ask follow-up questions if the periods, population, or metric defi
 
 ## 4. Reports and further detail
 
-If you request a PDF report, the repository's report generator needs the Python packages `reportlab` and `matplotlib`. In a Python virtual environment, install them with `python -m pip install reportlab matplotlib`. The agent can then follow the repository's report workflow. Text answers and read-only query tooling use the Python standard library.
+If you request a PDF report, the repository's report generator needs the Python packages in [`requirements.txt`](requirements.txt). In a Python virtual environment, install them with `python -m pip install -r requirements.txt` (on Python 3.9 this selects `reportlab<5`, because reportlab 5 needs Python 3.10 or newer). The agent can then follow the repository's report workflow. Text answers and read-only query tooling use the Python standard library.
 
-See `SETUP.md` for full setup, regeneration instructions, and limitations. Keep the database and investigation evidence out of Git and do not share private query logs unintentionally. The broader independent evaluation is still underway.
+See `SETUP.md` for full setup, regeneration instructions, and limitations. Keep the database and investigation evidence out of Git and do not share private query logs unintentionally. The evaluation of the agent on 18 test questions is in [`submission/eval-results.pdf`](submission/eval-results.pdf).
