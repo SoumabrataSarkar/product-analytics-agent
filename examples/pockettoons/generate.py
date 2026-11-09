@@ -132,9 +132,11 @@ def main():
     payer_targets=[981,1024,995,1012,978,1011]
     current=set(range(payer_targets[0])); first_start={}; last_start={}; cancelled={}; txns=[]; statuses=[]; histories=[]
     payers=[]
+    # Monthly subscriber departures vary (500 in total); paying counts stay at their targets.
+    departures=[0,91,108,96,113,92]
     for mindex,(_,month) in enumerate(MONTHS):
         if mindex:
-            dropped=set(sorted(current)[:100]); current-=dropped
+            dropped=set(sorted(current)[:departures[mindex]]); current-=dropped
             for i in dropped: cancelled[i]=timestamp(month,1+(i*7)%25,1)
             pool=[i for i in range(cohort_ends[mindex]) if i not in current and i not in cancelled]
             # Later cohorts convert less, with replacements also drawn from older users.
@@ -431,10 +433,12 @@ def main():
         cancel_events.append(('cancel_'+period,uid,None,requested,'subscription_cancel_requested',None,None,None,period,None,None,None,None,None,requested))
     db.executemany('INSERT INTO user_events VALUES ('+','.join('?'*15)+')',cancel_events)
     # Record genuine non-purchaser funnel observations in existing free sessions.
-    funnel=[]
+    # Spread across all months so PPV paywalls without a purchase exist every month.
+    funnel=[]; ppv_exposure_events={f'{m:02}':0 for m in range(4,10)}
     for s,v in view_pairs:
-        if len(funnel)>=1600: break
-        if v[11]!='free' or int(s[1][1:])%17: continue
+        month_key=s[4][5:7]
+        if v[11]!='free' or int(s[1][1:])%17 or ppv_exposure_events[month_key]>=270: continue
+        ppv_exposure_events[month_key]+=2+(int(s[1][1:])%3==0)
         observed=offset(s[4],30); cid='c01'; episode=13
         funnel.append((f'nonbuyer_wall_{s[0]}',s[1],s[2],observed,'paywall_viewed',s[0],None,None,None,cid,episode,'{"product":"ppv"}',None,s[9],observed))
         funnel.append((f'nonbuyer_block_{s[0]}',s[1],s[2],observed,'playback_blocked',s[0],None,None,None,cid,episode,'{"reason":"premium_requires_payment"}',None,s[9],observed))
