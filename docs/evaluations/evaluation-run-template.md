@@ -62,8 +62,14 @@ unsupported or unavailable cases from the executed denominator and mark them
 
 ## Results table
 
-One row per question and runtime. Link the detailed record and evidence below;
-the actual results table is filled in after the run.
+One row per question, runtime and run. Record the exact question, expected
+value or behavior, actual answer or action, outcome, evidence and failure or
+limitation. Link the detailed record below; fill the table only after execution.
+Scenario IDs identify evaluation questions; query IDs identify evidence checks
+within a question and must not be counted as separate evaluation questions.
+Preserve the agent's original response and score before any review or edits.
+Label corrected outputs and later reruns separately; do not overwrite the first
+result or silently turn a failed original run into a pass.
 
 | ID | Question / variant | Category | Expected behavior or value* | Agent result / action | Outcome | Evidence | Failure or limitation |
 |---|---|---|---|---|---|---|---|
@@ -86,7 +92,8 @@ during testing.
 - **Expected:** independently computed values with units, oracle SQL or
   reference method and reviewer. For a nonnumeric case, explicit behavior and
   evidence criteria; do not fabricate a numeric answer.
-- **Actual:** answer, numerical values, clarification, abstention or failure.
+- **Actual:** answer, numerical values, clarification, abstention or failure;
+  retain the unedited response and record any human assistance or intervention.
 - **Evidence:** query/evidence log locations, source tables/layers, SQL,
   parameters, row truncation, errors, assumptions and quality caveats.
 - **Measurements:** query count, elapsed time, timeout/errors and, where
@@ -125,3 +132,21 @@ Check that material ambiguity is clarified rather than silently assumed.
 - Remaining untested cases and known limits:
 - Runtime comparisons, where actually run on matched conditions:
 - Next evaluation after fixes, including regression results:
+
+## Submission and improvement record
+
+After the relevant runs are complete, prepare a reviewer-facing summary table
+with question, expected result or behavior, actual result, outcome, evidence,
+and failure or limitation. Include a concise failure analysis describing
+impact, proposed or implemented fixes, and whether a regression test was run.
+Separate results by runtime, model and run; distinguish the original response
+from a human-reviewed report and from a fresh rerun after changes. Do not
+invent results or claim automatic model learning: improvements require reviewed
+changes and repeatable regression tests.
+
+Keep answer keys and held-out cases outside the agent's accessible context
+until those tests finish. A folder outside the repository is organizational,
+not an access-control boundary. After testing, include the appropriate
+expected-versus-actual results and supporting evidence in the authorized
+private submission, excluding secrets, sensitive data and material that should
+not be shared. The evaluator chooses what can be shared and when.
