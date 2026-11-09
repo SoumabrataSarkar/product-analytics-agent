@@ -62,7 +62,7 @@ The log contains planted story details and expected findings. Exclude it from th
 
 **Issue and impact:** Comparing cohorts with equal artificial sizes looks unrealistic. Comparing conversion over unequal or incompletely observed windows can misstate the conversion difference.
 
-**Resolution:** Cohort sizes vary. Conversion is compared over a complete, equal 30-day observation window. May–June: 95 of 4,854 signups (1.96%); July–August: 30 of 5,426 (0.55%). The March signup cohort has incomplete observation before April and is excluded from that comparison. The association is not proof of causation.
+**Resolution:** Cohort sizes vary. Conversion is compared over a complete, equal 30-day observation window. May–June: 88 of 4,854 signups (1.81%); July–August: 26 of 5,426 (0.48%). The March signup cohort has incomplete observation before April and is excluded from that comparison. The association is not proof of causation.
 
 ### Accidental country/channel correlation
 
@@ -93,6 +93,12 @@ The log contains planted story details and expected findings. Exclude it from th
 **Issue and impact:** Exactly 100 subscribers left in every month, an implausibly constant churn count.
 
 **Resolution:** Monthly departures vary (91, 108, 96, 113 and 92 from May to September; 500 in total). Paying counts per month keep their targets, so monthly subscription revenue is unchanged; replacement subscribers absorb the variation, which slightly changes the 30-day conversion counts.
+
+### Payment retries, returning subscribers and failure timing
+
+**Issue and impact:** Subscription renewals never failed, no former subscriber ever returned, and every failed PPV attempt fell in April. Payment-failure and resubscription analyses would have shown zero or a single-month spike.
+
+**Resolution:** About 7% of renewals have a failed first attempt shortly before a successful automatic retry at the scheduled renewal time, so revenue and access are unchanged. From June, about 12% of each month's replacement subscribers are former subscribers whose access ended in an earlier month; their return starts a new subscription with its own in-app purchase journey, and their earlier ended state lasts until the return. Monthly paying counts are unchanged, so monthly subscription revenue is unchanged; returning subscribers displace some new subscribers, which lowers the 30-day conversion counts. Failed PPV checkouts are spread at five per month. A user who already holds a PPV episode is not shown its paywall again.
 
 ### Cancellation and refund timing
 
