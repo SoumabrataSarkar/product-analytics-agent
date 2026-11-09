@@ -52,7 +52,9 @@ REQUIRED_COLUMNS = {
     'users': {'user_id', 'signup_at', 'acquisition_source', 'country_origin', 'country_current', 'subscription_status'},
     'content_views': {'view_id', 'user_id', 'content_id', 'episode_number', 'date', 'view_started_at', 'view_type',
                       'is_first_view_of_episode', 'free_quota_consuming', 'free_quota_sequence'},
-    'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec'},
+    'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec',
+                          'position_start_sec', 'position_end_sec'},
+    'content_episodes': {'content_id', 'episode_number', 'episode_duration_sec'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
                              'effective_end_at', 'cancelled_at', 'source_txn_id', 'plan_code'},
 }
@@ -793,6 +795,144 @@ def reconcile_user_day_title_watch(db):
     exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_day_title_watch GROUP BY 1').fetchall())
     return checks, {'rows': rows, 'by_view_type': by_type, 'exceptions': exceptions}
 
+# ---------------------------------------------------------------- silver_user_episodes
+
+USER_EPISODES_SQL = """
+CREATE TABLE silver_user_episodes(
+  user_id TEXT NOT NULL, content_id TEXT NOT NULL, episode_number INTEGER NOT NULL,
+  first_start_at TEXT NOT NULL, first_start_month TEXT NOT NULL, window_end_at TEXT NOT NULL,
+  window_complete INTEGER NOT NULL CHECK(window_complete IN (0,1)), first_view_type TEXT NOT NULL,
+  views_in_window INTEGER NOT NULL, covered_sec INTEGER NOT NULL, episode_duration_sec INTEGER,
+  has_next_episode INTEGER NOT NULL CHECK(has_next_episode IN (0,1)),
+  started_next_episode_in_window INTEGER NOT NULL CHECK(started_next_episode_in_window IN (0,1)),
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL, PRIMARY KEY(user_id, content_id, episode_number));
+INSERT INTO silver_user_episodes
+WITH firsts AS (
+  SELECT user_id, content_id, episode_number, view_started_at AS first_start_at, view_type AS first_view_type,
+         strftime('%Y-%m-%dT%H:%M:%SZ', view_started_at, '+7 days') AS window_end_at
+  FROM (SELECT user_id, content_id, episode_number, view_started_at, view_type,
+               ROW_NUMBER() OVER (PARTITION BY user_id, content_id, episode_number ORDER BY view_started_at, view_id) AS n
+        FROM content_views)
+  WHERE n = 1
+),
+window_views AS (
+  SELECT f.user_id, f.content_id, f.episode_number, v.view_id
+  FROM firsts f
+  JOIN content_views v ON v.user_id = f.user_id AND v.content_id = f.content_id
+                      AND v.episode_number = f.episode_number AND v.view_started_at < f.window_end_at
+),
+view_counts AS (SELECT user_id, content_id, episode_number, COUNT(*) AS n FROM window_views GROUP BY 1, 2, 3),
+segments AS (
+  SELECT w.user_id, w.content_id, w.episode_number, s.position_start_sec AS a, s.position_end_sec AS b
+  FROM window_views w JOIN playback_segments s ON s.view_id = w.view_id
+  WHERE s.position_end_sec > s.position_start_sec
+),
+ordered AS (
+  SELECT *, MAX(b) OVER (PARTITION BY user_id, content_id, episode_number ORDER BY a, b
+                         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prior_end
+  FROM segments
+),
+islands AS (
+  SELECT *, SUM(CASE WHEN prior_end IS NULL OR a > prior_end THEN 1 ELSE 0 END)
+              OVER (PARTITION BY user_id, content_id, episode_number ORDER BY a, b ROWS UNBOUNDED PRECEDING) AS island
+  FROM ordered
+),
+coverage AS (
+  SELECT user_id, content_id, episode_number, SUM(island_sec) AS covered_sec
+  FROM (SELECT user_id, content_id, episode_number, MAX(b) - MIN(a) AS island_sec
+        FROM islands GROUP BY user_id, content_id, episode_number, island)
+  GROUP BY user_id, content_id, episode_number
+),
+next_starts AS (
+  SELECT f.user_id, f.content_id, f.episode_number, 1 AS started
+  FROM firsts f
+  JOIN content_views n ON n.user_id = f.user_id AND n.content_id = f.content_id
+                      AND n.episode_number = f.episode_number + 1
+                      AND n.view_started_at >= f.first_start_at AND n.view_started_at < f.window_end_at
+  GROUP BY 1, 2, 3
+),
+base AS (
+  SELECT f.*, COALESCE(vc.n, 0) AS views, COALESCE(c.covered_sec, 0) AS covered, d.episode_duration_sec AS duration,
+         nx.episode_number IS NOT NULL AS has_next, COALESCE(ns.started, 0) AS started_next,
+         d.content_id IS NULL AS missing_episode, u.user_id IS NULL AS unknown_user
+  FROM firsts f
+  LEFT JOIN view_counts vc ON vc.user_id = f.user_id AND vc.content_id = f.content_id AND vc.episode_number = f.episode_number
+  LEFT JOIN coverage c ON c.user_id = f.user_id AND c.content_id = f.content_id AND c.episode_number = f.episode_number
+  LEFT JOIN content_episodes d ON d.content_id = f.content_id AND d.episode_number = f.episode_number
+  LEFT JOIN content_episodes nx ON nx.content_id = f.content_id AND nx.episode_number = f.episode_number + 1
+  LEFT JOIN next_starts ns ON ns.user_id = f.user_id AND ns.content_id = f.content_id AND ns.episode_number = f.episode_number
+  LEFT JOIN users u ON u.user_id = f.user_id
+)
+SELECT user_id, content_id, episode_number, first_start_at, substr(first_start_at, 1, 7), window_end_at,
+       window_end_at <= :coverage_end, first_view_type, views, covered, duration, has_next, started_next,
+       CASE WHEN unknown_user OR missing_episode OR covered > COALESCE(duration, covered) THEN 'suspicious_usable' ELSE 'ok' END,
+       NULLIF(rtrim((CASE WHEN unknown_user THEN 'user_not_in_users,' ELSE '' END)
+                    || (CASE WHEN missing_episode THEN 'episode_not_in_catalog,' ELSE '' END)
+                    || (CASE WHEN covered > COALESCE(duration, covered) THEN 'coverage_exceeds_duration,' ELSE '' END), ','), ''),
+       :build_id
+FROM base;
+CREATE INDEX ix_silver_user_episodes_start ON silver_user_episodes(first_start_at)
+"""
+
+
+def independent_coverage_recount(db):
+    """Unique covered seconds per user-episode inside its 7-day window, merged as intervals in Python."""
+    first = {}
+    for user, content, episode, started in db.execute(
+            'SELECT user_id, content_id, episode_number, MIN(view_started_at) FROM content_views GROUP BY 1, 2, 3'):
+        first[(user, content, episode)] = instant(started) + dt.timedelta(days=7)
+    intervals = {}
+    for user, content, episode, started, a, b in db.execute(
+            'SELECT v.user_id, v.content_id, v.episode_number, v.view_started_at, s.position_start_sec, s.position_end_sec '
+            'FROM playback_segments s JOIN content_views v ON v.view_id = s.view_id'):
+        key = (user, content, episode)
+        if b > a and instant(started) < first[key]:
+            intervals.setdefault(key, []).append((a, b))
+    covered = {key: 0 for key in first}
+    for key, spans in intervals.items():
+        total, end = 0, None
+        for a, b in sorted(spans):
+            if end is None or a > end:
+                total += b - a
+                end = b
+            elif b > end:
+                total += b - end
+                end = b
+        covered[key] = total
+    return covered
+
+
+def reconcile_user_episodes(db):
+    checks = {}
+    source = db.execute('SELECT COUNT(*) FROM (SELECT DISTINCT user_id, content_id, episode_number FROM content_views)').fetchone()[0]
+    checks['row_count_equals_source_user_episodes'] = db.execute('SELECT COUNT(*) FROM silver_user_episodes').fetchone()[0] == source
+    checks['independent_coverage_recount'] = independent_coverage_recount(db) == {
+        (u, c, e): s for u, c, e, s in db.execute(
+            'SELECT user_id, content_id, episode_number, covered_sec FROM silver_user_episodes')}
+    window = "first_start_at >= :coverage_start AND first_start_at < :coverage_end AND window_complete = 1"
+    completion = db.execute(
+        "WITH m AS (SELECT substr(period_start, 1, 7) AS month FROM (" + load_sql('periods_month') + ")) "
+        "SELECT m.month, COUNT(e.user_id), COALESCE(SUM(e.covered_sec >= 0.9 * e.episode_duration_sec), 0) FROM m "
+        "LEFT JOIN silver_user_episodes e ON e.first_start_month = m.month AND e.episode_duration_sec IS NOT NULL AND "
+        + window.replace('first_start_at', 'e.first_start_at').replace('window_complete', 'e.window_complete') +
+        " GROUP BY 1 ORDER BY 1", COVERAGE).fetchall()
+    checks['completion_matches_registry_on_source'] = completion == [
+        tuple(r[:3]) for r in db.execute(load_sql('episode_completion_monthly'), COVERAGE)]
+    continuation = db.execute(
+        "WITH m AS (SELECT substr(period_start, 1, 7) AS month FROM (" + load_sql('periods_month') + ")) "
+        "SELECT m.month, COUNT(e.user_id), COALESCE(SUM(e.started_next_episode_in_window), 0) FROM m "
+        "LEFT JOIN silver_user_episodes e ON e.first_start_month = m.month AND e.has_next_episode = 1 "
+        "  AND e.covered_sec >= 0.9 * e.episode_duration_sec AND "
+        + window.replace('first_start_at', 'e.first_start_at').replace('window_complete', 'e.window_complete') +
+        " GROUP BY 1 ORDER BY 1", COVERAGE).fetchall()
+    checks['continuation_matches_registry_on_source'] = continuation == [
+        tuple(r[:3]) for r in db.execute(load_sql('series_continuation_monthly'), COVERAGE)]
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_episodes GROUP BY 1').fetchall())
+    reasons = dict(db.execute('SELECT exception_reason, COUNT(*) FROM silver_user_episodes '
+                              'WHERE exception_reason IS NOT NULL GROUP BY 1').fetchall())
+    return checks, {'rows': source, 'exceptions': exceptions, 'reasons': reasons}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -808,6 +948,7 @@ SILVER = [
      ['ix_silver_user_day_activity_date'], reconcile_user_day_activity),
     ('silver_user_day_title_watch', USER_DAY_TITLE_WATCH_SQL,
      ['ix_silver_user_day_title_watch_date_title'], reconcile_user_day_title_watch),
+    ('silver_user_episodes', USER_EPISODES_SQL, ['ix_silver_user_episodes_start'], reconcile_user_episodes),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
@@ -860,7 +1001,7 @@ def reconcile(db):
 def run_script(db, script, build_id):
     for statement in script.strip().split(';\n'):
         if statement.strip():
-            db.execute(statement, {'build_id': build_id} if ':build_id' in statement else {})
+            db.execute(statement, {'build_id': build_id, **COVERAGE})
 
 
 def write_log(db, record):
