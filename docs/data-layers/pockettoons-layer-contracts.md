@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log` and `silver_resolved_sessions` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions` and `silver_payment_attempts` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -54,3 +54,21 @@
 | Does not support | Viewing, engagement, content, payments and subscriptions; use the corresponding Silver tables or the source |
 | Reconciliation | Row count equals source sessions, and the key sets are equal. The four resolution methods add up to the total. An independent recount of methods and mismatches from `sessions` and `identity_links` matches. Monthly MAU from this table equals the registry `mau_monthly` computed on the source. |
 | Tests | Isolated cases for each resolution method, a mismatched link, no cross-session attribution, schema mismatch, a failed build leaving the previous layer in place, and rebuilds touching only owned objects |
+
+## silver_payment_attempts
+
+| Part | Contract |
+|---|---|
+| Purpose | Every payment attempt with its outcome, success time, revenue type and validated amount, so revenue metrics never repeat status, refund or money logic |
+| Grain | One row per source transaction: charges, refunds and failed attempts; none is excluded |
+| Key and indexes | `txn_id` primary key; indexes on `succeeded_at` and on (`user_id`, `succeeded_at`) |
+| Columns | `txn_id`; `user_id`; `type`; `transaction_subtype`; `revenue_type` (the charge's type, or the refunded charge's type, or `unattributed`); `related_txn_id`; `subscription_id`; `session_id`; `checkout_event_id`; `payment_method`; `country_at_event`; `created_at` (`transaction_at`); `outcome` (latest `succeeded` or `failed` status event, else `no_outcome`); `success_event_count`; `succeeded_at` and `succeeded_recorded_at` (the single success event, else NULL); `amount_usd_source` (source value, unaltered); `amount_cents` (NULL when invalid); `list_price_cents`; `amount_valid`; `revenue_cents` (+ for a valid charge with one success, − for such a refund, 0 otherwise); `exception_status`; `exception_reason`; `build_id` |
+| Rules | Revenue group v1.1: count at the single success event's effective time, never by current status; refunds are positive and subtracted; a refund's type comes from its successful original charge |
+| Money | An amount is valid when it is numeric, positive and exact to the cent. Invalid amounts are never rounded into trusted values. |
+| Time | UTC; `created_at` for payment-failure months, `succeeded_at` for revenue months |
+| Lineage | `transactions` one-to-one; `payment_status_history` for outcome and success time; the refunded charge through `related_txn_id` |
+| Exceptions | `excluded`: `invalid_amount` or `multiple_success_events`; contributes no revenue. `suspicious_usable`: `refund_without_successful_original`; reduces net revenue under `unattributed`. `ok` otherwise. |
+| Supports | Net, subscription and PPV revenue; ARPU and ARPPU; paying users; refund rate; payment failure rate; first paid charge for CAC and conversion |
+| Does not support | Raw provider values (`bronze_raw_payment_source`); entitlement and per-episode PPV revenue (attribution bridges) |
+| Reconciliation | Row count equals source transactions; outcome counts add up to the total; an independent Python `Decimal` recount of monthly charge and refund cents matches; monthly net revenue from this table equals the registry `net_revenue_monthly` on the source |
+| Tests | Valid and invalid amounts (non-exact cents, non-numeric), success later than creation, failure before a retry, double success, refund of a failed or missing charge, refund type assignment |
