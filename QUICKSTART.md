@@ -5,7 +5,7 @@ The agent runs inside your own Codex or Claude Code environment. The repository 
 ## 1. What you need
 
 - Access to the private GitHub repository and to the [PocketToons database folder](https://drive.google.com/drive/folders/1owVdIJyOJr7BwMBqT6D8ltph1m5WOPkf?usp=drive_link).
-- Git, Python 3, and SQLite 3.37 or newer through Python. Check with:
+- Git, Python 3.9 or newer, and SQLite 3.37 or newer through Python. Check with:
 
   ```sh
   python3 -c "import sys, sqlite3; print('Python:', sys.version); print('SQLite:', sqlite3.sqlite_version)"
@@ -44,7 +44,7 @@ If the hash differs, stop and ask the project owner whether the shared snapshot 
 
 ## 3. Ask your first question
 
-Open the cloned repository in Codex or Claude Code. Paste the following prompt, replacing the database path and question with your own. Use a full absolute path, for example `/Users/yourname/pockettoons-data/pockettoons.sqlite` on macOS or `/home/yourname/pockettoons-data/pockettoons.sqlite` on Linux.
+Open the cloned repository in Codex or Claude Code. Paste the following prompt, replacing the database path and output folder. The example question is ready to use; change it to your own when you are ready. Use a full absolute path, for example `/Users/yourname/pockettoons-data/pockettoons.sqlite` on macOS or `/home/yourname/pockettoons-data/pockettoons.sqlite` on Linux.
 
 ```text
 Use this repository to investigate a PocketToons product question.
@@ -56,9 +56,10 @@ Read AGENTS.md and follow the shared product analytics investigation skill. Read
 
 Work independently: do not read docs/evaluations/, evaluation-results/, submission/, previous investigation reports, answer keys, the generator's answer-bearing README, or question-specific investigation guides.
 
-Question: [Insert your product question here, including the comparison periods and population if known.]
+Question: How did monthly active users change from April through September 2026 across all identified users? Use the approved MAU definition and explain any coverage limits.
 
-Save the answer and evidence logs in a new local folder, and record the start and end times, query count, and repository commit or download date. Ask me for a writable output location if needed.
+Output folder: /absolute/path/to/a/new/investigation-folder
+Save a Markdown report and the evidence logs there. Record the start and end times, query count, and repository commit or download date. If the folder already exists, use a new folder rather than overwriting an earlier run.
 ```
 
 The agent may ask follow-up questions if the periods, population, or metric definition are ambiguous. It should supply evidence and explain limitations; results should be reviewed by a human. No SQL is required from the person asking the question.
@@ -67,4 +68,4 @@ The agent may ask follow-up questions if the periods, population, or metric defi
 
 If you request a PDF report, the repository's report generator needs the Python packages in [`requirements.txt`](requirements.txt). In a Python virtual environment, install them with `python -m pip install -r requirements.txt` (on Python 3.9 this selects `reportlab<5`, because reportlab 5 needs Python 3.10 or newer). The agent can then follow the repository's report workflow. Text answers and read-only query tooling use the Python standard library.
 
-See `SETUP.md` for full setup, regeneration instructions, and limitations. Keep the database and investigation evidence out of Git and do not share private query logs unintentionally. The evaluation of the agent on 18 test questions is in [`submission/eval-results.pdf`](submission/eval-results.pdf).
+See [SETUP.md](SETUP.md) for full setup, regeneration instructions, and limitations. Keep the database and investigation evidence out of Git and do not share private query logs unintentionally. The scenario evaluation and its remaining limitations are described in [the evaluation results](docs/evaluations/results.md) and [the evaluation PDF](submission/eval-results.pdf); do not read it during an independent investigation.

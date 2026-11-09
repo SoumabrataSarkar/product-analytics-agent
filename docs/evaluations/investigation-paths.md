@@ -1,6 +1,6 @@
 # Investigation paths and evaluation questions
 
-**Status:** Design for the evaluation stage. The paths and 18 scenarios are defined; they have not yet been run as an evaluation suite, and the agent is not yet evaluated end to end.  
+**Status:** The 18 scenarios have been run and scored, with selected reruns complete. See [results](results.md) for outcomes and limitations. This scenario guide is evaluator material and must stay out of independent investigation sessions.  
 **Scope:** The shared, model-neutral analytics workflow, using the PocketToons fixture as an example.  
 **Authoritative definitions:** [Metric Registry](../metrics/metric-registry.md), [Data Catalog](../examples/pockettoons-data-catalog.md), [reference data model](../examples/pockettoons-reference-data-model-v1.md), and [Architecture v1](../architecture/v1.md). Recheck their current versions before using a path.
 

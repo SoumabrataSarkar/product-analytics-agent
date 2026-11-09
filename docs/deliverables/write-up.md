@@ -8,13 +8,13 @@ One investigation runs in six steps: **clarify** (metric, period, population; as
 
 - **Clarifies instead of assuming.** When the metric, period or meaning is open, it asks first or states a clear choice, as it did in every evaluation question that needed it, and it states every assumption it keeps.
 - **Verifies the metric before computing it.** It checks that the metric exists and reads its approved, versioned definition and SQL in the metric registry, plus grains, joins and known gaps in the data catalog. Unsupported requests are declined, not improvised.
-- **Maps the question to a layer for speed.** Gold answers standard monthly questions in milliseconds and is reconciled; Silver keeps per-user and per-event detail; Bronze is used only to audit raw values.
+- **Chooses the layer that fits.** Gold serves supported monthly summaries; Silver preserves detail; Bronze provides source evidence. Correctness and coverage take priority over speed.
 - **Evidence for every number.** Each query writes its SQL, layer, metric version and row count to its own log.
-- **LLM-neutral by design.** Definitions, rules and guardrails live in files, not prompts, so Claude Code and Codex behave the same and a failure becomes a rule that every later run reads. Trade-off: no UI; quality depends on the agent following the skill.
+- **LLM-neutral by design.** Both runtimes read shared definitions, rules and tools. This keeps analytical instructions consistent; it does not guarantee identical behavior. A reference website is included; investigations run in the coding-agent runtime.
 
 ## 02 How it performed: 18 blind test questions, two rounds
 
-Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after review plus a blind rerun on the updated skill; Q07 and Q11 rerun; Q01 and Q09 as regression checks): 17 pass, 1 partial, 0 fail.
+Round 1: 15 pass, 1 partial, 2 fail. After selected reruns: 17 pass, 1 partial, 0 fail as the latest outcome per scenario. Q02 had a reviewed revision and a separate blind rerun; Q07 and Q11 were rerun, with Q01 and Q09 as regression checks. Other first-round outcomes carry forward.
 
 | Question type | Questions | Result | What happened |
 |---|---|---|---|
@@ -29,15 +29,15 @@ Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after review plus a blind r
 
 **Hardest:** comparisons that need context the data doesn't announce, such as a start-up month. Details: [evaluation results](../evaluations/results.md).
 
-## 03 Running it for a 20-person product team
+## 03 Proposed rollout for a 20-person product team
 
 Time to answer (observed): simple 2–3 min, normal 5–6 min, complex 10–12 min.
 
 - **How the team uses it:** analysts and PMs ask in plain English from Claude Code or Codex (later Slack or a web page), all on one shared repository, so definitions and guardrails are the same for every person and model.
 - **Set-up:** build a data catalog and metric registry for the team's warehouse, with the analytics lead approving each definition, then the Gold and Silver layers the agent routes to.
-- **Cost:** mostly model tokens; queries are nearly free. Not measured here: log tokens per question, then budget by question type. Answering from the smallest layer that fits keeps both cost and latency down.
+- **Cost:** mostly model tokens; local SQLite has no per-query service fee; warehouse costs would depend on the deployment. Not measured here: log tokens per question, then budget by question type. Answering from the smallest layer that fits keeps both cost and latency down.
 - **Guardrails:** read-only access (database role plus the query tool's check), row and time limits, an evidence log behind every figure, no sensitive columns in the catalog, and a question back when the ask is unclear.
-- **Freshness:** real data keeps arriving, unlike this dataset; the agent first checks a freshness tracker (last load per source and layer) and warns or stops when data is stale.
+- **Freshness:** real data keeps arriving, unlike this dataset; the production integration should supply a freshness tracker that the agent checks (last load per source and layer) and warns or stops when data is stale.
 - **Quality over time:** a test set of questions with known answers (these 18, growing from real ones), rerun on every change to the skill, definitions or data; track pass rate, clarification rate, query errors and user ratings; turn failures into rules.
 
 ## 04 With more time

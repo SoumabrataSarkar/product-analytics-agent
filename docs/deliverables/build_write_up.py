@@ -188,13 +188,13 @@ def build(out):
 
     story += [h2("01", "What I built and why"), Spacer(1, 2 * mm), architecture(), Spacer(1, 3 * mm)]
     story += bullets([
-        "<b>Clarifies instead of assuming.</b> When the metric, period or meaning is open, it asks first and states every assumption it keeps.",
+        "<b>Clarifies instead of assuming.</b> When the metric, period or meaning is open, it asks or states a clear choice and records its assumptions.",
         "<b>Verifies the metric before computing it.</b> It confirms the metric exists and uses its approved definition and SQL from the "
         "metric registry, plus joins and known gaps from the data catalog. Unsupported requests are declined, not improvised.",
-        "<b>Maps the question to a layer for speed.</b> Gold answers standard monthly questions directly; Silver keeps per-user detail; "
-        "Bronze is only for auditing raw values. Fewer, smaller queries keep answers fast.",
+        "<b>Chooses the layer that fits.</b> Gold serves supported summaries; Silver preserves detail; Bronze provides source evidence. "
+        "Correctness and coverage take priority over speed.",
         "<b>Evidence for every number and LLM-neutral by design.</b> Each query is logged with its SQL, layer and metric version. Definitions, "
-        "rules and guardrails live in files, not prompts, so Claude Code and Codex behave the same and a lesson becomes a rule for every later run.",
+        "rules and tools are shared across runtimes; identical behavior is not guaranteed. A reference website explains the workflow.",
     ])
 
     story += [h2("02", "How it performed: 18 blind test questions, two rounds"), Spacer(1, 2 * mm), scorecard(), Spacer(1, 2 * mm),
@@ -204,7 +204,7 @@ def build(out):
                         "with Q01 and Q09 to check nothing broke; other results carry over. "
                         "<b>Hardest:</b> comparisons that need context the data doesn't announce, such as a start-up month.", SMALL)]
 
-    story += [h2("03", "Running it for a 20-person product team"), Spacer(1, 1.6 * mm)]
+    story += [h2("03", "Proposed rollout for a 20-person product team"), Spacer(1, 1.6 * mm)]
     lat = [[Paragraph("<b>Time to answer</b> (observed)", CELL), Paragraph("<b>Simple</b> (MAU by month): 2–3 min", CELL),
             Paragraph("<b>Normal</b> (refund impact): 5–6 min", CELL), Paragraph("<b>Complex</b> (MAU up, revenue flat): 10–12 min", CELL)]]
     story.append(Table(lat, colWidths=[W * 0.19, W * 0.24, W * 0.25, W * 0.32],
@@ -217,12 +217,12 @@ def build(out):
         "on one shared repository, so definitions and guardrails are the same for every person and model.",
         "<b>Set-up:</b> build a data catalog and metric registry for the team's warehouse, with the analytics lead approving each "
         "definition, then the Gold and Silver layers the agent routes to.",
-        "<b>Cost:</b> mostly model tokens; queries are nearly free. Not measured here: log tokens per question, then budget by question "
+        "<b>Cost:</b> model usage and any warehouse costs; local SQLite has no query service fee. Not measured here: log tokens per question, then budget by question "
         "type. Answering from the smallest layer that fits keeps both cost and latency down.",
         "<b>Guardrails:</b> read-only access (database role plus the query tool's check), row and time limits, an evidence log behind "
         "every figure, no sensitive columns in the catalog, and a question back when the ask is unclear.",
-        "<b>Freshness:</b> real data keeps arriving, unlike this dataset; the agent first checks a freshness tracker (last load per source "
-        "and layer) and warns or stops when data is stale.",
+        "<b>Freshness:</b> real data keeps arriving, unlike this dataset; provide a freshness tracker (last load per source "
+        "and layer) so the agent can warn or stop when data is stale.",
         "<b>Quality over time:</b> a test set of questions with known answers (these 18, growing from real ones), rerun on every change "
         "to the skill, definitions or data; track pass rate, clarification rate, query errors and user ratings; turn failures into rules.",
     ])

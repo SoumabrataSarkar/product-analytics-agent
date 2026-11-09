@@ -7,8 +7,7 @@ query and evidence tools, and produces an evidence-backed answer.
 
 The shared investigation skill is in
 [`skills/product-analytics-investigation/SKILL.md`](../skills/product-analytics-investigation/SKILL.md).
-The skill and query commands have targeted tests. The agent has been evaluated
-on 18 test questions: see [`submission/eval-results.pdf`](../submission/eval-results.pdf).
+The query, evidence, report and experimental loop tools have targeted tests. The shared skill was exercised in an 18-scenario evaluation and selected reruns: see [results](../docs/evaluations/results.md) and [the evaluation PDF](../submission/eval-results.pdf). Keep these evaluator materials out of independent investigation sessions.
 
 ## Existing tools
 

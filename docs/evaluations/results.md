@@ -1,10 +1,10 @@
 # Evaluation results
 
-**Status:** Complete for this stage (2026-11-09). PDF version: [`submission/eval-results.pdf`](../../submission/eval-results.pdf), built by [`build_results_pdf.py`](build_results_pdf.py). 18 scenarios run blind, scored against an answer key written beforehand; one improvement round. Scenario definitions: [investigation-paths.md](investigation-paths.md). Method: [evaluation-process.md](evaluation-process.md).
+**Status:** Complete for this stage (2026-11-09). [PDF summary](../../submission/eval-results.pdf), built by [build_results_pdf.py](build_results_pdf.py). 18 scenarios run blind and scored against source-level references; one improvement round. Q02 used the reviewer’s source-level checks; the other scenarios used the answer-key batches. Scenario definitions: [investigation-paths.md](investigation-paths.md). Method: [evaluation-process.md](evaluation-process.md).
 
 ## Summary
 
-| | Round 1 | Round 2 (after the skill updates) |
+| | Round 1 | Latest outcomes after selected reruns |
 |---|---|---|
 | Scenarios | 18 | Q02 (v2 after review, and a blind rerun), plus 4 Codex reruns (Q07, Q11 and Q01, Q09 as regression checks) |
 | Pass | 15 | 17 of 18 overall |
@@ -13,8 +13,10 @@
 
 - **Runtimes:** Q02 in Claude Code (Claude Opus 5.5); all others in Codex, one fresh session per question, independent mode (no evaluation docs, answer keys or previous reports in context).
 - **Snapshot:** `pockettoons.sqlite` SHA-256 `8d39e78b…790b`, build `3a0dbed2` (122/122 layer checks). Coverage April–September 2026, complete UTC months.
-- **Answer key:** computed with the metric registry's canonical SQL on the **source tables only**, never on the Silver/Gold tables the agent uses, and approved before any run. One exception: in Q03 the agent asked which period to use and the evaluator chose two weeks the key didn't cover, so those values were computed afterwards with the same method (`oracle-b5`). Exact counts and cents; ±0.1 point on rates. Correct numbers are not enough: unsupported certainty, a silent choice of period or definition, or a missing required caveat fails.
-- **Agent versions:** round 1 = `main` after PR #1 (certainty, time-window and anomaly rules from the Q02 review). Round 2 = `cb3918d` (PR #4: start-up baseline rule).
+- **Answer key:** computed with the metric registry's canonical SQL on the **source tables only**, never on the Silver/Gold tables the agent uses, and approved before the applicable runs. Q02 used the reviewer’s source-level checks. For Q03, the agent asked for a period and the evaluator chose weeks outside the original key; those weekly reference values were computed after the run using the same method (`oracle-b5`). Exact counts and cents; ±0.1 point on rates. Correct numbers are not enough: unsupported certainty, a silent choice of period or definition, or a missing required caveat fails.
+- **Agent versions:** Q02 v1 preceded the PR #1 rules derived from its review. The other 17 first-round runs used `main` after PR #1. Round 2 Codex reruns = `cb3918d` (PR #4: start-up baseline rule); the fresh Q02 blind rerun used `0b9a143`.
+
+The latest total combines the selected fresh reruns with unchanged first-round outcomes. It is not a second complete run of all 18 questions. Q02’s reviewed revision is kept separate from its fresh blind rerun. The same questions have not been tested in both runtimes.
 
 ## Results by scenario
 

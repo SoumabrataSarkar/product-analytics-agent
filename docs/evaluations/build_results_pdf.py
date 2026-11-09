@@ -195,9 +195,9 @@ def build(out):
         "<b>Questions:</b> 18 scenarios covering every type the brief lists: simple aggregates, filtered queries, time comparisons, "
         "cohorts, ambiguous and unanswerable questions, data-quality traps and a multi-step investigation "
         f'(<a href="{BLOB}/docs/evaluations/investigation-paths.md" color="#1f4e8c">investigation-paths.md</a>).',
-        "<b>Answer key first:</b> expected values were computed with the metric registry's SQL on the <b>raw source tables only</b>, never "
-        "on the Silver and Gold tables the agent uses, and approved before any agent run. One exception: in Q03 the agent asked which period to use and the evaluator chose two weeks "
-        "the key didn't cover, so those two values were computed afterwards with the same method. The reference queries are kept as "
+        "<b>Independent references:</b> expected values were computed with the metric registry's SQL on the <b>raw source tables only</b>, never "
+        "on the Silver and Gold tables the agent uses. Q02 used reviewer source checks; other scenarios used approved answer-key batches. In Q03, the evaluator chose weeks "
+        "outside the initial key, so their values were computed after the run using the same method. The reference queries are kept as "
         "evidence logs.",
         "<b>Who scored:</b> Claude Code scored every run against the key. The GM report (Q02 v1) was also reviewed independently with "
         "ChatGPT, and the project owner decided the borderline calls.",
