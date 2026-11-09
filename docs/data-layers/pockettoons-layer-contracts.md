@@ -2,7 +2,7 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly` is approved and implemented, and the other Gold tables are planned.
+**Status:** Bronze, `layer_build_log`, `silver_resolved_sessions`, `silver_payment_attempts`, `silver_subscription_access`, `silver_user_profile`, `silver_user_day_activity`, `silver_user_day_title_watch`, `silver_user_episodes`, `silver_paywall_funnel`, `silver_marketing_daily` and `silver_quality_exceptions` are approved and implemented by `examples/pockettoons/build_layers.py`. Silver is complete. Gold follows the approved [question list](pockettoons-gold-questions.md); `gold_kpi_monthly`, `gold_activity_segments_monthly` and `gold_growth_accounting_monthly` are approved and implemented, and the other Gold tables are planned.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
 
@@ -229,6 +229,38 @@ Gold tables read Silver only. Each has one row per complete UTC month inside the
 | Aggregation | Distinct-user counts and rates are not additive across months: a quarter is recomputed from Silver, never summed from these rows. Cents and day sums add across months. |
 | Lineage | `silver_user_day_activity`, `silver_resolved_sessions`, `silver_user_profile`, `silver_payment_attempts`, `silver_subscription_access` |
 | Supports | Q01, Q02, Q04, Q10 and headline context for every other question |
-| Does not support | Segments (`gold_activity_segments_monthly`, planned); revenue by type (`gold_revenue_monthly`, planned) |
+| Does not support | Segments (`gold_activity_segments_monthly`); revenue by type (`gold_revenue_monthly`, planned) |
 | Reconciliation | One row per complete month; MAU and unidentified sessions, MEU, gross, refunds and net revenue, paying users by product, ARPU, ARPPU, subscribers at start and end, net adds, churn, MRR, cancellation requests and signups (all and unknown source) equal the registry on the source; monthly DAU and DEU day sums equal independent recounts (exact fractions for watch time); stored rates equal their counts |
 | Tests | Every month present including one without activity, unidentified sessions, zero denominator gives NULL, definition versions recorded |
+
+## gold_activity_segments_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | Which kinds of users are active each month, for decomposing MAU changes |
+| Grain | One row per complete month, `dimension` and `value`; dimensions `all`, `platform`, `country`, `acquisition_source`, `subscriber_status` |
+| Key and indexes | (`month`, `dimension`, `value`) primary key; index on (`dimension`, `value`, `month`) |
+| Columns | `month`; `dimension`; `value`; `active_users`; `engaged_users` (acquisition source only, else NULL); `mau`; `active_share` (`active_users` ÷ `mau`); `definitions`; `build_id` |
+| Rules | Active users follow `mau`. Platform and country are activity-level: they come from each session that touches the month, so a user active on two platforms counts in both (NULL country is `unknown`). Acquisition source is the user's fixed first-touch source from `silver_user_profile` (an active user without a users row is `missing_user_record`). Subscriber status is taken at each session's start, as in `mau_monthly_by_subscriber_status`, so a user can be counted in both statuses in one month. Engaged users (MEU rule) are given by acquisition source only: watch time is not recorded by platform or country. |
+| Aggregation | Never sum values of an activity-level dimension: shares can total more than 1. Acquisition-source values partition MAU and MEU, so they do add up. |
+| Lineage | `silver_resolved_sessions`, `silver_user_day_activity`, `silver_user_profile`, `silver_subscription_access`; `gold_kpi_monthly` for `mau` |
+| Supports | Q03, Q05, Q14 |
+| Does not support | Engaged users by platform, country or subscriber status; combined slices such as platform × source (built from Silver on request) |
+| Reconciliation | `all` equals `gold_kpi_monthly.mau`; platform equals `mau_monthly_by_platform` and subscriber status equals `mau_monthly_by_subscriber_status` on the source; country and acquisition source equal an independent Python recount from the source; acquisition-source values add to MAU and engaged values to MEU; engaged users by source equal an exact-fraction recount; `engaged_users` is populated only where supported |
+| Tests | Total row, multi-session platform count, missing user record, NULL source as `unknown`, engaged by source, NULL engaged elsewhere |
+
+## gold_growth_accounting_monthly
+
+| Part | Contract |
+|---|---|
+| Purpose | Why MAU changed from one month to the next: new, retained, resurrected and churned users |
+| Grain | One row per complete month whose previous month is also complete inside the coverage window (the first coverage month has no row) |
+| Key | `month` primary key |
+| Columns | `month`; `previous_month`; `mau`; `previous_mau`; `new_users`; `retained_users`; `resurrected_users`; `churned_users`; `quick_ratio`; `definitions`; `build_id` |
+| Rules | `growth_accounting_monthly` v1.0: new = active and signed up in the month; retained = active this and last month; resurrected = active, not active last month, signed up earlier; churned = active last month, not this month. Quick ratio = (new + resurrected) ÷ churned, NULL when churned is 0. |
+| Aggregation | For one month, new + retained + resurrected = MAU, and MAU − previous MAU = new + resurrected − churned. Do not sum buckets across months as distinct users. |
+| Lineage | `silver_user_day_activity`, `silver_user_profile`; `gold_kpi_monthly` for MAU |
+| Supports | Q06 |
+| Does not support | Activity-level slices (a user's bucket would depend on the slice); user-level slices are not pre-computed in v1 |
+| Reconciliation | Buckets and quick ratio equal `growth_accounting_monthly` on the source; both identities hold, counting active users without a users row separately; one row for every month after the first |
+| Tests | First month absent, five rows for six months |
