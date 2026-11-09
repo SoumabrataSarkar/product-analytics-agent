@@ -6,7 +6,6 @@ model API calls or claim that its answers are independently verified.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -126,45 +125,3 @@ def investigate(*, question: str, database: str | Path, snapshot_id: str,
             "queries": queries, "log_path": str(log_path), "history": history}
 
 
-def cli_adapter(command: list[str], timeout_seconds: float = 120.0) -> Model:
-    """Use a caller-configured local process: JSON stdin, JSON stdout, no shell."""
-    import subprocess
-
-    if not command:
-        raise ValueError("A model adapter command is required.")
-
-    def call(request: dict[str, Any]) -> dict[str, Any]:
-        proc = subprocess.run(command, input=json.dumps(request), text=True, capture_output=True,
-                              timeout=timeout_seconds, check=False)
-        if proc.returncode:
-            raise RuntimeError("Model adapter failed (exit %s)." % proc.returncode)
-        value = json.loads(proc.stdout)
-        if not isinstance(value, dict):
-            raise ValueError("Model adapter must output a JSON object.")
-        return value
-    return call
-
-
-def main() -> int:
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run an investigation with a local model adapter.")
-    parser.add_argument("--database", required=True)
-    parser.add_argument("--question", required=True)
-    parser.add_argument("--snapshot-id", required=True)
-    parser.add_argument("--catalog", required=True, help="Path to the dataset-specific catalog.")
-    parser.add_argument("--registry", required=True, help="Path to the dataset-specific metric registry.")
-    parser.add_argument("--log", required=True, help="New local evidence file; may contain sensitive data.")
-    parser.add_argument("--adapter", nargs=argparse.REMAINDER, required=True,
-                        help="Adapter command (last argument): JSON request on stdin, JSON response on stdout.")
-    args = parser.parse_args()
-    result = investigate(question=args.question, database=args.database, snapshot_id=args.snapshot_id,
-                         catalog=Path(args.catalog).read_text(encoding="utf-8"),
-                         registry=Path(args.registry).read_text(encoding="utf-8"),
-                         log_path=args.log, model=cli_adapter(args.adapter))
-    print(json.dumps(result, ensure_ascii=False))
-    return 0 if result["status"] in ("completed", "clarification_needed") else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
