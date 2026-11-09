@@ -926,7 +926,7 @@ GROUP BY p.period_start
 ORDER BY p.period_start
 ```
 
-### Supporting metrics: activity, monetisation, lifecycle and marketing        version: 1.0   status: approved
+### Supporting metrics: activity, monetisation, lifecycle and marketing        version: 1.1   status: approved
 
 | id | Name | Definition (per complete UTC month unless stated) |
 |---|---|---|
@@ -953,7 +953,7 @@ ORDER BY p.period_start
    - *Activation:* an engaged day has at least 60 watch seconds allocated to that UTC day by wall-clock share, the same allocation as `deu`.
    - *Session duration:* identified sessions only; open sessions use `last_activity_at`.
    - *Active days:* a session counts on every UTC day its span touches inside the month.
-   - *MRR:* price is the `list_price_usd` of the charge that started the access period.
+   - *MRR:* price is the `list_price_usd` of the charge that started the access period. A price that is not numeric, positive and exact to the cent is excluded from MRR rather than rounded; the subscriber still counts in `subscribers_at_end`.
    - *Payment failure:* an attempt's outcome is its latest succeeded or failed status event; an attempt without either is excluded. A failed renewal followed by a successful retry counts as one failed and one successful attempt.
    - *Cancellation request:* a `subscription_history` period with status `cancel_at_period_end` whose `cancelled_at` is in the month.
    - *Access loss:* the end of an access period at which no other access period covers the same instant; regained access is a new access period starting within 60 days after the loss.
@@ -1118,13 +1118,16 @@ ORDER BY period_start
 SELECT p.period AS month, COUNT(m.user_id) AS subscribers_at_end, COALESCE(SUM(m.price_cents), 0) AS mrr_cents
 FROM periods p
 LEFT JOIN (
-  SELECT q.period_start, h.user_id, MAX(CAST(ROUND(t.list_price_usd * 100) AS INTEGER)) AS price_cents
+  SELECT q.period_start, h.user_id,
+         MAX(CASE WHEN typeof(t.list_price_usd) IN ('integer', 'real') AND t.list_price_usd > 0
+                   AND abs(t.list_price_usd * 100 - ROUND(t.list_price_usd * 100)) < 0.000001
+                  THEN CAST(ROUND(t.list_price_usd * 100) AS INTEGER) END) AS price_cents
   FROM periods q
   JOIN subscription_history h
     ON h.status IN ('active', 'cancel_at_period_end')
    AND h.effective_start_at <= q.period_end
    AND (h.effective_end_at IS NULL OR h.effective_end_at > q.period_end)
-  JOIN transactions t ON t.txn_id = h.source_txn_id
+  LEFT JOIN transactions t ON t.txn_id = h.source_txn_id
   GROUP BY q.period_start, h.user_id
 ) m ON m.period_start = p.period_start
 GROUP BY p.period_start
