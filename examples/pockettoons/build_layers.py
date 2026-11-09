@@ -9,6 +9,7 @@ rolled back, recorded in layer_build_log, and leaves the previous layers in plac
 Run it on a copy of a reviewed database first.
 """
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 from pathlib import Path
 import datetime as dt
 import hashlib
@@ -49,7 +50,7 @@ REQUIRED_COLUMNS = {
     'payment_status_history': {'payment_status_event_id', 'txn_id', 'status', 'effective_at', 'recorded_at'},
     'dataset_metadata': {'metadata_key', 'metadata_value'},
     'users': {'user_id', 'signup_at', 'acquisition_source', 'country_origin', 'country_current', 'subscription_status'},
-    'content_views': {'view_id', 'user_id'},
+    'content_views': {'view_id', 'user_id', 'content_id', 'view_started_at'},
     'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
                              'effective_end_at', 'cancelled_at', 'source_txn_id', 'plan_code'},
@@ -516,6 +517,172 @@ def reconcile_user_profile(db):
     exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_profile GROUP BY 1').fetchall())
     return checks, {'source_rows': source_rows, 'exceptions': exceptions}
 
+# ---------------------------------------------------------------- silver_user_day_activity
+
+USER_DAY_ACTIVITY_SQL = """
+CREATE TABLE silver_user_day_activity(
+  user_id TEXT NOT NULL, activity_date TEXT NOT NULL, activity_month TEXT NOT NULL,
+  sessions_touching INTEGER NOT NULL, sessions_started INTEGER NOT NULL, started_session_span_sec INTEGER NOT NULL,
+  watch_seconds REAL NOT NULL, views_started INTEGER NOT NULL,
+  subscriber_at_day_start INTEGER NOT NULL CHECK(subscriber_at_day_start IN (0,1)),
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL, PRIMARY KEY(user_id, activity_date));
+INSERT INTO silver_user_day_activity
+WITH RECURSIVE session_days(user_id, day, last_day, started_day, span_sec) AS (
+  SELECT resolved_user_id, date(session_started_at), date(last_activity_at), date(session_started_at), active_span_sec
+  FROM silver_resolved_sessions WHERE resolved_user_id IS NOT NULL
+  UNION ALL
+  SELECT user_id, date(day, '+1 day'), last_day, started_day, span_sec FROM session_days WHERE day < last_day
+),
+segment_days(user_id, day, seg_start, seg_end, watched) AS (
+  SELECT v.user_id, date(s.segment_started_at), s.segment_started_at, s.segment_ended_at, s.watch_duration_sec
+  FROM playback_segments s JOIN content_views v ON v.view_id = s.view_id
+  UNION ALL
+  SELECT user_id, date(day, '+1 day'), seg_start, seg_end, watched FROM segment_days
+  WHERE date(day, '+1 day') < substr(seg_end, 1, 10)
+     OR (date(day, '+1 day') = substr(seg_end, 1, 10) AND substr(seg_end, 12) <> '00:00:00Z')
+),
+session_agg AS (
+  SELECT user_id, day, COUNT(*) AS touching, SUM(day = started_day) AS started,
+         SUM(CASE WHEN day = started_day THEN span_sec ELSE 0 END) AS span
+  FROM session_days GROUP BY user_id, day
+),
+watch_agg AS (
+  SELECT user_id, day,
+         SUM(watched * CASE WHEN julianday(seg_end) = julianday(seg_start) THEN 1.0
+                            ELSE (MIN(julianday(seg_end), julianday(day, '+1 day')) - MAX(julianday(seg_start), julianday(day)))
+                                 / (julianday(seg_end) - julianday(seg_start)) END) AS seconds
+  FROM segment_days GROUP BY user_id, day
+),
+view_agg AS (SELECT user_id, date(view_started_at) AS day, COUNT(*) AS n FROM content_views GROUP BY 1, 2),
+keys AS (SELECT user_id, day FROM session_agg UNION SELECT user_id, day FROM watch_agg UNION SELECT user_id, day FROM view_agg),
+base AS (
+  SELECT k.user_id, k.day, COALESCE(sa.touching, 0) AS touching, COALESCE(sa.started, 0) AS started,
+         COALESCE(sa.span, 0) AS span, COALESCE(w.seconds, 0.0) AS seconds, COALESCE(va.n, 0) AS views,
+         EXISTS (SELECT 1 FROM silver_subscription_access a
+                 WHERE a.user_id = k.user_id AND a.grants_access = 1
+                   AND a.effective_start_at <= k.day || 'T00:00:00Z'
+                   AND (a.effective_end_at IS NULL OR a.effective_end_at > k.day || 'T00:00:00Z')) AS subscriber,
+         u.user_id IS NULL AS unknown_user,
+         k.day < substr(u.signup_at, 1, 10) AS before_signup
+  FROM keys k
+  LEFT JOIN session_agg sa ON sa.user_id = k.user_id AND sa.day = k.day
+  LEFT JOIN watch_agg w ON w.user_id = k.user_id AND w.day = k.day
+  LEFT JOIN view_agg va ON va.user_id = k.user_id AND va.day = k.day
+  LEFT JOIN users u ON u.user_id = k.user_id
+)
+SELECT user_id, day, substr(day, 1, 7), touching, started, span, seconds, views, subscriber,
+       CASE WHEN unknown_user OR COALESCE(before_signup, 0) THEN 'suspicious_usable' ELSE 'ok' END,
+       NULLIF(rtrim((CASE WHEN unknown_user THEN 'user_not_in_users,' ELSE '' END)
+                    || (CASE WHEN COALESCE(before_signup, 0) THEN 'activity_before_signup,' ELSE '' END), ','), ''),
+       :build_id
+FROM base;
+CREATE INDEX ix_silver_user_day_activity_date ON silver_user_day_activity(activity_date, user_id)
+"""
+
+
+def independent_day_activity_recount(db):
+    """Session-active user-days and total watch seconds, recomputed in Python from the source."""
+    links = {}
+    for session_id, user in db.execute('SELECT session_id, user_id FROM identity_links'):
+        links.setdefault(session_id, set()).add(user)
+    active = set()
+    for session_id, user, started, last in db.execute(
+            'SELECT session_id, user_id, session_started_at, last_activity_at FROM sessions'):
+        if user is None:
+            linked = links.get(session_id, set())
+            user = next(iter(linked)) if len(linked) == 1 else None
+        if user is None:
+            continue
+        day, end = dt.date.fromisoformat(started[:10]), dt.date.fromisoformat(last[:10])
+        while day <= end:
+            active.add((user, day.isoformat()))
+            day += dt.timedelta(days=1)
+    total_watch = db.execute('SELECT COALESCE(SUM(watch_duration_sec), 0) FROM playback_segments').fetchone()[0]
+    return active, total_watch
+
+
+def instant(value):
+    return dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+
+def independent_daily_watch(db):
+    """Exact watch seconds per user and UTC day, splitting each segment by its wall-clock share."""
+    watch = {}
+    for user, started, ended, seconds in db.execute(
+            'SELECT v.user_id, s.segment_started_at, s.segment_ended_at, s.watch_duration_sec '
+            'FROM playback_segments s JOIN content_views v ON v.view_id = s.view_id'):
+        start, end = instant(started), instant(ended)
+        if end == start:
+            key = (user, start.date().isoformat())
+            watch[key] = watch.get(key, Fraction(0)) + seconds
+            continue
+        total = Fraction(int((end - start).total_seconds()))
+        day = start.date()
+        while dt.datetime.combine(day, dt.time(), dt.timezone.utc) < end:
+            lo = max(start, dt.datetime.combine(day, dt.time(), dt.timezone.utc))
+            hi = min(end, dt.datetime.combine(day + dt.timedelta(days=1), dt.time(), dt.timezone.utc))
+            key = (user, day.isoformat())
+            watch[key] = watch.get(key, Fraction(0)) + seconds * Fraction(int((hi - lo).total_seconds())) / total
+            day += dt.timedelta(days=1)
+    return watch
+
+
+def reconcile_user_day_activity(db):
+    checks = {}
+    active, total_watch = independent_day_activity_recount(db)
+    silver_active = set(db.execute('SELECT user_id, activity_date FROM silver_user_day_activity WHERE sessions_touching > 0'))
+    checks['independent_active_day_recount'] = silver_active == active
+    silver_watch = db.execute('SELECT COALESCE(SUM(watch_seconds), 0) FROM silver_user_day_activity').fetchone()[0]
+    checks['watch_seconds_equal_segments'] = abs(silver_watch - total_watch) <= 1e-6 * max(1, total_watch)
+    checks['sessions_started_equal_resolved'] = db.execute(
+        'SELECT COALESCE(SUM(sessions_started), 0) FROM silver_user_day_activity').fetchone()[0] == db.execute(
+        'SELECT COUNT(*) FROM silver_resolved_sessions WHERE resolved_user_id IS NOT NULL').fetchone()[0]
+    checks['views_started_equal_source'] = db.execute(
+        'SELECT COALESCE(SUM(views_started), 0) FROM silver_user_day_activity').fetchone()[0] == db.execute(
+        'SELECT COUNT(*) FROM content_views').fetchone()[0]
+    days = [p for p in db.execute(load_sql('periods_day'), COVERAGE)]
+    daily_active = {}
+    for user, day in active:
+        daily_active[day] = daily_active.get(day, 0) + 1
+    checks['dau_matches_independent_recount'] = [(d, daily_active.get(d, 0)) for d, _, _ in days] == [
+        (d, db.execute('SELECT COUNT(*) FROM silver_user_day_activity WHERE activity_date = ? AND sessions_touching > 0',
+                       (d,)).fetchone()[0]) for d, _, _ in days]
+    exact = independent_daily_watch(db)
+    silver_engaged = set(db.execute('SELECT user_id, activity_date FROM silver_user_day_activity WHERE watch_seconds >= 60'))
+    exact_engaged = {k for k, v in exact.items() if v >= 60}
+    boundary = {k for k, v in exact.items() if abs(v - 60) <= Fraction(1, 10**6)}
+    checks['deu_matches_independent_exact_recount'] = (silver_engaged ^ exact_engaged) <= boundary
+    for grain in ('week', 'month'):
+        periods = db.execute(load_sql(f'periods_{grain}'), COVERAGE).fetchall()
+        active_counts, engaged_counts = [], []
+        for label, start, end in periods:
+            lo, hi = start[:10], end[:10]
+            active_counts.append((label, db.execute(
+                'SELECT COUNT(DISTINCT user_id) FROM silver_user_day_activity '
+                'WHERE activity_date >= ? AND activity_date < ? AND sessions_touching > 0', (lo, hi)).fetchone()[0]))
+            engaged_counts.append((label, db.execute(
+                'SELECT COUNT(*) FROM (SELECT user_id FROM silver_user_day_activity '
+                'WHERE activity_date >= ? AND activity_date < ? GROUP BY user_id HAVING SUM(watch_seconds) >= 60)',
+                (lo, hi)).fetchone()[0]))
+        active_name = {'day': 'dau', 'week': 'wau', 'month': 'mau_from_family'}[grain]
+        engaged_name = {'day': 'deu', 'week': 'weu', 'month': 'meu'}[grain]
+        checks[f'{active_name}_matches_registry_on_source'] = active_counts == [
+            tuple(r) for r in db.execute(load_sql(active_name), COVERAGE)]
+        checks[f'{engaged_name}_matches_registry_on_source'] = engaged_counts == [
+            tuple(r) for r in db.execute(load_sql(engaged_name), COVERAGE)]
+    distribution = db.execute(
+        "WITH m AS (SELECT activity_month, user_id, COUNT(*) AS days FROM silver_user_day_activity "
+        "  WHERE sessions_touching > 0 AND activity_date >= substr(:coverage_start, 1, 10) "
+        "    AND activity_date < substr(:coverage_end, 1, 10) GROUP BY 1, 2) "
+        "SELECT activity_month, days, COUNT(*) FROM m GROUP BY 1, 2 ORDER BY 1, 2", COVERAGE).fetchall()
+    checks['active_days_distribution_matches_registry_on_source'] = distribution == [
+        tuple(r) for r in db.execute(load_sql('active_days_distribution_monthly'), COVERAGE)]
+    rows = db.execute('SELECT COUNT(*) FROM silver_user_day_activity').fetchone()[0]
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_day_activity GROUP BY 1').fetchall())
+    watch_only = db.execute('SELECT COUNT(*) FROM silver_user_day_activity WHERE sessions_touching = 0').fetchone()[0]
+    return checks, {'rows': rows, 'watch_or_view_only_days': watch_only, 'exceptions': exceptions}
+
 # ---------------------------------------------------------------- build orchestration
 
 SILVER = [
@@ -527,6 +694,8 @@ SILVER = [
      ['ix_silver_subscription_access_user_start'], reconcile_subscription_access),
     ('silver_user_profile', USER_PROFILE_SQL,
      ['ix_silver_user_profile_signup', 'ix_silver_user_profile_source_signup'], reconcile_user_profile),
+    ('silver_user_day_activity', USER_DAY_ACTIVITY_SQL,
+     ['ix_silver_user_day_activity_date'], reconcile_user_day_activity),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
