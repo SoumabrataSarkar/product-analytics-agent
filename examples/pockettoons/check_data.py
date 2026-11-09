@@ -429,6 +429,14 @@ if len(cohorts)!=2: failed+=1
 else:
     rates={name:payers/users for name,users,payers in cohorts}
     if rates['May-June']<=rates['July-August']+0.003: failed+=1
+    groups={'2026-05':'May-June','2026-06':'May-June','2026-07':'July-August','2026-08':'July-August'}
+    registry_cohorts={}
+    for month,eligible,converted,*_ in db.execute(load_sql('conversion_30d'),coverage):
+        if month in groups:
+            users,payers=registry_cohorts.get(groups[month],(0,0)); registry_cohorts[groups[month]]=(users+eligible,payers+converted)
+    conversion_ok=registry_cohorts=={name:(users,payers) for name,users,payers in cohorts}
+    print(('PASS' if conversion_ok else 'FAIL'),'registry 30-day subscription conversion reconciles to cohort comparison')
+    failed+=not conversion_ok
 browse=db.execute("WITH v AS (SELECT DISTINCT session_id FROM content_views) SELECT count(*) FROM sessions s LEFT JOIN v USING(session_id) WHERE v.session_id IS NULL").fetchone()[0]
 print('Browsing-only sessions:',browse)
 if browse<1: failed+=1
