@@ -141,13 +141,22 @@ class BuilderTests(unittest.TestCase):
                        "'2026-06-05T10:02:00Z',NULL,NULL,NULL,9.99,'US',?)", (txn_id, checkout))
             db.execute("INSERT INTO payment_status_history VALUES(?,?,?,'2026-06-05T10:02:00Z','2026-06-05T10:02:00Z')",
                        (txn_id + '_0', txn_id, status))
+        db.executescript('''
+        CREATE TABLE marketing_spend(date TEXT, channel TEXT, spend_usd REAL, impressions INTEGER, clicks INTEGER,
+          loaded_at TEXT, PRIMARY KEY(date, channel));
+        INSERT INTO marketing_spend VALUES
+          ('2026-04-14','paid_social',12.34,1000,50,'2026-04-15T02:00:00Z'),
+          ('2026-04-15','paid_social',5.00,10,20,'2026-04-16T02:00:00Z'),
+          ('2026-04-11','paid_search',9.995,500,10,'2026-04-12T02:00:00Z'),
+          ('2026-04-12','paid_search',3.10,300,6,'2026-04-13T02:00:00Z');
+        ''')
         for n in range(1, 9):  # p1 uses all eight free slots on one day
             db.execute("INSERT INTO content_views VALUES(?,?,?,?,?,?,?,?,?,?)",
                        (f'v_q{n}', 'p1', 'c3', n, '2026-04-22', f'2026-04-22T1{n}:00:00Z', 'free', 1, 1, n))
         for table in build_layers.SOURCE_ROLES:
             if table not in ('sessions', 'identity_links', 'transactions', 'payment_status_history',
                              'subscription_history', 'dataset_metadata', 'users', 'content_views', 'playback_segments',
-                             'content_episodes', 'user_events'):
+                             'content_episodes', 'user_events', 'marketing_spend'):
                 db.execute(f'CREATE TABLE "{table}"(id TEXT)')
         db.commit()
         db.close()
@@ -354,6 +363,23 @@ class BuilderTests(unittest.TestCase):
         funnel = {k: v for k, v in checks.items() if k.startswith('silver_paywall_funnel')}
         self.assertEqual(len(funnel), 5)
         self.assertTrue(all(funnel.values()))
+
+    def test_marketing_daily_spend_signups_and_payers(self):
+        result = build_layers.build(self.path)
+        self.assertEqual(result['status'], 'succeeded')
+        rows = {r[:2]: r[2:] for r in self.query('''SELECT date, channel, has_spend_row, spend_cents, clicks, signups,
+            new_paying_users, exception_status, exception_reason FROM silver_marketing_daily''')}
+        self.assertEqual(rows[('2026-04-14', 'paid_social')], (1, 1234, 50, 1, 0, 'ok', None))   # u5 signed up
+        self.assertEqual(rows[('2026-04-11', 'paid_search')][:4], (1, None, 10, 1))              # invalid spend kept blank
+        self.assertEqual(rows[('2026-04-11', 'paid_search')][5:], ('excluded', 'invalid_spend'))
+        self.assertEqual(rows[('2026-04-15', 'paid_social')][5:], ('suspicious_usable', 'clicks_exceed_impressions'))
+        self.assertEqual(rows[('2026-04-01', 'organic')][:4], (0, None, None, 1))                # unpaid channel, no spend
+        self.assertEqual(rows[('2026-04-21', 'creator')][4], 1)                                   # p1 first paid that day
+        self.assertEqual(rows[('2026-04-20', 'unknown')][3], 1)                                   # NULL source is unknown
+        checks = json.loads(result['reconciliation'])['checks']
+        marketing = {k: v for k, v in checks.items() if k.startswith('silver_marketing_daily')}
+        self.assertEqual(len(marketing), 6)
+        self.assertTrue(all(marketing.values()))
 
     def test_source_tables_are_not_modified(self):
         before = self.query('SELECT * FROM sessions ORDER BY 1') + self.query('SELECT * FROM identity_links ORDER BY 1')
