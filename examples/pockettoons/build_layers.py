@@ -50,7 +50,8 @@ REQUIRED_COLUMNS = {
     'payment_status_history': {'payment_status_event_id', 'txn_id', 'status', 'effective_at', 'recorded_at'},
     'dataset_metadata': {'metadata_key', 'metadata_value'},
     'users': {'user_id', 'signup_at', 'acquisition_source', 'country_origin', 'country_current', 'subscription_status'},
-    'content_views': {'view_id', 'user_id', 'content_id', 'view_started_at'},
+    'content_views': {'view_id', 'user_id', 'content_id', 'episode_number', 'date', 'view_started_at', 'view_type',
+                      'is_first_view_of_episode', 'free_quota_consuming', 'free_quota_sequence'},
     'playback_segments': {'view_id', 'segment_started_at', 'segment_ended_at', 'watch_duration_sec'},
     'subscription_history': {'subscription_period_id', 'subscription_id', 'user_id', 'status', 'effective_start_at',
                              'effective_end_at', 'cancelled_at', 'source_txn_id', 'plan_code'},
@@ -523,7 +524,7 @@ USER_DAY_ACTIVITY_SQL = """
 CREATE TABLE silver_user_day_activity(
   user_id TEXT NOT NULL, activity_date TEXT NOT NULL, activity_month TEXT NOT NULL,
   sessions_touching INTEGER NOT NULL, sessions_started INTEGER NOT NULL, started_session_span_sec INTEGER NOT NULL,
-  watch_seconds REAL NOT NULL, views_started INTEGER NOT NULL,
+  watch_seconds REAL NOT NULL, views_started INTEGER NOT NULL, free_quota_slots_used INTEGER NOT NULL,
   subscriber_at_day_start INTEGER NOT NULL CHECK(subscriber_at_day_start IN (0,1)),
   exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
   build_id TEXT NOT NULL, PRIMARY KEY(user_id, activity_date));
@@ -555,10 +556,16 @@ watch_agg AS (
   FROM segment_days GROUP BY user_id, day
 ),
 view_agg AS (SELECT user_id, date(view_started_at) AS day, COUNT(*) AS n FROM content_views GROUP BY 1, 2),
-keys AS (SELECT user_id, day FROM session_agg UNION SELECT user_id, day FROM watch_agg UNION SELECT user_id, day FROM view_agg),
+quota_agg AS (
+  SELECT user_id, date AS day, COALESCE(MAX(free_quota_sequence), 0) AS slots, COUNT(*) AS consuming
+  FROM content_views WHERE free_quota_consuming = 1 GROUP BY 1, 2
+),
+keys AS (SELECT user_id, day FROM session_agg UNION SELECT user_id, day FROM watch_agg UNION SELECT user_id, day FROM view_agg
+         UNION SELECT user_id, day FROM quota_agg),
 base AS (
   SELECT k.user_id, k.day, COALESCE(sa.touching, 0) AS touching, COALESCE(sa.started, 0) AS started,
          COALESCE(sa.span, 0) AS span, COALESCE(w.seconds, 0.0) AS seconds, COALESCE(va.n, 0) AS views,
+         COALESCE(q.slots, 0) AS slots, COALESCE(q.slots <> q.consuming, 0) AS quota_gap,
          EXISTS (SELECT 1 FROM silver_subscription_access a
                  WHERE a.user_id = k.user_id AND a.grants_access = 1
                    AND a.effective_start_at <= k.day || 'T00:00:00Z'
@@ -569,12 +576,14 @@ base AS (
   LEFT JOIN session_agg sa ON sa.user_id = k.user_id AND sa.day = k.day
   LEFT JOIN watch_agg w ON w.user_id = k.user_id AND w.day = k.day
   LEFT JOIN view_agg va ON va.user_id = k.user_id AND va.day = k.day
+  LEFT JOIN quota_agg q ON q.user_id = k.user_id AND q.day = k.day
   LEFT JOIN users u ON u.user_id = k.user_id
 )
-SELECT user_id, day, substr(day, 1, 7), touching, started, span, seconds, views, subscriber,
-       CASE WHEN unknown_user OR COALESCE(before_signup, 0) THEN 'suspicious_usable' ELSE 'ok' END,
+SELECT user_id, day, substr(day, 1, 7), touching, started, span, seconds, views, slots, subscriber,
+       CASE WHEN unknown_user OR COALESCE(before_signup, 0) OR quota_gap THEN 'suspicious_usable' ELSE 'ok' END,
        NULLIF(rtrim((CASE WHEN unknown_user THEN 'user_not_in_users,' ELSE '' END)
-                    || (CASE WHEN COALESCE(before_signup, 0) THEN 'activity_before_signup,' ELSE '' END), ','), ''),
+                    || (CASE WHEN COALESCE(before_signup, 0) THEN 'activity_before_signup,' ELSE '' END)
+                    || (CASE WHEN quota_gap THEN 'free_quota_sequence_gap,' ELSE '' END), ','), ''),
        :build_id
 FROM base;
 CREATE INDEX ix_silver_user_day_activity_date ON silver_user_day_activity(activity_date, user_id)
@@ -678,10 +687,111 @@ def reconcile_user_day_activity(db):
         "SELECT activity_month, days, COUNT(*) FROM m GROUP BY 1, 2 ORDER BY 1, 2", COVERAGE).fetchall()
     checks['active_days_distribution_matches_registry_on_source'] = distribution == [
         tuple(r) for r in db.execute(load_sql('active_days_distribution_monthly'), COVERAGE)]
+    quota = db.execute(
+        "WITH m AS (SELECT substr(period_start, 1, 7) AS month FROM (" + load_sql('periods_month') + ")) "
+        "SELECT m.month, COUNT(a.user_id), COALESCE(SUM(a.free_quota_slots_used = 8), 0) FROM m "
+        "LEFT JOIN silver_user_day_activity a ON a.activity_month = m.month AND a.free_quota_slots_used > 0 "
+        "GROUP BY 1 ORDER BY 1", COVERAGE).fetchall()
+    checks['free_quota_hits_match_registry_on_source'] = quota == [
+        tuple(r[:3]) for r in db.execute(load_sql('free_quota_hit_monthly'), COVERAGE)]
     rows = db.execute('SELECT COUNT(*) FROM silver_user_day_activity').fetchone()[0]
     exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_day_activity GROUP BY 1').fetchall())
     watch_only = db.execute('SELECT COUNT(*) FROM silver_user_day_activity WHERE sessions_touching = 0').fetchone()[0]
     return checks, {'rows': rows, 'watch_or_view_only_days': watch_only, 'exceptions': exceptions}
+
+# ---------------------------------------------------------------- silver_user_day_title_watch
+
+VIEW_TYPES = ('free', 'sub', 'ppv')
+
+USER_DAY_TITLE_WATCH_SQL = """
+CREATE TABLE silver_user_day_title_watch(
+  user_id TEXT NOT NULL, activity_date TEXT NOT NULL, activity_month TEXT NOT NULL, content_id TEXT NOT NULL,
+  view_type TEXT NOT NULL, views_started INTEGER NOT NULL, episodes_started INTEGER NOT NULL,
+  first_views_of_episode INTEGER NOT NULL, watch_seconds REAL NOT NULL,
+  exception_status TEXT NOT NULL CHECK(exception_status IN ('ok','suspicious_usable')), exception_reason TEXT,
+  build_id TEXT NOT NULL, PRIMARY KEY(user_id, activity_date, content_id, view_type));
+INSERT INTO silver_user_day_title_watch
+WITH RECURSIVE segment_days(user_id, content_id, view_type, day, seg_start, seg_end, watched) AS (
+  SELECT v.user_id, v.content_id, v.view_type, date(s.segment_started_at), s.segment_started_at, s.segment_ended_at,
+         s.watch_duration_sec
+  FROM playback_segments s JOIN content_views v ON v.view_id = s.view_id
+  UNION ALL
+  SELECT user_id, content_id, view_type, date(day, '+1 day'), seg_start, seg_end, watched FROM segment_days
+  WHERE date(day, '+1 day') < substr(seg_end, 1, 10)
+     OR (date(day, '+1 day') = substr(seg_end, 1, 10) AND substr(seg_end, 12) <> '00:00:00Z')
+),
+watch_agg AS (
+  SELECT user_id, day, content_id, view_type,
+         SUM(watched * CASE WHEN julianday(seg_end) = julianday(seg_start) THEN 1.0
+                            ELSE (MIN(julianday(seg_end), julianday(day, '+1 day')) - MAX(julianday(seg_start), julianday(day)))
+                                 / (julianday(seg_end) - julianday(seg_start)) END) AS seconds
+  FROM segment_days GROUP BY user_id, day, content_id, view_type
+),
+view_agg AS (
+  SELECT user_id, date(view_started_at) AS day, content_id, view_type, COUNT(*) AS views,
+         COUNT(DISTINCT episode_number) AS episodes, SUM(is_first_view_of_episode = 1) AS first_views
+  FROM content_views GROUP BY 1, 2, 3, 4
+),
+keys AS (SELECT user_id, day, content_id, view_type FROM watch_agg
+         UNION SELECT user_id, day, content_id, view_type FROM view_agg),
+base AS (
+  SELECT k.*, COALESCE(va.views, 0) AS views, COALESCE(va.episodes, 0) AS episodes,
+         COALESCE(va.first_views, 0) AS first_views, COALESCE(w.seconds, 0.0) AS seconds,
+         u.user_id IS NULL AS unknown_user, k.view_type NOT IN VIEW_TYPES AS bad_type
+  FROM keys k
+  LEFT JOIN watch_agg w ON w.user_id = k.user_id AND w.day = k.day AND w.content_id = k.content_id AND w.view_type = k.view_type
+  LEFT JOIN view_agg va ON va.user_id = k.user_id AND va.day = k.day AND va.content_id = k.content_id AND va.view_type = k.view_type
+  LEFT JOIN users u ON u.user_id = k.user_id
+)
+SELECT user_id, day, substr(day, 1, 7), content_id, view_type, views, episodes, first_views, seconds,
+       CASE WHEN unknown_user OR bad_type THEN 'suspicious_usable' ELSE 'ok' END,
+       NULLIF(rtrim((CASE WHEN unknown_user THEN 'user_not_in_users,' ELSE '' END)
+                    || (CASE WHEN bad_type THEN 'unrecognised_view_type,' ELSE '' END), ','), ''),
+       :build_id
+FROM base;
+CREATE INDEX ix_silver_user_day_title_watch_date_title ON silver_user_day_title_watch(activity_date, content_id)
+""".replace('VIEW_TYPES', "(" + ",".join(f"'{v}'" for v in VIEW_TYPES) + ")", 1)
+
+
+def reconcile_user_day_title_watch(db):
+    checks = {}
+    title_days = {}
+    for user, day, seconds, views in db.execute(
+            'SELECT user_id, activity_date, SUM(watch_seconds), SUM(views_started) FROM silver_user_day_title_watch GROUP BY 1, 2'):
+        title_days[(user, day)] = (seconds, views)
+    activity_days = {(user, day): (seconds, views) for user, day, seconds, views in db.execute(
+        'SELECT user_id, activity_date, watch_seconds, views_started FROM silver_user_day_activity '
+        'WHERE watch_seconds > 0 OR views_started > 0')}
+    checks['watch_seconds_equal_day_activity'] = title_days.keys() == activity_days.keys() and all(
+        abs(title_days[k][0] - activity_days[k][0]) <= 1e-6 for k in title_days)
+    checks['views_equal_day_activity'] = title_days.keys() == activity_days.keys() and all(
+        title_days[k][1] == activity_days[k][1] for k in title_days)
+    checks['views_started_equal_source'] = db.execute(
+        'SELECT COALESCE(SUM(views_started), 0) FROM silver_user_day_title_watch').fetchone()[0] == db.execute(
+        'SELECT COUNT(*) FROM content_views').fetchone()[0]
+    window = ("activity_date >= substr(:coverage_start, 1, 10) AND activity_date < substr(:coverage_end, 1, 10)")
+    reach = db.execute(
+        f"SELECT activity_month, content_id, COUNT(DISTINCT user_id) FROM silver_user_day_title_watch "
+        f"WHERE views_started > 0 AND {window} GROUP BY 1, 2 ORDER BY 1, 2", COVERAGE).fetchall()
+    checks['title_reach_matches_registry_on_source'] = reach == [
+        tuple(r) for r in db.execute(load_sql('title_reach_monthly'), COVERAGE)]
+    views = db.execute(
+        f"WITH m AS (SELECT substr(period_start, 1, 7) AS month FROM ({load_sql('periods_month')})) "
+        f"SELECT m.month, COALESCE(SUM(t.views_started), 0), COUNT(DISTINCT CASE WHEN t.views_started > 0 THEN t.user_id END) "
+        f"FROM m LEFT JOIN silver_user_day_title_watch t ON t.activity_month = m.month GROUP BY 1 ORDER BY 1",
+        COVERAGE).fetchall()
+    checks['views_per_viewer_matches_registry_on_source'] = views == [
+        tuple(r[:3]) for r in db.execute(load_sql('views_per_viewer_monthly'), COVERAGE)]
+    watch = dict(db.execute(
+        f"SELECT activity_month, SUM(watch_seconds) FROM silver_user_day_title_watch WHERE {window} GROUP BY 1",
+        COVERAGE).fetchall())
+    registry_watch = [(r[0], r[1]) for r in db.execute(load_sql('watch_time_monthly'), COVERAGE)]
+    checks['watch_time_matches_registry_on_source'] = all(
+        abs(watch.get(month, 0) - seconds) <= 1e-6 * max(1, seconds) for month, seconds in registry_watch)
+    rows = db.execute('SELECT COUNT(*) FROM silver_user_day_title_watch').fetchone()[0]
+    by_type = dict(db.execute('SELECT view_type, COUNT(*) FROM silver_user_day_title_watch GROUP BY 1').fetchall())
+    exceptions = dict(db.execute('SELECT exception_status, COUNT(*) FROM silver_user_day_title_watch GROUP BY 1').fetchall())
+    return checks, {'rows': rows, 'by_view_type': by_type, 'exceptions': exceptions}
 
 # ---------------------------------------------------------------- build orchestration
 
@@ -696,6 +806,8 @@ SILVER = [
      ['ix_silver_user_profile_signup', 'ix_silver_user_profile_source_signup'], reconcile_user_profile),
     ('silver_user_day_activity', USER_DAY_ACTIVITY_SQL,
      ['ix_silver_user_day_activity_date'], reconcile_user_day_activity),
+    ('silver_user_day_title_watch', USER_DAY_TITLE_WATCH_SQL,
+     ['ix_silver_user_day_title_watch_date_title'], reconcile_user_day_title_watch),
 ]
 
 # Objects owned by this builder. Only these are dropped and recreated.
