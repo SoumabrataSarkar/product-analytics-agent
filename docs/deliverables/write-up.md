@@ -33,17 +33,17 @@ Round 1: 15 pass, 1 partial, 2 fail. Round 2 (Q02 v2 after review plus a blind r
 
 Time to answer (observed): simple 2–3 min, normal 5–6 min, complex 10–12 min.
 
-- **Set-up for real data:** first build a data catalog and metric registry for the team's warehouse; the agent relies on both.
-- **Cost (estimate):** running the 18 questions twice used about half of one 5-hour window on an INR 1,999-a-month Codex plan, so one seat covers a heavy day of questions: about INR 1,999 per active analyst a month. Token cost per run wasn't measured.
-- **Lower cost and latency:** answer from the smallest layer that fits, with targeted queries instead of raw scans.
-- **Guardrails:** data is only ever read: a read-only database role on a replica plus the query tool's read-only check, row and time limits; every figure traceable to its evidence log; sensitive columns kept out of the catalog.
-- **Freshness:** real data keeps arriving, unlike this static dataset. Add a freshness tracker (last load per source and layer) that the agent checks first, warning or stopping when data is stale.
-- **Quality over time:** rerun the 18 questions on every change to the skill, registry or data; track pass rate, clarification rate and query errors; review a weekly sample of real questions and turn failures into rules.
+- **How the team uses it:** analysts and PMs ask in plain English from Claude Code or Codex (later Slack or a web page), all on one shared repository, so definitions and guardrails are the same for every person and model.
+- **Set-up:** build a data catalog and metric registry for the team's warehouse, with the analytics lead approving each definition, then the Gold and Silver layers the agent routes to.
+- **Cost:** mostly model tokens; queries are nearly free. Not measured here: log tokens per question, then budget by question type. Answering from the smallest layer that fits keeps both cost and latency down.
+- **Guardrails:** read-only access (database role plus the query tool's check), row and time limits, an evidence log behind every figure, no sensitive columns in the catalog, and a question back when the ask is unclear.
+- **Freshness:** real data keeps arriving, unlike this dataset; the agent first checks a freshness tracker (last load per source and layer) and warns or stops when data is stale.
+- **Quality over time:** a test set of questions with known answers (these 18, growing from real ones), rerun on every change to the skill, definitions or data; track pass rate, clarification rate, query errors and user ratings; turn failures into rules.
 
 ## 04 With more time
 
 - Run the same questions in both runtimes for a direct Claude vs Codex comparison, plus held-out questions.
-- Log tokens and time per run to replace the cost estimate with a measured cost per question.
-- A short-answer mode for simple questions; a helper that drafts the catalog for a new database; a Slack or web front end.
+- Measure tokens and time per question to put a real cost on each question type.
+- A helper that drafts the catalog and metric registry for a new database; a Slack or web front end.
 
 *Note on tools:* Claude Code (Claude Opus 5.5, medium) built the framework, ran the GM investigation and computed the answer key. Codex (GPT Terra 6.1, medium) ran the evaluation. ChatGPT (Terra 5.6, later 6.1, medium) reviewed the GM report and evaluation decisions independently.
