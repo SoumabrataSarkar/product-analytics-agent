@@ -2,9 +2,28 @@
 
 **Scope:** Contracts for the Bronze, Silver and Gold layers of the PocketToons fixture, following the [layer build workflow](layer-build-workflow.md). Business rules come from the [Metric Registry](../metrics/metric-registry.md) and the [data catalog](../examples/pockettoons-data-catalog.md); a contract implements them and must not contradict them.
 
-**Status:** `silver_resolved_sessions` and `layer_build_log` are approved and implemented by `examples/pockettoons/build_layers.py`. Bronze classification, the remaining Silver tables and Gold are not yet defined.
+**Status:** Bronze, `layer_build_log` and `silver_resolved_sessions` are approved and implemented by `examples/pockettoons/build_layers.py`. The remaining Silver tables and Gold are not yet defined.
 
 **Build target:** the builder adds its objects to an existing generated database and never modifies source tables. It is verified on a copy before being applied to a reviewed database.
+
+## Bronze
+
+| Part | Contract |
+|---|---|
+| Purpose | Expose every source record, unchanged and with its quality problems, for audit and reconciliation |
+| Form | One view `bronze_<table>` per source table, `SELECT *` over the unchanged table. Source tables keep their names and columns. |
+| Snapshot behaviour | A view shows the source's current content, not a frozen copy. The build log stores a row count and content hash for every source table, so a later change is detectable by comparing a fresh fingerprint. |
+| Reconciliation | Each view's row count equals its source table's |
+
+| Role | Tables | How to use |
+|---|---|---|
+| Raw record | `sessions`, `identity_links`, `content_views`, `playback_segments`, `user_events`, `transactions`, `payment_status_history`, `marketing_spend` | Facts at their own grain; aggregate each child table independently to avoid fanout |
+| Raw provider feed | `raw_payment_source` | Audit only; contains deliberate unit and format errors and is never a revenue source |
+| Effective-dated history | `subscription_history`, `content_availability_history`, `content_tier_history` | Query as of an instant with half-open intervals |
+| Current-state snapshot | `users`, `anonymous_identities`, `content_catalog`, `content_episodes` | Valid at the declared snapshot instant; history comes from the histories |
+| Derived business bridge | `transaction_content_attribution`, `refund_content_attribution` | Entitlement and refund allocation; join through them, never repeat transaction amounts per row |
+| Review evidence | `payment_quality_review` | Explains corrections already in curated amounts; never an additional fact |
+| Metadata | `dataset_metadata` | Snapshot instants and coverage labels |
 
 ## layer_build_log
 
