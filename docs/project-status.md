@@ -1,6 +1,6 @@
 # Project status and handoff
 
-**Last updated:** 2026-11-09 (Asia/Kolkata).  
+**Last updated:** 2026-11-09 UTC (2026-11-09 IST).  
 **Repository:** `SoumabrataSarkar/product-analytics-agent` (private).  
 **Current focus:** Continue the PocketToons reference Metric Registry across product metrics and business questions.
 
@@ -8,19 +8,19 @@ This is the common project progress and handoff record. The frozen architecture 
 
 ## At a glance
 
-Dates use Asia/Kolkata. The user guides and approves project decisions. Where the AI model cannot be established from the available evidence, it is marked unverified.
+Dates and times are shown in UTC, with IST (UTC+05:30) in brackets where a precise commit timestamp is available. Soumabrata Sarkar is the project originator and leads the decisions and reviews. The AI tools assist with refinement, implementation and testing; an unknown AI model version does not make Soumabrata's contribution uncertain. See the [contribution and date record](#contribution-and-date-record) for details and commit links.
 
-| Step | Status | In short | Contributor and date |
+| Step | Status | In short | Contributors and time |
 |---|---|---|---|
-| Agent architecture | Design frozen | Defines the model-neutral investigation workflow and safeguards; it is not an implemented agent. | AI-assisted; model unverified. Frozen 2026-11-07. |
-| PocketToons model and synthetic data | Available | Defines and generates the example's journeys, tables and intentional source issues. | AI-assisted; per-change model attribution partly unverified. Available by 2026-11-08. |
-| PocketToons data catalog | Reviewed for this stage | Describes the example's 20 tables, relationships, checks and limitations. | User review with Codex and Claude contributions; work through 2026-11-09. See contribution record. |
-| PocketToons metric registry | In progress | Records individually approved definitions and SQL for the current example; not a universal registry. | User and Claude; verified Claude Opus 5.5 contribution on 2026-11-09. |
-| Investigation and evaluation paths | Design draft | Connects candidate business questions to investigation checks, data and safeguards. It is not a working agent or evaluation suite. | Codex, 2026-11-09. |
-| Static documentation explorer | Available as prototype | Explains the project; it does not run the agent or connect to a model. | AI-assisted; recent Codex updates on 2026-11-09. |
-| Data layers, agent and evaluation | Pending | Implement transformations, shared tools, investigation workflow and independent tests. | Not yet implemented. |
+| [Agent architecture](architecture/v1.md) · [ADRs](architecture/decisions/) | Design frozen | Soumabrata Sarkar proposed the agent flow, data layers, catalog and registry; AI assisted in refinement. | Soumabrata Sarkar and AI assistance; architecture recorded 2026-11-07 07:15 UTC (12:45 IST). [Record](#contribution-and-date-record) |
+| [PocketToons data model](examples/pockettoons-reference-data-model-v1.md) · [generator](../examples/pockettoons/generate.py) · [dataset guide](../examples/pockettoons/README.md) | Available | Soumabrata specified and refined the example's journeys, relationships and data; AI assisted with generation and checks. | Soumabrata Sarkar with AI assistance; early generator commit 2026-11-07 14:11 UTC (19:41 IST). [Record](#contribution-and-date-record) |
+| [PocketToons data catalog](examples/pockettoons-data-catalog.md) | Reviewed for this stage | Soumabrata read and manually reviewed the catalog in depth, raised gaps and approved the changes; AI collaborators assisted with updates and tests. | Soumabrata Sarkar with Codex and Claude contributions; catalog began 2026-11-08 09:31 UTC (15:01 IST). [Record](#contribution-and-date-record) |
+| [PocketToons metric registry](metrics/metric-registry.md) | In progress | Project-specific metric definitions and SQL are approved individually. | Soumabrata Sarkar and Claude; template recorded 2026-11-08 19:40 UTC (2026-11-09 01:10 IST). [Record](#contribution-and-date-record) |
+| [Investigation and evaluation paths](evaluations/investigation-paths.md) | Design draft | Connects candidate questions to checks, data and safeguards; not an implemented agent or evaluation suite. | Soumabrata Sarkar and Codex; recorded 2026-11-08 20:54 UTC (2026-11-09 02:24 IST). [Record](#contribution-and-date-record) |
+| [Static documentation explorer](../web/index.html) | Available as prototype | Explains the project; it does not run the agent or connect to a model. | Soumabrata Sarkar and AI assistance; recent Codex update 2026-11-09 04:42 UTC (10:12 IST). [Record](#contribution-and-date-record) |
+| Data layers, agent and evaluation | Pending | Implement transformations, shared tools, investigation workflow and independent tests. | Led by Soumabrata Sarkar; implementation pending. |
 
-The detailed record below retains the source links, known limitations and verified contribution evidence.
+The [contribution record](#contribution-and-date-record) includes links to representative commits; the detailed sections below retain decisions and limitations.
 
 ## Scope and current file placement
 
@@ -34,7 +34,7 @@ The detailed record below retains the source links, known limitations and verifi
 1. **Architecture v1:** Frozen design and ADRs define an LLM-neutral, evidence-led analytics workflow, bounded investigation and logical Bronze/Silver/Gold layers. The architecture is a design baseline, not a running agent.
 2. **Reference data model:** The PocketToons example provides a detailed relational model, business rules, temporal relationships and safeguards. It is a reference fixture for a generalized analytics framework, not a claim that the agent is specific to one product.
 3. **Synthetic data:** A deterministic Python generator, SQLite fixture and validation suite cover users, sessions, content, subscriptions, payments, refunds, events, attribution and intentional data-quality issues. The issue log records generation issues, analytical impact and resolution/limits.
-4. **Data catalog:** All 20 current fixture tables have catalog entries. The user accepted the earlier reviewed tables and chose not to repeat their review; the main event, payment-quality, marketing and identity checks have also been reviewed. This is acceptance for the current stage, not a claim of complete production coverage or machine-readable agent integration.
+4. **Data catalog:** All 20 current fixture tables have catalog entries. Soumabrata Sarkar personally read and reviewed the catalog in depth, identified gaps, requested and approved changes, and accepted the earlier reviewed tables without repeating the review. The main event, payment-quality, marketing and identity checks have also been reviewed. This is acceptance for the current stage, not a claim of complete production coverage or machine-readable agent integration.
 5. **Recent event and payment safeguards:** Event timestamps and properties, episode links, paywall/checkout links, refund and subscription links, raw-payment coverage and units, and review timestamp handling have documented checks and targeted tests.
 6. **Marketing and identities:** Marketing uses UTC reporting days, valid non-negative spend/counts, a fanout-safe day/channel comparison and separately seeded daily variation. Shared-device account switches start new sessions; identity lifetime and observed link/session checks are documented and tested.
 7. **Static visual explorer:** `web/index.html` is a documentation prototype, not a connected AI frontend or working agent.
@@ -67,22 +67,31 @@ python3 examples/pockettoons/generate.py --output pockettoons.sqlite
 python3 examples/pockettoons/check_data.py pockettoons.sqlite
 ```
 
-The generator refuses to overwrite an existing file. The main seed is 8126; marketing uses an independent seed, 10844. Review completion times are NULL when unknown. The sample fixture is synthetic; the logical layers and agent are separate work.
+The generator **creates a new database file** at the path supplied after `--output`; if no path is supplied, it uses `pockettoons.sqlite` in the current working directory. It refuses to run when that file already exists so an existing database, including manual changes, is not silently overwritten. Choose a new filename to generate another copy.
+
+The checker reads the specific file path passed to it; in the example above, both commands refer to the new `pockettoons.sqlite`. Changing generator code changes what a **future** generation produces; it does not update a database file that already exists. Direct, approved changes to an existing database affect that specific copy and must also be represented in the generator or a documented migration if they should be reproducible. Record the generator version, seeds and any separate changes for the exact fixture being analyzed.
+
+The main seed is 8126; marketing uses an independent seed, 10844. The current generator also uses other independent streams for specific behavior. Seeds make the generator's random selections repeatable for the same generator version and compatible environment; they do not contain the database. Review completion times are NULL when unknown. The sample fixture is synthetic; the logical layers and agent are separate work.
 
 ## Contribution and date record
 
-Dates below use Asia/Kolkata. Git commit author names alone do not identify the AI model. Model names are included only where the conversation or commit metadata supports them; earlier work without such evidence is marked unverified.
+**Project ownership and review:** Soumabrata Sarkar conceived and proposed the agent architecture, including its workflow, Bronze/Silver/Gold layers, data catalog and metric registry. Soumabrata set the business direction, personally reviewed the data catalog in depth, identified gaps and approved changes. Codex, Claude and other AI assistance supported refinement, implementation, documentation and testing under Soumabrata's direction.
 
-| Date | Contributor / model | Verified work and evidence |
+UTC is shown first; IST is in brackets. The times below are **representative Git commit timestamps**, not exact times of every discussion, review or approval. The Git author does not by itself identify an AI model. Where an AI model is marked unverified, only its exact identity is unknown—not Soumabrata's contribution.
+
+| Representative time: UTC (IST) | Contributors and work | Evidence |
 |---|---|---|
-| 2026-11-07 | User with AI assistance; model version not reliably recorded | Architecture v1 frozen; see `docs/architecture/v1.md` and ADRs. |
-| By 2026-11-08 | User with AI assistance; per-change model attribution not reliably recorded | Reference model, synthetic generator, checker, issue log and catalog work appear in repository history. Do not infer a model from the Git author. |
-| 2026-11-08, approximately 17:27–17:41 | Claude Opus 5.5, **as identified in commit co-author metadata** | PPV entitlement start, duplicate ownership, status/end consistency, PPV purchase restrictions and snapshot-bound checks. Example commits: `35981da0`, `817b12b7`, `02544b45`, `91d8f35f`, `dc5ec726`. |
-| 2026-11-08 to 2026-11-09 | Codex in the current chat; exact model version not recorded in commit metadata | Event JSON and link checks; payment source/review contracts; marketing rules and variation; shared-device and identity-lifetime checks. Representative commits: `46937e32`, `463246aa`, `c2c73ef6`, `f5448627`, `1aa56d7b`. |
-| 2026-11-09 | Codex in the current chat; exact model version not recorded | This status and handoff record and entrypoint references. |
-| 2026-11-09 | Claude Opus 5.5, **as identified in commit co-author metadata** | Metric Registry template, variant rule and approved MAU definition with registry-driven checker SQL and tests. Example commits: `7187b3b`, `6957332`, `f1e8077`. |
+| 2026-11-07 07:15:03 UTC (2026-11-07 12:45:03 IST) | Soumabrata Sarkar proposed and directed the architecture; AI assisted with refinement. Exact AI model version not reliably recorded. | [Frozen Architecture v1](architecture/v1.md) · [architecture commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/f355fbff) |
+| 2026-11-07 12:43:02 UTC (2026-11-07 18:13:02 IST) | Soumabrata Sarkar specified and refined the PocketToons model and journeys with AI assistance. Exact AI model attribution for every edit is not available. | [Reference data model](examples/pockettoons-reference-data-model-v1.md) · [model scope commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/975382de) |
+| 2026-11-07 14:11:46 UTC (2026-11-07 19:41:46 IST) | Soumabrata Sarkar guided synthetic-data requirements and reviews; AI assisted in building the generator and checks. | [Generator](../examples/pockettoons/generate.py) · [prototype commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/162e503b) · [generation issue log](examples/pockettoons-data-generation-issue-log.md) |
+| 2026-11-08 09:31:13 UTC (2026-11-08 15:01:13 IST); continued across later sessions | Soumabrata Sarkar personally reviewed the catalog table by table, raised issues, guided fixes and approved decisions; Codex and Claude assisted on documented changes and checks. Individual manual review times are not recorded. | [Data catalog](examples/pockettoons-data-catalog.md) · [initial catalog commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/eefd2952) · [example subsequent check](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/b4b61a3b) |
+| 2026-11-08 11:57:58–12:11:05 UTC (2026-11-08 17:27:58–17:41:05 IST) | Soumabrata Sarkar directed the PPV entitlement review; Claude Opus 5.5 is identified in commit co-author metadata for the example entitlement fixes and tests. | [Entitlement-start commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/35981da0) · [snapshot test commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/dc5ec726) |
+| 2026-11-08 17:12:34–19:24:53 UTC (2026-11-08 22:42:34–2026-11-09 00:54:53 IST) | Soumabrata Sarkar reviewed decisions; Codex assisted with event, payment-quality, marketing and shared-device checks. Codex's exact model version is not recorded in commit metadata. | [Event JSON check](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/46937e32) · [identity lifetime check](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/1aa56d7b) · [Data catalog](examples/pockettoons-data-catalog.md) |
+| 2026-11-08 19:40:01 UTC (2026-11-09 01:10:01 IST); ongoing | Soumabrata Sarkar reviews and approves metric decisions; Claude Opus 5.5 is identified in the template commit's co-author metadata. | [Metric Registry](metrics/metric-registry.md) · [template commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/7187b3bb) |
+| 2026-11-08 20:54:29 UTC (2026-11-09 02:24:29 IST) | Soumabrata Sarkar requested the connected investigation/evaluation design; Codex assisted in documenting it. | [Investigation paths](evaluations/investigation-paths.md) · [design commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/936ee0c8) |
+| 2026-11-09 04:42:15 UTC (2026-11-09 10:12:15 IST) | Soumabrata Sarkar directed the explorer improvements; Codex assisted with the day/night interface. | [HTML explorer](../web/index.html) · [day/night commit](https://github.com/SoumabrataSarkar/product-analytics-agent/commit/9d2e0708) |
 
-Git history contains the exact timestamps and full changes. The user also reported earlier work with GPT and Claude; attribution of every earlier table or file to a specific model cannot be verified from available evidence.
+Use the linked commits and Git history for exact changes. Discussion and manual review timestamps are not inferred from commit times.
 
 ## Instructions for the next collaborator
 
